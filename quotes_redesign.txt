@@ -1,0 +1,37 @@
+Modern Teklif Bölümü Tasarımı - Özellikler
+
+1. TAB SİSTEMİ:
+   - "Yeni Teklif" tab - Teklif oluşturma/düzenleme alanı
+   - "Tekliflerim" tab - Geçmiş teklifler listesi
+   
+2. MAVİ TEMA:
+   - Birincil renk: Mavi tonları (blue-500, blue-600)
+   - Vurgu renkleri: Açık mavi (blue-50, blue-100)
+   - Profesyonel, kurumsal görünüm
+
+3. YENİ TEKLİF TAB'I:
+   - Kompakt ürün seçimi kartı (üstte)
+   - Teklif detayları grid düzeninde:
+     * Sol sütun: Teklif adı, indirim, işçilik
+     * Sağ sütun: Canlı fiyat özeti
+   - Hızlı işlem butonları (kaydet, PDF, WhatsApp)
+   - Notlar alanı minimize edilebilir
+
+4. TEKLİFLERİM TAB'I:
+   - Modern kart görünümü
+   - Geliştirilmiş arama/filtreleme
+   - Hızlı işlem butonları (önizle, PDF, WhatsApp, sil)
+   - İstatistikler (toplam teklif, toplam tutar vs.)
+
+5. HIZLI ERİŞİM:
+   - Hızlı indirim butonları (10%, 15%, 20%)
+   - Hızlı işçilik butonları (₺2000, ₺5000, ₺10000, ₺20000)
+   - Tek tıkla PDF indirme
+   - Tek tıkla WhatsApp paylaşım
+
+6. GÖRSEL İYİLEŞTİRMELER:
+   - İkonlarla görsel zenginlik
+   - Daha iyi spacing ve padding
+   - Modern gölgeler ve border-radius
+   - Hover efektleri
+   - Canlı fiyat güncellemeleri

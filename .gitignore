@@ -1,0 +1,115 @@
+# ============================================
+# ENV / SECRETS - KESİNLİKLE GITHUB'A GİTMESİN
+# ============================================
+.env
+.env.*
+.env.local
+.env.backup
+backend/.env
+backend/.env.*
+*.env
+
+# ============================================
+# Python
+# ============================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# ============================================
+# Node.js / React
+# ============================================
+node_modules/
+frontend/build/
+frontend/.cache/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ============================================
+# Backup ve geçici dosyalar
+# ============================================
+*.backup
+*.bak
+*.tmp
+*.swp
+*~
+*.deb
+cloudflared.deb
+
+# ============================================
+# IDE / Editor
+# ============================================
+.vscode/
+.idea/
+*.sublime-*
+
+# ============================================
+# OS
+# ============================================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ============================================
+# Uploads / runtime files (varsa)
+# ============================================
+uploads/
+*.db
+*.sqlite
+*.sqlite3
+
+# ============================================
+# İŞ VERİSİ / DATABASE DUMPS - özel kalsın
+# ============================================
+dump/
+downloads/
+mongodb_dump/
+
+# ============================================
+# CLOUDFLARE TUNNEL CONFIG
+# ============================================
+cloudflare-tunnel.yml
+.cloudflared/
+
+# ============================================
+# Emergent agent'tan kalan dosya
+# ============================================
+.gitconfig
+
+# ============================================
+# Screenshot/debug dosyaları
+# ============================================
+desktop_*.png
+
+
+# ============================================
+# HARDCODED SECRETS - GitHub'a kesinlikle gitmesin
+# ============================================
+systemd-services.conf
+raspberry-pi-setup.sh
+*-setup.sh
+*services.conf
+deployment-checklist.md
+KULLANIM_KILAVUZU.md
+
+# ============================================
+# SECRET İÇEREN GEÇİCİ/DOKÜMANTASYON DOSYALARI
+# ============================================
+download_instructions.md
+migrate_to_atlas.py
+backend_test.py
+test_freecurrency.py
+test_result.md
+# Genel olarak migrate ve test_freecurrency benzeri tek-sefer script'leri
+migrate_*.py
+*_credentials.*

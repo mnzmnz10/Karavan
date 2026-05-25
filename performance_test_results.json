@@ -1,0 +1,566 @@
+{
+  "summary": {
+    "total_tests": 52,
+    "passed_tests": 39,
+    "success_rate": 75.0,
+    "total_time": 23.540249347686768
+  },
+  "results": {
+    "pagination": {
+      "50": {
+        "response_time": 0.43201136589050293,
+        "product_count": 50,
+        "under_2_seconds": true
+      },
+      "100": {
+        "response_time": 0.28395891189575195,
+        "product_count": 100,
+        "under_2_seconds": true
+      },
+      "200": {
+        "response_time": 0.5183901786804199,
+        "product_count": 200,
+        "under_2_seconds": true
+      },
+      "skip_pagination": {
+        "response_time": 0.40197014808654785,
+        "product_count": 100,
+        "under_2_seconds": true
+      }
+    },
+    "search": {
+      "a": {
+        "response_time": 0.2797989845275879,
+        "result_count": 50,
+        "query_type": "short",
+        "under_1_second": true
+      },
+      "so": {
+        "response_time": 0.16347265243530273,
+        "result_count": 0,
+        "query_type": "short",
+        "under_1_second": true
+      },
+      "solar": {
+        "response_time": 0.49170589447021484,
+        "result_count": 50,
+        "query_type": "long",
+        "under_1_second": true
+      },
+      "panel": {
+        "response_time": 0.273820161819458,
+        "result_count": 50,
+        "query_type": "long",
+        "under_1_second": true
+      },
+      "battery": {
+        "response_time": 0.2735099792480469,
+        "result_count": 50,
+        "query_type": "long",
+        "under_1_second": true
+      },
+      "inverter": {
+        "response_time": 4.170210599899292,
+        "result_count": 50,
+        "query_type": "long",
+        "under_1_second": false
+      },
+      "g\u00fcne\u015f paneli": {
+        "response_time": 0.42116332054138184,
+        "result_count": 50,
+        "query_type": "long",
+        "under_1_second": true
+      },
+      "solar_skip_pagination": {
+        "response_time": 0.39965343475341797,
+        "result_count": 100,
+        "query_type": "comprehensive",
+        "under_2_seconds": true
+      }
+    },
+    "count": {
+      "unfiltered": {
+        "response_time": 0.1603696346282959,
+        "count": 285,
+        "under_half_second": true
+      },
+      "search=solar": {
+        "response_time": 0.16175174713134766,
+        "count": 8,
+        "under_1_second": true
+      },
+      "company_id=test": {
+        "response_time": 0.1603083610534668,
+        "count": 0,
+        "under_1_second": true
+      },
+      "category_id=test": {
+        "response_time": 0.1601552963256836,
+        "count": 0,
+        "under_1_second": true
+      }
+    },
+    "indexes": {
+      "Favorites-first sorting": {
+        "response_time": 0.2844240665435791,
+        "result_count": 100,
+        "under_1_second": true
+      },
+      "Company filtering with name sort": {
+        "response_time": 0.15993261337280273,
+        "result_count": 0,
+        "under_1_second": true
+      },
+      "Category filtering with name sort": {
+        "response_time": 0.16191673278808594,
+        "result_count": 0,
+        "under_1_second": true
+      },
+      "Complex compound query": {
+        "response_time": 0.16096210479736328,
+        "result_count": 0,
+        "under_1_second": true
+      }
+    },
+    "cache_headers": {
+      "products": {
+        "cache_control": "",
+        "etag": "",
+        "last_modified": "",
+        "expires": "",
+        "has_cache_headers": false
+      },
+      "products?search=solar": {
+        "cache_control": "",
+        "etag": "",
+        "last_modified": "",
+        "expires": "",
+        "has_cache_headers": false
+      },
+      "products/count": {
+        "cache_control": "",
+        "etag": "",
+        "last_modified": "",
+        "expires": "",
+        "has_cache_headers": false
+      },
+      "companies": {
+        "cache_control": "",
+        "etag": "",
+        "last_modified": "",
+        "expires": "",
+        "has_cache_headers": false
+      },
+      "categories": {
+        "cache_control": "",
+        "etag": "",
+        "last_modified": "",
+        "expires": "",
+        "has_cache_headers": false
+      }
+    },
+    "concurrent": {
+      "5": {
+        "total_requests": 5,
+        "successful_requests": 5,
+        "failed_requests": 0,
+        "success_rate": 100.0,
+        "avg_response_time": 0.9585511207580566,
+        "max_response_time": 0.9667599201202393,
+        "total_time": 0.9724955558776855,
+        "meets_criteria": true
+      },
+      "10": {
+        "total_requests": 10,
+        "successful_requests": 10,
+        "failed_requests": 0,
+        "success_rate": 100.0,
+        "avg_response_time": 2.3533708333969114,
+        "max_response_time": 2.9998977184295654,
+        "total_time": 3.0038979053497314,
+        "meets_criteria": true
+      },
+      "20": {
+        "total_requests": 20,
+        "successful_requests": 20,
+        "failed_requests": 0,
+        "success_rate": 100.0,
+        "avg_response_time": 4.397184872627259,
+        "max_response_time": 5.343998432159424,
+        "total_time": 5.349741220474243,
+        "meets_criteria": false
+      }
+    },
+    "error_handling": {
+      "Negative page number": {
+        "status_code": 0,
+        "response_time": 0.06812477111816406,
+        "status_ok": false,
+        "under_2_seconds": true,
+        "overall_success": false
+      },
+      "Zero limit": {
+        "status_code": 200,
+        "response_time": 0.16054058074951172,
+        "status_ok": true,
+        "under_2_seconds": true,
+        "overall_success": true
+      },
+      "Excessive limit": {
+        "status_code": 200,
+        "response_time": 0.5159473419189453,
+        "status_ok": true,
+        "under_2_seconds": true,
+        "overall_success": true
+      },
+      "Empty search query": {
+        "status_code": 200,
+        "response_time": 0.2798347473144531,
+        "status_ok": true,
+        "under_2_seconds": true,
+        "overall_success": true
+      },
+      "Invalid sort parameter": {
+        "status_code": 200,
+        "response_time": 0.4307136535644531,
+        "status_ok": true,
+        "under_2_seconds": true,
+        "overall_success": true
+      },
+      "Nonexistent company ID": {
+        "status_code": 200,
+        "response_time": 0.2042849063873291,
+        "status_ok": true,
+        "under_2_seconds": true,
+        "overall_success": true
+      },
+      "Nonexistent category ID": {
+        "status_code": 200,
+        "response_time": 0.28955793380737305,
+        "status_ok": true,
+        "under_2_seconds": true,
+        "overall_success": true
+      },
+      "Non-numeric page": {
+        "status_code": 0,
+        "response_time": 0.04714632034301758,
+        "status_ok": false,
+        "under_2_seconds": true,
+        "overall_success": false
+      },
+      "Non-numeric limit": {
+        "status_code": 0,
+        "response_time": 0.05358171463012695,
+        "status_ok": false,
+        "under_2_seconds": true,
+        "overall_success": false
+      }
+    },
+    "large_dataset": {
+      "Full dataset load": {
+        "response_time": 0.400615930557251,
+        "result_count": 100,
+        "target_time": 1.0,
+        "meets_target": true
+      },
+      "Large page load": {
+        "response_time": 0.5185191631317139,
+        "result_count": 285,
+        "target_time": 1.0,
+        "meets_target": true
+      },
+      "Search across dataset": {
+        "response_time": 0.27333927154541016,
+        "result_count": 100,
+        "target_time": 1.0,
+        "meets_target": true
+      },
+      "Filtered dataset": {
+        "response_time": 0.1650073528289795,
+        "result_count": 0,
+        "target_time": 1.0,
+        "meets_target": true
+      },
+      "current_count": 285
+    }
+  },
+  "performance_data": {
+    "pagination": {
+      "50": {
+        "response_time": 0.43201136589050293,
+        "product_count": 50,
+        "under_2_seconds": true
+      },
+      "100": {
+        "response_time": 0.28395891189575195,
+        "product_count": 100,
+        "under_2_seconds": true
+      },
+      "200": {
+        "response_time": 0.5183901786804199,
+        "product_count": 200,
+        "under_2_seconds": true
+      },
+      "skip_pagination": {
+        "response_time": 0.40197014808654785,
+        "product_count": 100,
+        "under_2_seconds": true
+      }
+    },
+    "search": {
+      "a": {
+        "response_time": 0.2797989845275879,
+        "result_count": 50,
+        "query_type": "short",
+        "under_1_second": true
+      },
+      "so": {
+        "response_time": 0.16347265243530273,
+        "result_count": 0,
+        "query_type": "short",
+        "under_1_second": true
+      },
+      "solar": {
+        "response_time": 0.49170589447021484,
+        "result_count": 50,
+        "query_type": "long",
+        "under_1_second": true
+      },
+      "panel": {
+        "response_time": 0.273820161819458,
+        "result_count": 50,
+        "query_type": "long",
+        "under_1_second": true
+      },
+      "battery": {
+        "response_time": 0.2735099792480469,
+        "result_count": 50,
+        "query_type": "long",
+        "under_1_second": true
+      },
+      "inverter": {
+        "response_time": 4.170210599899292,
+        "result_count": 50,
+        "query_type": "long",
+        "under_1_second": false
+      },
+      "g\u00fcne\u015f paneli": {
+        "response_time": 0.42116332054138184,
+        "result_count": 50,
+        "query_type": "long",
+        "under_1_second": true
+      },
+      "solar_skip_pagination": {
+        "response_time": 0.39965343475341797,
+        "result_count": 100,
+        "query_type": "comprehensive",
+        "under_2_seconds": true
+      }
+    },
+    "count": {
+      "unfiltered": {
+        "response_time": 0.1603696346282959,
+        "count": 285,
+        "under_half_second": true
+      },
+      "search=solar": {
+        "response_time": 0.16175174713134766,
+        "count": 8,
+        "under_1_second": true
+      },
+      "company_id=test": {
+        "response_time": 0.1603083610534668,
+        "count": 0,
+        "under_1_second": true
+      },
+      "category_id=test": {
+        "response_time": 0.1601552963256836,
+        "count": 0,
+        "under_1_second": true
+      }
+    },
+    "indexes": {
+      "Favorites-first sorting": {
+        "response_time": 0.2844240665435791,
+        "result_count": 100,
+        "under_1_second": true
+      },
+      "Company filtering with name sort": {
+        "response_time": 0.15993261337280273,
+        "result_count": 0,
+        "under_1_second": true
+      },
+      "Category filtering with name sort": {
+        "response_time": 0.16191673278808594,
+        "result_count": 0,
+        "under_1_second": true
+      },
+      "Complex compound query": {
+        "response_time": 0.16096210479736328,
+        "result_count": 0,
+        "under_1_second": true
+      }
+    },
+    "cache_headers": {
+      "products": {
+        "cache_control": "",
+        "etag": "",
+        "last_modified": "",
+        "expires": "",
+        "has_cache_headers": false
+      },
+      "products?search=solar": {
+        "cache_control": "",
+        "etag": "",
+        "last_modified": "",
+        "expires": "",
+        "has_cache_headers": false
+      },
+      "products/count": {
+        "cache_control": "",
+        "etag": "",
+        "last_modified": "",
+        "expires": "",
+        "has_cache_headers": false
+      },
+      "companies": {
+        "cache_control": "",
+        "etag": "",
+        "last_modified": "",
+        "expires": "",
+        "has_cache_headers": false
+      },
+      "categories": {
+        "cache_control": "",
+        "etag": "",
+        "last_modified": "",
+        "expires": "",
+        "has_cache_headers": false
+      }
+    },
+    "concurrent": {
+      "5": {
+        "total_requests": 5,
+        "successful_requests": 5,
+        "failed_requests": 0,
+        "success_rate": 100.0,
+        "avg_response_time": 0.9585511207580566,
+        "max_response_time": 0.9667599201202393,
+        "total_time": 0.9724955558776855,
+        "meets_criteria": true
+      },
+      "10": {
+        "total_requests": 10,
+        "successful_requests": 10,
+        "failed_requests": 0,
+        "success_rate": 100.0,
+        "avg_response_time": 2.3533708333969114,
+        "max_response_time": 2.9998977184295654,
+        "total_time": 3.0038979053497314,
+        "meets_criteria": true
+      },
+      "20": {
+        "total_requests": 20,
+        "successful_requests": 20,
+        "failed_requests": 0,
+        "success_rate": 100.0,
+        "avg_response_time": 4.397184872627259,
+        "max_response_time": 5.343998432159424,
+        "total_time": 5.349741220474243,
+        "meets_criteria": false
+      }
+    },
+    "error_handling": {
+      "Negative page number": {
+        "status_code": 0,
+        "response_time": 0.06812477111816406,
+        "status_ok": false,
+        "under_2_seconds": true,
+        "overall_success": false
+      },
+      "Zero limit": {
+        "status_code": 200,
+        "response_time": 0.16054058074951172,
+        "status_ok": true,
+        "under_2_seconds": true,
+        "overall_success": true
+      },
+      "Excessive limit": {
+        "status_code": 200,
+        "response_time": 0.5159473419189453,
+        "status_ok": true,
+        "under_2_seconds": true,
+        "overall_success": true
+      },
+      "Empty search query": {
+        "status_code": 200,
+        "response_time": 0.2798347473144531,
+        "status_ok": true,
+        "under_2_seconds": true,
+        "overall_success": true
+      },
+      "Invalid sort parameter": {
+        "status_code": 200,
+        "response_time": 0.4307136535644531,
+        "status_ok": true,
+        "under_2_seconds": true,
+        "overall_success": true
+      },
+      "Nonexistent company ID": {
+        "status_code": 200,
+        "response_time": 0.2042849063873291,
+        "status_ok": true,
+        "under_2_seconds": true,
+        "overall_success": true
+      },
+      "Nonexistent category ID": {
+        "status_code": 200,
+        "response_time": 0.28955793380737305,
+        "status_ok": true,
+        "under_2_seconds": true,
+        "overall_success": true
+      },
+      "Non-numeric page": {
+        "status_code": 0,
+        "response_time": 0.04714632034301758,
+        "status_ok": false,
+        "under_2_seconds": true,
+        "overall_success": false
+      },
+      "Non-numeric limit": {
+        "status_code": 0,
+        "response_time": 0.05358171463012695,
+        "status_ok": false,
+        "under_2_seconds": true,
+        "overall_success": false
+      }
+    },
+    "large_dataset": {
+      "Full dataset load": {
+        "response_time": 0.400615930557251,
+        "result_count": 100,
+        "target_time": 1.0,
+        "meets_target": true
+      },
+      "Large page load": {
+        "response_time": 0.5185191631317139,
+        "result_count": 285,
+        "target_time": 1.0,
+        "meets_target": true
+      },
+      "Search across dataset": {
+        "response_time": 0.27333927154541016,
+        "result_count": 100,
+        "target_time": 1.0,
+        "meets_target": true
+      },
+      "Filtered dataset": {
+        "response_time": 0.1650073528289795,
+        "result_count": 0,
+        "target_time": 1.0,
+        "meets_target": true
+      },
+      "current_count": 285
+    }
+  }
+}
