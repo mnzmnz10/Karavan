@@ -6521,6 +6521,80 @@ async def battery_analysis_pdf(request: BatteryReportPDFRequest):
         raise HTTPException(status_code=500, detail=f"PDF üretim hatası: {str(e)}")
 
 
+# ============================================================================
+# İNTERNET FİYAT ARAMA ENDPOİNT (Gemini AI ile)
+# ============================================================================
+
+class MarketPriceRequest(BaseModel):
+    product_name: str
+    brand: Optional[str] = ''
+
+@api_router.post("/market-price-search")
+async def market_price_search(request: MarketPriceRequest, current_user: str = Depends(get_current_user)):
+    """Gemini AI kullanarak ürünün internet fiyatlarını araştır"""
+    if not GEMINI_API_KEY:
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY tanımlı değil.")
+
+    query = request.product_name
+    if request.brand:
+        query = f"{request.brand} {query}"
+
+    prompt = f"""Türkiye'deki e-ticaret sitelerinde "{query}" ürününün güncel fiyatlarını araştır.
+
+Trendyol, Hepsiburada, n11, GittiGidiyor, Amazon Türkiye ve diğer Türk e-ticaret sitelerinde bu ürünü veya çok benzer bir ürünü ara.
+
+SADECE aşağıdaki JSON formatında yanıt ver, başka hiçbir şey yazma:
+{{
+  "results": [
+    {{"site": "Site adı", "price": 1234, "currency": "TRY", "url": "https://..." }},
+    {{"site": "Site adı", "price": 2345, "currency": "TRY", "url": "https://..." }}
+  ],
+  "average_price": 1789,
+  "currency": "TRY",
+  "note": "Varsa kısa bir not (opsiyonel)"
+}}
+
+Fiyat bulamazsan boş results listesi döndür. URL bilinmiyorsa null yaz. Fiyatları sayısal olarak ver."""
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            payload = {
+                "contents": [{"parts": [{"text": prompt}]}],
+                "tools": [{"google_search": {}}],
+                "generationConfig": {
+                    "temperature": 0.1,
+                    "maxOutputTokens": 1000,
+                }
+            }
+            async with session.post(
+                GEMINI_ENDPOINT,
+                params={"key": GEMINI_API_KEY},
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=30)
+            ) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+
+        text = ""
+        for candidate in data.get("candidates", []):
+            for part in candidate.get("content", {}).get("parts", []):
+                if "text" in part:
+                    text += part["text"]
+
+        # JSON çıkar
+        import re
+        json_match = re.search(r'\{[\s\S]*\}', text)
+        if not json_match:
+            return {"results": [], "average_price": None, "currency": "TRY", "note": "Fiyat bulunamadı."}
+
+        result = json.loads(json_match.group())
+        return result
+
+    except Exception as e:
+        logger.error(f"Market price search error: {e}")
+        raise HTTPException(status_code=500, detail=f"Arama hatası: {str(e)}")
+
+
 # Include the router in the main app
 app.include_router(api_router)
 
