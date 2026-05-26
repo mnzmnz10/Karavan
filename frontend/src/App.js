@@ -585,6 +585,13 @@ function App() {
   const [previewImageTitle, setPreviewImageTitle] = useState('');
   const [newCurrency, setNewCurrency] = useState('USD');
   const [changingCurrency, setChangingCurrency] = useState(false);
+
+  // İnternet fiyat arama state'leri
+  const [marketPriceModal, setMarketPriceModal] = useState(false);
+  const [marketPriceProduct, setMarketPriceProduct] = useState(null);
+  const [marketPriceResult, setMarketPriceResult] = useState(null);
+  const [marketPriceLoading, setMarketPriceLoading] = useState(false);
+  const [marketPriceCache, setMarketPriceCache] = useState({}); // { productId: { result, timestamp } }
   const [newProductForm, setNewProductForm] = useState({
     name: '',
     company_id: '',
@@ -636,6 +643,44 @@ function App() {
   };
 
   // Category Groups functions
+  // İnternet fiyat arama - Gemini AI
+  const searchMarketPrice = async (product) => {
+    // Cache kontrolü - 30 dakika geçerliliği var
+    const cached = marketPriceCache[product.id];
+    if (cached && (Date.now() - cached.timestamp) < 30 * 60 * 1000) {
+      setMarketPriceProduct(product);
+      setMarketPriceResult(cached.result);
+      setMarketPriceModal(true);
+      return;
+    }
+
+    setMarketPriceProduct(product);
+    setMarketPriceResult(null);
+    setMarketPriceLoading(true);
+    setMarketPriceModal(true);
+
+    try {
+      const response = await axios.post(`${API}/market-price-search`, {
+        product_name: product.name,
+        brand: product.brand || '',
+      }, { withCredentials: true });
+
+      const result = response.data;
+      setMarketPriceResult(result);
+
+      // Cache'e kaydet
+      setMarketPriceCache(prev => ({
+        ...prev,
+        [product.id]: { result, timestamp: Date.now() }
+      }));
+    } catch (error) {
+      console.error('Market price search error:', error);
+      setMarketPriceResult({ error: 'Fiyat araması başarısız oldu.' });
+    } finally {
+      setMarketPriceLoading(false);
+    }
+  };
+
   const loadCategoryGroups = async () => {
     try {
       const response = await axios.get(`${API}/category-groups`);
@@ -5496,6 +5541,15 @@ function App() {
                                             </>
                                           ) : (
                                             <>
+                                              <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() => searchMarketPrice(product)}
+                                                className="text-blue-600 hover:text-blue-800 hover:bg-blue-50 border-blue-200"
+                                                title="İnternette fiyat ara"
+                                              >
+                                                <ScanSearch className="w-4 h-4" />
+                                              </Button>
                                               <Button 
                                                 size="sm" 
                                                 variant="outline" 
@@ -6538,6 +6592,103 @@ function App() {
                     )}
                   </Button>
                 </div>
+              </DialogContent>
+            </Dialog>
+
+            {/* İnternet Fiyat Arama Modal */}
+            <Dialog open={marketPriceModal} onOpenChange={setMarketPriceModal}>
+              <DialogContent className="max-w-md">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <ScanSearch className="w-5 h-5 text-blue-600" />
+                    İnternet Fiyatları
+                  </DialogTitle>
+                  <DialogDescription className="truncate">
+                    {marketPriceProduct?.name}
+                  </DialogDescription>
+                </DialogHeader>
+
+                {marketPriceLoading ? (
+                  <div className="flex flex-col items-center justify-center py-10 gap-3">
+                    <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+                    <p className="text-sm text-slate-500">Gemini AI internette araştırıyor...</p>
+                  </div>
+                ) : marketPriceResult?.error ? (
+                  <div className="py-6 text-center text-red-500 text-sm">{marketPriceResult.error}</div>
+                ) : marketPriceResult ? (
+                  <div className="space-y-4">
+                    {/* Ortalama fiyat */}
+                    {marketPriceResult.average_price && (
+                      <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-lg px-4 py-3">
+                        <span className="text-sm font-medium text-green-800">İnternet ortalaması</span>
+                        <span className="text-xl font-bold text-green-700">
+                          {marketPriceResult.currency === 'TRY' ? '₺' : marketPriceResult.currency} {Number(marketPriceResult.average_price).toLocaleString('tr-TR')}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Sistemdeki fiyatla karşılaştırma */}
+                    {marketPriceProduct?.list_price_try && marketPriceResult.average_price && (
+                      <div className="flex items-center justify-between text-sm px-1">
+                        <span className="text-slate-500">Sistemdeki fiyatın</span>
+                        {(() => {
+                          const diff = ((marketPriceResult.average_price - marketPriceProduct.list_price_try) / marketPriceProduct.list_price_try * 100).toFixed(1);
+                          return (
+                            <span className={diff > 0 ? 'text-red-600 font-medium' : 'text-green-600 font-medium'}>
+                              {diff > 0 ? `%${diff} üzerinde` : `%${Math.abs(diff)} altında`}
+                            </span>
+                          );
+                        })()}
+                      </div>
+                    )}
+
+                    {/* Site listesi */}
+                    {marketPriceResult.results?.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-xs text-slate-400 font-medium uppercase tracking-wide">Bulunan fiyatlar</p>
+                        {marketPriceResult.results.map((item, i) => (
+                          <div key={i} className="flex items-center justify-between py-2 px-3 bg-slate-50 rounded-lg">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="text-sm text-slate-700 truncate">{item.site}</span>
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              <span className="text-sm font-medium text-slate-800">
+                                {item.currency === 'TRY' ? '₺' : item.currency} {Number(item.price).toLocaleString('tr-TR')}
+                              </span>
+                              {item.url && (
+                                <a href={item.url} target="_blank" rel="noreferrer" className="text-blue-500 hover:text-blue-700">
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                  </svg>
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {marketPriceResult.note && (
+                      <p className="text-xs text-slate-400 italic">{marketPriceResult.note}</p>
+                    )}
+
+                    <div className="flex items-center justify-between pt-2 border-t">
+                      <p className="text-xs text-slate-400">Gemini AI · 30 dk cache</p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setMarketPriceCache(prev => { const n = {...prev}; delete n[marketPriceProduct.id]; return n; });
+                          searchMarketPrice(marketPriceProduct);
+                        }}
+                        className="text-xs"
+                      >
+                        <RefreshCw className="w-3 h-3 mr-1" />
+                        Yenile
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
               </DialogContent>
             </Dialog>
 
