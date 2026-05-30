@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, memo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react';
 import './App.css';
 import axios from 'axios';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card';
@@ -518,6 +518,7 @@ function App() {
   const [loadedQuote, setLoadedQuote] = useState(null); // Yüklenen teklif bilgisi
   const [showDiscountedPrices, setShowDiscountedPrices] = useState(false); // İndirimli fiyat görünürlüğü - Varsayılan KAPALI
   const [showQuoteDiscountedPrices, setShowQuoteDiscountedPrices] = useState(false); // Teklif indirimli fiyat görünürlüğü - Varsayılan KAPALI
+  const [selectedProductsCustomPrices, setSelectedProductsCustomPrices] = useState(new Map()); // Map<productId, customPrice>
   const [quoteSubTab, setQuoteSubTab] = useState('create'); // Teklif alt sekmesi: 'create' veya 'list'
   
   // Hızlı ürün ekleme için state'ler
@@ -556,6 +557,8 @@ function App() {
   const [selectedQuote, setSelectedQuote] = useState(null);
   const [quoteSearchTerm, setQuoteSearchTerm] = useState('');
   const [quoteProductSearch, setQuoteProductSearch] = useState('');
+  const [quoteSearchDropdownPos, setQuoteSearchDropdownPos] = useState(null);
+  const quoteSearchInputRef = useRef(null);
   const [filteredQuotes, setFilteredQuotes] = useState([]);
   
   // Toplu işlemler için state'ler
@@ -1830,6 +1833,7 @@ function App() {
   const clearSelection = () => {
     setSelectedProducts(new Map());
     setSelectedProductsData(new Map());
+    setSelectedProductsCustomPrices(new Map());
     setQuoteDiscount(0);
     setQuoteLaborCost(0); // İşçilik maliyetini de temizle
     setQuoteNotes(''); // Teklif notlarını da temizle
@@ -1848,7 +1852,8 @@ function App() {
 
       const selectedProductData = getSelectedProductsData().map(p => ({
         id: p.id,
-        quantity: p.quantity || 1
+        quantity: p.quantity || 1,
+        custom_price: p.customPrice !== null && p.customPrice !== undefined ? parseFloat(p.customPrice) : null
       }));
 
       console.log('💾 Teklif Kaydediliyor/Güncelleniyor:');
@@ -2021,7 +2026,8 @@ function App() {
 
       const selectedProductData = getSelectedProductsData().map(p => ({
         id: p.id,
-        quantity: p.quantity || 1
+        quantity: p.quantity || 1,
+        custom_price: p.customPrice !== null && p.customPrice !== undefined ? parseFloat(p.customPrice) : null
       }));
 
       console.log('🔍 Quick quote creation data:');
@@ -2036,7 +2042,7 @@ function App() {
         discount_percentage: 0,
         labor_cost: 0,
         products: selectedProductData,
-        notes: quickQuoteNotes.trim() || `${selectedProductData.length} ürün ile oluşturulan teklif`
+        notes: quickQuoteNotes.trim() || ''
       };
 
       const response = await fetch(`${API}/quotes`, {
@@ -2160,9 +2166,15 @@ function App() {
   const getSelectedProductsData = useCallback(() => {
     return Array.from(selectedProducts.entries()).map(([productId, quantity]) => {
       const product = selectedProductsData.get(productId);
-      return product ? { ...product, quantity } : null;
+      if (!product) return null;
+      const customPrice = selectedProductsCustomPrices.get(productId);
+      return {
+        ...product,
+        quantity,
+        customPrice: customPrice !== undefined && customPrice !== null ? customPrice : null
+      };
     }).filter(Boolean);
-  }, [selectedProducts, selectedProductsData]);
+  }, [selectedProducts, selectedProductsData, selectedProductsCustomPrices]);
 
   // Function to group products by category groups
   const getProductsByGroups = (selectedProducts) => {
@@ -2826,37 +2838,87 @@ function App() {
   const calculateQuoteTotals = useMemo(() => {
     const selectedProductsData = getSelectedProductsData();
     
-    // Hangi fiyatı kullanacağımızı belirle (indirimli fiyat gösterim durumuna göre)
-    const totalListPrice = selectedProductsData.reduce((sum, p) => {
-      let price = 0;
-      if (showQuoteDiscountedPrices && p.discounted_price_try) {
-        // İndirimli fiyat gösteriliyorsa ve indirimli fiyat varsa onu kullan
-        price = parseFloat(p.discounted_price_try) || 0;
-      } else {
-        // Yoksa liste fiyatını kullan
-        price = parseFloat(p.list_price_try) || 0;
-      }
+    let totalUSD = 0;
+    let totalUSDDiscounted = 0;
+    let totalEUR = 0;
+    let totalEURDiscounted = 0;
+    let totalTRY = 0;
+    let totalTRYDiscounted = 0;
+    
+    selectedProductsData.forEach(p => {
+      const currency = p.currency || 'TRY';
       const quantity = p.quantity || 1;
-      return sum + (price * quantity);
-    }, 0);
+      const customPrice = selectedProductsCustomPrices.get(p.id);
+      
+      // Liste/Özel Fiyat belirlenmesi
+      const unitPrice = customPrice !== undefined && customPrice !== null ? parseFloat(customPrice) : (parseFloat(p.list_price) || 0);
+      
+      // Maliyet (Geliş) Fiyatı belirlenmesi
+      const discountedUnitPrice = parseFloat(p.discounted_price) || parseFloat(p.list_price) || 0;
+      
+      if (currency === 'USD') {
+        totalUSD += unitPrice * quantity;
+        totalUSDDiscounted += discountedUnitPrice * quantity;
+      } else if (currency === 'EUR') {
+        totalEUR += unitPrice * quantity;
+        totalEURDiscounted += discountedUnitPrice * quantity;
+      } else {
+        totalTRY += unitPrice * quantity;
+        totalTRYDiscounted += discountedUnitPrice * quantity;
+      }
+    });
+    
+    const usdRate = parseFloat(exchangeRates.USD) || 34.0;
+    const eurRate = parseFloat(exchangeRates.EUR) || 37.0;
+    
+    const usdInTry = totalUSD * usdRate;
+    const usdDiscountedInTry = totalUSDDiscounted * usdRate;
+    const eurInTry = totalEUR * eurRate;
+    const eurDiscountedInTry = totalEURDiscounted * eurRate;
+    
+    const eurInUsd = totalEUR * (eurRate / usdRate);
+    const eurDiscountedInUsd = totalEURDiscounted * (eurRate / usdRate);
+    
+    const totalListPrice = totalTRY + usdInTry + eurInTry;
+    const totalListPriceDiscounted = totalTRYDiscounted + usdDiscountedInTry + eurDiscountedInTry;
     
     const discountAmount = totalListPrice * (parseFloat(quoteDiscount) || 0) / 100;
+    const discountAmountDiscounted = totalListPriceDiscounted * (parseFloat(quoteDiscount) || 0) / 100;
     const laborCost = parseFloat(quoteLaborCost) || 0;
     const totalNetPrice = totalListPrice - discountAmount + laborCost;
+    const totalNetPriceDiscounted = totalListPriceDiscounted - discountAmountDiscounted + laborCost;
     
     // Toplam ürün adedi hesapla
     const totalQuantity = selectedProductsData.reduce((sum, p) => sum + (p.quantity || 1), 0);
     
     return {
+      totalUSD: isNaN(totalUSD) ? 0 : totalUSD,
+      totalUSDDiscounted: isNaN(totalUSDDiscounted) ? 0 : totalUSDDiscounted,
+      usdInTry: isNaN(usdInTry) ? 0 : usdInTry,
+      usdDiscountedInTry: isNaN(usdDiscountedInTry) ? 0 : usdDiscountedInTry,
+      
+      totalEUR: isNaN(totalEUR) ? 0 : totalEUR,
+      totalEURDiscounted: isNaN(totalEURDiscounted) ? 0 : totalEURDiscounted,
+      eurInTry: isNaN(eurInTry) ? 0 : eurInTry,
+      eurDiscountedInTry: isNaN(eurDiscountedInTry) ? 0 : eurDiscountedInTry,
+      eurInUsd: isNaN(eurInUsd) ? 0 : eurInUsd,
+      eurDiscountedInUsd: isNaN(eurDiscountedInUsd) ? 0 : eurDiscountedInUsd,
+      
+      totalTRY: isNaN(totalTRY) ? 0 : totalTRY,
+      totalTRYDiscounted: isNaN(totalTRYDiscounted) ? 0 : totalTRYDiscounted,
+      
       totalListPrice: isNaN(totalListPrice) ? 0 : totalListPrice,
+      totalListPriceDiscounted: isNaN(totalListPriceDiscounted) ? 0 : totalListPriceDiscounted,
       discountAmount: isNaN(discountAmount) ? 0 : discountAmount,
+      discountAmountDiscounted: isNaN(discountAmountDiscounted) ? 0 : discountAmountDiscounted,
       laborCost: isNaN(laborCost) ? 0 : laborCost,
       totalNetPrice: isNaN(totalNetPrice) ? 0 : totalNetPrice,
+      totalNetPriceDiscounted: isNaN(totalNetPriceDiscounted) ? 0 : totalNetPriceDiscounted,
       totalWithLaborAndDiscount: isNaN(totalNetPrice) ? 0 : totalNetPrice,
       productCount: selectedProductsData.length,
       totalQuantity: totalQuantity
     };
-  }, [selectedProducts, selectedProductsData, showQuoteDiscountedPrices, quoteDiscount, quoteLaborCost]);
+  }, [selectedProducts, selectedProductsData, showQuoteDiscountedPrices, quoteDiscount, quoteLaborCost, selectedProductsCustomPrices, exchangeRates]);
 
   // Package totals calculation (similar to quote totals)
   const calculatePackageTotals = useMemo(() => {
@@ -3223,11 +3285,11 @@ function App() {
               <div className="space-y-6 flex flex-col overflow-y-auto no-scrollbar">
                 {/* Logo & Brand Info */}
                 <div className="flex items-center gap-4">
-                  <div className="grid place-items-center w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-600/10 to-emerald-600/20 ring-1 ring-emerald-600/25 shadow-sm flex-shrink-0">
+                  <div className="flex-shrink-0">
                     <img 
                       src="/logo.png" 
                       alt="Çorlu Karavan Logo" 
-                      className="w-8 h-8 object-contain"
+                      className="w-14 h-14 object-contain"
                     />
                   </div>
                   <div>
@@ -4751,10 +4813,6 @@ function App() {
           {/* Products Tab */}
           <TabsContent value="products" className="space-y-6">
             <Card>
-              <CardHeader>
-                <CardTitle>Ürün Listesi</CardTitle>
-                <CardDescription>Tüm yüklenmiş ürünler ve fiyatları</CardDescription>
-              </CardHeader>
               <CardContent>
                 {/* Toplu İşlemler Bar */}
                 {selectedProductsForBulk.size > 0 && (
@@ -4796,11 +4854,13 @@ function App() {
                 )}
 
                 {/* Action Bar */}
-                <div className="flex justify-between items-center mb-4">
-                  <div className="flex items-center gap-4">
-                    <h3 className="text-lg font-semibold">Ürün Yönetimi</h3>
+                <div className="flex flex-col gap-3 border-b border-slate-100 pb-4 pt-3 mb-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex flex-wrap items-center gap-3 self-end sm:self-auto">
+                    <div className="translate-y-1">
+                      <h3 className="text-xl font-extrabold tracking-tight text-slate-900">Ürün Listesi</h3>
+                    </div>
                     {selectedProducts.size > 0 && (
-                      <div className="flex items-center gap-2 text-sm text-emerald-600">
+                      <div className="flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700 ring-1 ring-emerald-100">
                         <Check className="w-4 h-4" />
                         {selectedProducts.size} ürün seçili
                       </div>
@@ -4991,18 +5051,31 @@ function App() {
                 </div>
 
                 {/* Search and Filter Controls */}
-                <div className="flex flex-col md:flex-row gap-4 mb-6">
-                  <div className="flex-1">
-                    <Input
-                      placeholder="Ürün ara..."
-                      value={searchQuery}
-                      onChange={(e) => handleSearch(e.target.value)}
-                      className="w-full"
-                    />
-                  </div>
-                  <div className="flex gap-2">
+                <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_12px_35px_rgba(15,118,110,0.10)]">
+                  <div className="grid gap-3 lg:grid-cols-[1fr_240px_auto] lg:items-center">
+                    <div className="relative">
+                      <div className="absolute left-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm">
+                        <Search className="h-4.5 w-4.5" />
+                      </div>
+                      <Input
+                        placeholder="Ürün adı, marka, firma veya açıklama ara..."
+                        value={searchQuery}
+                        onChange={(e) => handleSearch(e.target.value)}
+                        className="h-14 w-full rounded-2xl border-2 border-emerald-100 bg-gradient-to-r from-emerald-50/70 to-white pl-16 pr-12 text-base font-bold text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/15"
+                      />
+                      {searchQuery && (
+                        <button
+                          type="button"
+                          onClick={() => handleSearch('')}
+                          className="absolute right-3 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-white text-slate-400 shadow-sm ring-1 ring-slate-200 transition hover:text-slate-700"
+                          aria-label="Aramayı temizle"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
                     <Select value={selectedCategory || "all"} onValueChange={handleCategoryFilter}>
-                      <SelectTrigger className="w-48">
+                      <SelectTrigger className="h-14 rounded-2xl border-2 border-slate-100 bg-slate-50 px-4 font-bold text-slate-700 shadow-sm">
                         <SelectValue placeholder="Kategori seç" />
                       </SelectTrigger>
                       <SelectContent>
@@ -5015,22 +5088,33 @@ function App() {
                             return a.name.localeCompare(b.name);
                           })
                           .map((category) => (
-                          <SelectItem key={category.id} value={category.id}>
-                            {category.name}
-                          </SelectItem>
-                        ))}
+                            <SelectItem key={category.id} value={category.id}>
+                              {category.name}
+                            </SelectItem>
+                          ))}
                       </SelectContent>
                     </Select>
                     {(searchQuery || selectedCategory) && (
-                      <Button 
-                        variant="outline" 
+                      <Button
+                        variant="outline"
                         onClick={() => {
                           handleSearch('');
                           handleCategoryFilter('');
                         }}
+                        className="h-14 rounded-2xl border-slate-200 bg-white px-5 font-bold text-slate-600 hover:bg-slate-50"
                       >
                         Temizle
                       </Button>
+                    )}
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
+                    <span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-700 ring-1 ring-emerald-100">
+                      {searchQuery ? `"${searchQuery}" aranıyor` : `${totalProducts} ürün içinde arama`}
+                    </span>
+                    {selectedCategory && (
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">
+                        Kategori filtresi aktif
+                      </span>
                     )}
                   </div>
                 </div>
@@ -5139,30 +5223,6 @@ function App() {
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
-                              {/* Tümünü Seç checkbox for Offer */}
-                              <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 border rounded-lg hover:bg-slate-100 transition-colors cursor-pointer">
-                                <input
-                                  id={`select-all-${categoryId}`}
-                                  type="checkbox"
-                                  className="rounded border-gray-300 text-primary focus:ring-primary w-4 h-4 cursor-pointer"
-                                  checked={visibleProducts.length > 0 && visibleProducts.every(p => selectedProducts.has(p.id))}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
-                                      const newSelected = new Map(selectedProducts);
-                                      visibleProducts.forEach(p => newSelected.set(p.id, 1));
-                                      setSelectedProducts(newSelected);
-                                    } else {
-                                      const newSelected = new Map(selectedProducts);
-                                      visibleProducts.forEach(p => newSelected.delete(p.id));
-                                      setSelectedProducts(newSelected);
-                                    }
-                                  }}
-                                />
-                                <label htmlFor={`select-all-${categoryId}`} className="text-xs font-semibold text-slate-600 select-none cursor-pointer">
-                                  Tümünü Seç (Teklif)
-                                </label>
-                              </div>
-
                               {/* İndirimli Fiyat Toggle Butonu - Her kategoride göster */}
                               <Button
                                 variant="outline"
@@ -5604,11 +5664,31 @@ function App() {
                   <div>
                     {/* 1. Header Details */}
                     <div className="flex justify-between items-center border-b pb-6 mb-8 gap-4">
-                      <div>
-                        <h2 className="text-2xl font-black tracking-tight text-emerald-700 uppercase block">Fiyat Teklif Formu</h2>
-                      </div>
-                      <div className="text-right text-xs font-bold text-slate-400">
-                        {new Date().toLocaleDateString('tr-TR')}
+                      {/* Premium Quote Header */}
+                        <div className="relative overflow-hidden rounded-xl px-6 py-4 select-none flex-1" style={{background: 'linear-gradient(135deg, #064e3b 0%, #065f46 40%, #0d9488 100%)'}}>
+                          {/* Geometric circles decoration */}
+                          <div style={{position:'absolute', top:'-20px', right:'-20px', width:'100px', height:'100px', borderRadius:'50%', background:'rgba(255,255,255,0.05)'}} />
+                          <div style={{position:'absolute', bottom:'-30px', right:'60px', width:'80px', height:'80px', borderRadius:'50%', background:'rgba(255,255,255,0.04)'}} />
+                          <div style={{position:'absolute', top:'10px', right:'80px', width:'40px', height:'40px', borderRadius:'50%', background:'rgba(255,255,255,0.06)'}} />
+                          {/* Left accent bar */}
+                          <div style={{position:'absolute', left:0, top:0, bottom:0, width:'4px', background:'linear-gradient(180deg, #34d399, #06b6d4)'}} />
+                          <h2 style={{fontSize:'22px', fontWeight:900, color:'white', letterSpacing:'-0.5px', lineHeight:1.1, textTransform:'uppercase', margin:0}}>Fiyat Teklif Formu</h2>
+                        </div>
+                      <div className="flex items-center gap-3 text-right text-xs font-bold text-slate-400 select-none">
+                        <button
+                          type="button"
+                          onClick={() => setShowQuoteDiscountedPrices(!showQuoteDiscountedPrices)}
+                          className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors flex items-center justify-center text-slate-500 hover:text-slate-700"
+                          title="Maliyet/Geliş fiyatlarını göster/gizle"
+                        >
+                          {showQuoteDiscountedPrices ? (
+                            <EyeOff className="w-3.5 h-3.5 text-rose-500" />
+                          ) : (
+                            <Eye className="w-3.5 h-3.5 text-emerald-500" />
+                          )}
+                        </button>
+                        <span>•</span>
+                        <div>{new Date().toLocaleDateString('tr-TR')}</div>
                       </div>
                     </div>
 
@@ -5625,7 +5705,7 @@ function App() {
                     </div>
 
                     {/* 3. Products Table */}
-                    <div className="border border-slate-200/80 rounded-xl overflow-hidden mb-8 bg-slate-50/20 shadow-xxs">
+                    <div className="border border-slate-200/80 rounded-xl mb-8 bg-slate-50/20 shadow-xxs overflow-visible">
                       <Table className="table-auto w-full text-left">
                         <TableHeader>
                           <TableRow className="bg-slate-50/80 hover:bg-slate-50/80 border-b border-slate-200">
@@ -5647,12 +5727,20 @@ function App() {
                             </TableRow>
                           ) : (
                             getSelectedProductsData().map((product) => {
+                              const customPrice = selectedProductsCustomPrices.get(product.id);
+                              const currentUnitPrice = customPrice !== undefined && customPrice !== null ? customPrice : (product.list_price || 0);
                               return (
                                 <TableRow key={product.id} className="border-b border-slate-100 hover:bg-slate-50/30 transition-colors">
                                   {/* Product Image */}
-                                  <TableCell className="p-3.5 text-center">
+                                  <TableCell className="p-3.5 text-center select-none">
                                     {product.image_url ? (
-                                      <img src={product.image_url} alt="" className="w-14 h-14 object-cover rounded-xl border border-slate-100 shadow-xxs" />
+                                      <img 
+                                        src={product.image_url} 
+                                        alt="" 
+                                        onClick={() => openImagePreview(product.image_url, product.name)}
+                                        className="w-14 h-14 object-cover rounded-xl border border-slate-100 shadow-xxs cursor-pointer hover:scale-105 hover:opacity-90 transition-all duration-200" 
+                                        title="Görseli Büyüt"
+                                      />
                                     ) : (
                                       <div className="w-14 h-14 bg-slate-100 rounded-xl border border-slate-100 flex items-center justify-center text-slate-300">
                                         <Package className="w-6 h-6" />
@@ -5700,14 +5788,62 @@ function App() {
                                     </div>
                                   </TableCell>
                                   
-                                  {/* List Price */}
-                                  <TableCell className="p-3.5 text-right font-bold text-slate-700 text-sm">
-                                    ₺ {formatPrice(product.list_price_try || 0)}
+                                  {/* Unit Price (Editable in product base currency) */}
+                                  <TableCell className="p-3.5 text-right text-sm">
+                                    <div className="flex flex-col items-end">
+                                      <div className="flex items-center justify-end gap-1 font-bold text-slate-700">
+                                        <span className="text-slate-400 text-xs font-black select-none">{getCurrencySymbol(product.currency)}</span>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          step="1"
+                                          value={customPrice !== undefined && customPrice !== null ? Math.round(customPrice) : Math.round(product.list_price || 0)}
+                                          onChange={(e) => {
+                                            const val = e.target.value;
+                                            const newMap = new Map(selectedProductsCustomPrices);
+                                            if (val === '') {
+                                              newMap.delete(product.id);
+                                            } else {
+                                              newMap.set(product.id, parseFloat(val) >= 0 ? parseFloat(val) : 0);
+                                            }
+                                            setSelectedProductsCustomPrices(newMap);
+                                          }}
+                                          className={`w-20 text-right border-b border-dashed focus:outline-none bg-transparent font-bold p-0.5 transition-colors ${
+                                            customPrice !== undefined && customPrice !== null 
+                                              ? 'border-purple-300 text-purple-700 focus:border-purple-500 font-extrabold' 
+                                              : 'border-slate-200 hover:border-slate-400 focus:border-emerald-500 text-slate-800'
+                                          }`}
+                                          title="Özel Birim Fiyat Tanımla"
+                                        />
+                                      </div>
+                                      {customPrice !== undefined && customPrice !== null && (
+                                        <div className="text-[9px] text-purple-600 font-extrabold mt-0.5 select-none bg-purple-50 px-1 py-0.5 rounded border border-purple-100/50 flex items-center justify-center max-w-[65px] ml-auto">
+                                          Özel Fiyat
+                                        </div>
+                                      )}
+                                      {showQuoteDiscountedPrices && (
+                                        <div className="text-[10px] text-purple-600 font-extrabold mt-1">
+                                          Geliş: {getCurrencySymbol(product.currency)} {formatPrice(product.discounted_price || product.list_price || 0)}
+                                        </div>
+                                      )}
+                                    </div>
                                   </TableCell>
                                   
                                   {/* Line Total */}
-                                  <TableCell className="p-3.5 text-right font-black text-slate-900 text-sm">
-                                    ₺ {formatPrice((product.list_price_try || 0) * (selectedProducts.get(product.id) || 1))}
+                                  <TableCell className="p-3.5 text-right text-sm">
+                                    <div className="flex flex-col items-end">
+                                      <div className={`font-black ${customPrice !== undefined && customPrice !== null ? 'text-purple-700' : 'text-slate-900'}`}>
+                                        {getCurrencySymbol(product.currency)} {formatPrice(currentUnitPrice * (selectedProducts.get(product.id) || 1))}
+                                      </div>
+                                      {customPrice !== undefined && customPrice !== null && (
+                                        <span className="text-[9px] text-purple-500 font-bold mt-0.5 select-none">(Özel Toplam)</span>
+                                      )}
+                                      {showQuoteDiscountedPrices && (
+                                        <div className="text-[10px] text-purple-500 font-bold mt-1">
+                                          Geliş: {getCurrencySymbol(product.currency)} {formatPrice((parseFloat(product.discounted_price) || parseFloat(product.list_price) || 0) * (selectedProducts.get(product.id) || 1))}
+                                        </div>
+                                      )}
+                                    </div>
                                   </TableCell>
                                   
                                   {/* Remove row */}
@@ -5733,16 +5869,31 @@ function App() {
                             </TableCell>
                             <TableCell colSpan={6} className="p-2.5 relative">
                               <input
+                                ref={quoteSearchInputRef}
                                 type="text"
                                 placeholder="Teklif sayfasına ürün eklemek için yazın..."
                                 value={quoteProductSearch}
-                                onChange={(e) => setQuoteProductSearch(e.target.value)}
+                                onChange={(e) => {
+                                  setQuoteProductSearch(e.target.value);
+                                  if (quoteSearchInputRef.current) {
+                                    const rect = quoteSearchInputRef.current.getBoundingClientRect();
+                                    setQuoteSearchDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+                                  }
+                                }}
                                 className="w-full border-none bg-transparent focus:ring-0 focus:outline-none text-sm font-bold text-emerald-800 placeholder-emerald-600/40 px-2.5 py-3"
                               />
                               
                               {/* Inline Search Dropdown */}
-                              {quoteProductSearch && (
-                                <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-50 max-h-64 overflow-y-auto">
+                              {quoteProductSearch && quoteSearchDropdownPos && (
+                                <div
+                                  style={{
+                                    position: 'fixed',
+                                    top: quoteSearchDropdownPos.top,
+                                    left: quoteSearchDropdownPos.left,
+                                    width: quoteSearchDropdownPos.width,
+                                    zIndex: 9999
+                                  }}
+                                  className="bg-white border border-slate-200 rounded-xl shadow-2xl max-h-64 overflow-y-auto">
                                   {products
                                     .filter(p => 
                                       p.name.toLowerCase().includes(quoteProductSearch.toLowerCase()) || 
@@ -5760,10 +5911,10 @@ function App() {
                                       >
                                         <div className="flex items-center gap-2">
                                           {p.image_url ? (
-                                            <img src={p.image_url} alt="" className="w-6.5 h-6.5 object-cover rounded" />
+                                            <img src={p.image_url} alt="" className="w-8 h-8 min-w-[32px] min-h-[32px] max-w-[32px] max-h-[32px] object-cover rounded" />
                                           ) : (
-                                            <div className="w-6.5 h-6.5 bg-slate-100 rounded flex items-center justify-center text-slate-300">
-                                              <Package className="w-3.5 h-3.5" />
+                                            <div className="w-8 h-8 min-w-[32px] min-h-[32px] bg-slate-100 rounded flex items-center justify-center text-slate-300">
+                                              <Package className="w-4 h-4" />
                                             </div>
                                           )}
                                           <div>
@@ -5803,10 +5954,44 @@ function App() {
                       </div>
 
                       {/* Right: Calculations Grid */}
-                      <div className="bg-slate-50/50 rounded-2xl p-4.5 space-y-3 border border-slate-100 max-w-sm ml-auto w-full text-xs">
-                        <div className="flex justify-between items-center text-slate-500">
-                          <span>Liste Toplamı</span>
-                          <span className="font-extrabold text-slate-800">₺ {formatPrice(calculateQuoteTotals.totalListPrice)}</span>
+                      <div className="bg-slate-50/50 rounded-2xl p-[18px] space-y-3 border border-slate-100 max-w-sm ml-auto w-full text-xs">
+                        
+                        {/* Dövizli Detaylar (Sadece ilgili para biriminde ürün varsa gösterilir) */}
+                        {calculateQuoteTotals.totalUSD > 0 && (
+                          <div className="border-b border-slate-100 pb-2 space-y-1">
+                            <div className="flex justify-between items-center text-slate-500 font-medium">
+                              <span>USD Ürün Toplamı</span>
+                              <span className="font-extrabold text-blue-600">$ {formatPrice(calculateQuoteTotals.totalUSD)}</span>
+                            </div>
+                            <div className="text-[10px] text-slate-400 text-right font-bold">
+                              Karşılığı: ₺ {formatPrice(calculateQuoteTotals.usdInTry)} (1 USD = ₺{exchangeRates.USD || '34.00'})
+                            </div>
+                          </div>
+                        )}
+
+                        {calculateQuoteTotals.totalEUR > 0 && (
+                          <div className="border-b border-slate-100 pb-2 space-y-1">
+                            <div className="flex justify-between items-center text-slate-500 font-medium">
+                              <span>EUR Ürün Toplamı</span>
+                              <span className="font-extrabold text-indigo-600">€ {formatPrice(calculateQuoteTotals.totalEUR)}</span>
+                            </div>
+                            <div className="text-[10px] text-slate-400 text-right font-bold space-y-0.5">
+                              <div>Karşılığı: ₺ {formatPrice(calculateQuoteTotals.eurInTry)} (1 EUR = ₺{exchangeRates.EUR || '37.00'})</div>
+                              <div>Dolar Karşılığı: $ {formatPrice(calculateQuoteTotals.eurInUsd)} (1 EUR = $ {((parseFloat(exchangeRates.EUR) || 37.0) / (parseFloat(exchangeRates.USD) || 34.0)).toFixed(4)})</div>
+                            </div>
+                          </div>
+                        )}
+
+                        {calculateQuoteTotals.totalTRY > 0 && (
+                          <div className="flex justify-between items-center text-slate-500 pb-1">
+                            <span>TRY Ürün Toplamı</span>
+                            <span className="font-extrabold text-slate-700">₺ {formatPrice(calculateQuoteTotals.totalTRY)}</span>
+                          </div>
+                        )}
+
+                        <div className="flex justify-between items-center text-slate-500 pt-1.5 border-t border-slate-200/60">
+                          <span className="font-bold">Genel Liste Toplamı</span>
+                          <span className="font-black text-slate-800">₺ {formatPrice(calculateQuoteTotals.totalListPrice)}</span>
                         </div>
 
                         {/* Inline Edit Discount */}
@@ -5847,12 +6032,63 @@ function App() {
                             <span className="text-emerald-700 text-base">₺ {formatPrice(calculateQuoteTotals.totalNetPrice)}</span>
                           </div>
                           
-                          {exchangeRates.EUR && (
+                          {calculateQuoteTotals.totalNetPrice > 0 && exchangeRates.EUR && (
                             <span className="text-[10px] font-extrabold text-slate-400 mt-1">
                               € {formatPrice(calculateQuoteTotals.totalNetPrice / exchangeRates.EUR)} EUR
                             </span>
                           )}
+                          {calculateQuoteTotals.totalNetPrice > 0 && exchangeRates.USD && (
+                            <span className="text-[10px] font-extrabold text-slate-400 mt-0.5">
+                              $ {formatPrice(calculateQuoteTotals.totalNetPrice / exchangeRates.USD)} USD
+                            </span>
+                          )}
                         </div>
+
+                        {/* Maliyet Gözü Kartı (Sadece göz ikonu aktifse satıcıya maliyetleri gösterir) */}
+                        {showQuoteDiscountedPrices && (
+                          <div className="mt-4 pt-3 border-t border-dashed border-purple-200 bg-purple-50/40 rounded-xl p-3 text-[11px] space-y-2 text-purple-950 font-medium">
+                            <div className="font-bold text-purple-800 uppercase tracking-wider text-[9px] mb-1 select-none">BANA GELİŞ MALİYETLERİ (GİZLİ)</div>
+                            
+                            {calculateQuoteTotals.totalUSDDiscounted > 0 && (
+                              <div className="flex justify-between">
+                                <span>USD Geliş Toplamı:</span>
+                                <span className="font-bold">$ {formatPrice(calculateQuoteTotals.totalUSDDiscounted)}</span>
+                              </div>
+                            )}
+                            
+                            {calculateQuoteTotals.totalEURDiscounted > 0 && (
+                              <div className="flex justify-between">
+                                <span>EUR Geliş Toplamı:</span>
+                                <span className="font-bold">€ {formatPrice(calculateQuoteTotals.totalEURDiscounted)}</span>
+                              </div>
+                            )}
+                            
+                            <div className="flex justify-between">
+                              <span>Geliş Liste Toplamı:</span>
+                              <span className="font-bold">₺ {formatPrice(calculateQuoteTotals.totalListPriceDiscounted)}</span>
+                            </div>
+                            
+                            <div className="flex justify-between text-rose-700">
+                              <span>İndirim Payı (-%):</span>
+                              <span>- ₺ {formatPrice(calculateQuoteTotals.discountAmountDiscounted)}</span>
+                            </div>
+                            
+                            <div className="flex justify-between text-emerald-700">
+                              <span>İşçilik Payı (+):</span>
+                              <span>+ ₺ {formatPrice(calculateQuoteTotals.laborCost)}</span>
+                            </div>
+                            
+                            <div className="flex justify-between text-purple-700 font-extrabold border-t border-purple-200/60 pt-2 text-xs">
+                              <span>NET GELİŞ TOPLAMI:</span>
+                              <span>₺ {formatPrice(calculateQuoteTotals.totalNetPriceDiscounted)}</span>
+                            </div>
+                            
+                            <div className="flex justify-between text-emerald-800 font-black border-t border-purple-200/60 pt-1.5 text-xs select-none">
+                              <span>BRÜT KAZANÇ (KÂR):</span>
+                              <span>₺ {formatPrice(calculateQuoteTotals.totalNetPrice - calculateQuoteTotals.totalNetPriceDiscounted)}</span>
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                     </div>
@@ -5867,10 +6103,10 @@ function App() {
               </div>
 
               {/* Controls Panel & History (col-span-1) */}
-              <div className="lg:col-span-1 space-y-6">
+              <div className="lg:col-span-1 space-y-5">
 
                 {/* 2. Action Controls Panel */}
-                <Card className="border border-slate-200/80 rounded-3xl shadow-sm bg-white p-4.5 space-y-3.5">
+                <Card className="border-2 border-emerald-200 rounded-3xl shadow-lg bg-gradient-to-b from-emerald-50/80 to-white p-5 space-y-3.5">
                   
                   {/* Master Save Trigger */}
                   <Button
@@ -5898,7 +6134,8 @@ function App() {
                           // Auto save/update quote
                           const selectedProductData = getSelectedProductsData().map(p => ({
                             id: p.id,
-                            quantity: p.quantity || 1
+                            quantity: p.quantity || 1,
+                            custom_price: p.customPrice !== null && p.customPrice !== undefined ? parseFloat(p.customPrice) : null
                           }));
                           
                           const newQuoteData = {
@@ -5980,8 +6217,8 @@ function App() {
                 </Card>
 
                 {/* 3. Searchable Saved Quotes panel */}
-                <Card className="border border-slate-200/80 rounded-3xl shadow-sm bg-white">
-                  <CardHeader className="bg-slate-50/30 border-b pb-3">
+                <Card className="border-2 border-slate-200 rounded-3xl shadow-lg bg-gradient-to-b from-slate-50 to-white">
+                  <CardHeader className="bg-slate-100/60 border-b border-slate-200 pb-3 rounded-t-3xl">
                     <div className="flex justify-between items-center">
                       <CardTitle className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                         <History className="w-4 h-4 text-slate-500" />
@@ -6017,35 +6254,34 @@ function App() {
                         {filteredQuotes.map((quote) => {
                           const isActiveEditingThis = loadedQuote?.id === quote.id;
                           return (
-                            <div 
+                            <div
                               key={quote.id} 
-                              className={`p-3 border rounded-2xl transition-all shadow-3xs flex flex-col justify-between gap-2.5 ${
+                              className={`p-[18px] border rounded-2xl transition-all shadow-sm flex flex-col justify-between gap-3.5 ${
                                 isActiveEditingThis 
-                                  ? 'border-emerald-500 bg-emerald-50/20 ring-1 ring-emerald-500/20' 
-                                  : 'border-slate-100 hover:border-slate-200 hover:shadow-2xs bg-white'
+                                  ? 'border-emerald-500 bg-emerald-50/40 ring-2 ring-emerald-500/20 shadow-md'
+                                  : 'border-slate-200 bg-white ring-1 ring-slate-100/80 shadow-[0_8px_22px_rgba(15,23,42,0.07)] hover:border-emerald-200 hover:ring-emerald-100 hover:shadow-lg'
                               }`}
                             >
-                              <div className="flex justify-between items-start gap-2">
+                              <div className="flex justify-between items-start gap-3.5">
                                 <div className="min-w-0 flex-1">
-                                  <h5 className="font-bold text-slate-800 text-xs truncate leading-tight" title={quote.name}>
+                                  <h5 className="font-extrabold text-slate-900 text-[15px] truncate leading-snug" title={quote.name}>
                                     {quote.name}
                                   </h5>
-                                  <div className="flex items-center gap-1.5 mt-1 text-[9px] font-bold text-slate-400">
-                                    <span className="bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">
+                                  <div className="flex flex-wrap items-center gap-2 mt-2.5 text-xs font-bold text-slate-500">
+                                    <span className="bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-full ring-1 ring-emerald-100">
                                       {quote.products?.length || 0} Ürün
                                     </span>
-                                    <span>•</span>
-                                    <span>
+                                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">
                                       {new Date(quote.created_at).toLocaleDateString('tr-TR')}
                                     </span>
                                   </div>
                                 </div>
                                 <div className="text-right whitespace-nowrap">
-                                  <span className="font-black text-slate-900 text-xs">
+                                  <span className="font-black text-slate-950 text-base tabular-nums">
                                     ₺ {formatPrice(quote.total_net_price)}
                                   </span>
                                   {quote.discount_percentage > 0 && (
-                                    <div className="text-[9px] text-rose-500 font-bold mt-0.5">
+                                    <div className="text-[11px] text-rose-500 font-extrabold mt-1">
                                       %{quote.discount_percentage} İndirim
                                     </div>
                                   )}
@@ -6053,7 +6289,7 @@ function App() {
                               </div>
 
                               {/* Card Action Buttons (Compact text links style) */}
-                              <div className="flex items-center justify-between pt-2 border-t border-slate-50 text-[10px] font-bold">
+                              <div className="flex items-center justify-between gap-2 pt-3 border-t border-slate-100 text-[11px] font-bold">
                                 {/* Load / Edit */}
                                 <button
                                   type="button"
@@ -6061,9 +6297,22 @@ function App() {
                                     try {
                                       const productIds = new Map();
                                       const productData = new Map();
+                                      const customPrices = new Map();
                                       
                                       quote.products.forEach(p => {
                                         productIds.set(p.id, p.quantity || 1);
+                                        if (p.custom_price !== undefined && p.custom_price !== null) {
+                                          let loadedCustomPrice = parseFloat(p.custom_price);
+                                          const fullProduct = products.find(prod => prod.id === p.id);
+                                          if (fullProduct && fullProduct.currency && fullProduct.currency !== 'TRY') {
+                                            const rate = parseFloat(exchangeRates[fullProduct.currency]) || (fullProduct.currency === 'USD' ? 34.0 : 37.0);
+                                            // If the custom price is far larger than base list price, it was stored in TRY
+                                            if (loadedCustomPrice > (parseFloat(fullProduct.list_price) || 0) * 3) {
+                                              loadedCustomPrice = loadedCustomPrice / rate;
+                                            }
+                                          }
+                                          customPrices.set(p.id, loadedCustomPrice);
+                                        }
                                         const fullProduct = products.find(prod => prod.id === p.id);
                                         if (fullProduct) {
                                           productData.set(p.id, { ...fullProduct, quantity: p.quantity || 1 });
@@ -6074,6 +6323,7 @@ function App() {
                                       
                                       setSelectedProducts(new Map(productIds));
                                       setSelectedProductsData(new Map(productData));
+                                      setSelectedProductsCustomPrices(customPrices);
                                       setQuoteDiscount(quote.discount_percentage);
                                       setQuoteLaborCost(quote.labor_cost || 0);
                                       setQuoteNotes(quote.notes || '');
@@ -6085,7 +6335,7 @@ function App() {
                                       toast.error('Teklif yükleme başarısız oldu');
                                     }
                                   }}
-                                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] font-extrabold transition-all duration-150 ${
+                                  className={`flex flex-1 items-center justify-center gap-1 px-3 py-2 rounded-xl border text-[11px] font-extrabold transition-all duration-150 ${
                                     isActiveEditingThis
                                       ? 'bg-emerald-600 border-emerald-600 text-white shadow-xs'
                                       : 'bg-emerald-50/50 border-emerald-200/60 text-emerald-700 hover:bg-emerald-600 hover:text-white hover:border-emerald-600 hover:shadow-xs'
@@ -6108,7 +6358,7 @@ function App() {
                                     document.body.removeChild(link);
                                     toast.success('PDF indiriliyor...');
                                   }}
-                                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border bg-blue-50/50 border-blue-200/60 text-blue-700 hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all duration-150 text-[11px] font-extrabold hover:shadow-xs"
+                                  className="flex flex-1 items-center justify-center gap-1 px-3 py-2 rounded-xl border bg-blue-50/50 border-blue-200/60 text-blue-700 hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all duration-150 text-[11px] font-extrabold hover:shadow-xs"
                                 >
                                   <Download className="w-3.5 h-3.5" />
                                   PDF İndir
@@ -6135,7 +6385,7 @@ function App() {
                                       }
                                     }
                                   }}
-                                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border bg-rose-50/50 border-rose-200/60 text-rose-600 hover:bg-rose-600 hover:text-white hover:border-rose-600 transition-all duration-150 text-[11px] font-extrabold hover:shadow-xs"
+                                  className="flex flex-1 items-center justify-center gap-1 px-3 py-2 rounded-xl border bg-rose-50/50 border-rose-200/60 text-rose-600 hover:bg-rose-600 hover:text-white hover:border-rose-600 transition-all duration-150 text-[11px] font-extrabold hover:shadow-xs"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
                                   Sil

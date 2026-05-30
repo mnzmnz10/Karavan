@@ -2229,11 +2229,15 @@ async def create_quote(quote: QuoteCreate):
         
         # Create product-quantity mapping
         product_quantities = {p["id"]: p.get("quantity", 1) for p in quote.products}
+        product_custom_prices = {p["id"]: p.get("custom_price") for p in quote.products}
         
         # Calculate totals
         total_list_price = 0
         total_discounted_price = 0
         processed_products = []
+        
+        # Fetch current exchange rates
+        exchange_rates = await currency_service.get_exchange_rates()
         
         for product in products:
             # Get company info
@@ -2242,10 +2246,17 @@ async def create_quote(quote: QuoteCreate):
             # Get quantity for this product
             quantity = product_quantities.get(product["id"], 1)
             
-            list_price_try = float(product.get("list_price_try", 0))
-            # PDF için özel fiyat mantığı: özel fiyat varsa onu, yoksa liste fiyatını kullan
-            # İndirimli fiyat sadece görüntüleme amaçlı
-            discounted_price_try = float(product.get("discounted_price_try", 0)) if product.get("discounted_price_try") else list_price_try
+            # Özel fiyat kontrolü
+            custom_price = product_custom_prices.get(product["id"])
+            currency = product.get("currency", "TRY")
+            if custom_price is not None:
+                custom_price = float(custom_price)
+                rate = float(exchange_rates.get(currency, 1)) if currency != 'TRY' else 1.0
+                list_price_try = custom_price * rate
+                discounted_price_try = custom_price * rate
+            else:
+                list_price_try = float(product.get("list_price_try", 0))
+                discounted_price_try = float(product.get("discounted_price_try", 0)) if product.get("discounted_price_try") else list_price_try
             
             # Calculate totals with quantity - SADECE LİSTE FİYATI KULLAN
             total_list_price += list_price_try * quantity
@@ -2261,7 +2272,8 @@ async def create_quote(quote: QuoteCreate):
                 "discounted_price": product.get("discounted_price"),
                 "discounted_price_try": discounted_price_try,
                 "currency": product["currency"],
-                "quantity": quantity
+                "quantity": quantity,
+                "custom_price": custom_price
             })
         
         # Apply quote discount
@@ -2377,23 +2389,22 @@ async def update_quote(quote_id: str, quote_update: Dict[str, Any]):
         
         # Ürün listesi güncellenirse - YENİ EKLENDİ
         if "products" in quote_update:
-            print("🔄 Ürün listesi güncelleniyor...")
+            logger.info("Quote product list is being updated...")
             products_data = quote_update["products"]
-            print(f"📦 Frontend'den gelen products_data: {products_data}")
             
             # Ürün bilgilerini veritabanından al
             product_ids = [p["id"] for p in products_data]
-            print(f"📦 Aranacak product_ids: {product_ids}")
-            
             db_products = await db.products.find(
                 {"id": {"$in": product_ids}}
             ).to_list(length=None)
-            print(f"📦 Veritabanından bulunan ürün sayısı: {len(db_products)}")
             
             # Her ürün için detayları ekle
             processed_products = []
             total_list_price = 0
             total_discounted_price = 0
+            
+            # Fetch current exchange rates
+            exchange_rates = await currency_service.get_exchange_rates()
             
             for product_data in products_data:
                 product_id = product_data["id"]
@@ -2402,27 +2413,40 @@ async def update_quote(quote_id: str, quote_update: Dict[str, Any]):
                 # Ürün bilgisini bul
                 product = next((p for p in db_products if p["id"] == product_id), None)
                 if product:
+                    # Get company info
+                    company = await db.companies.find_one({"id": product["company_id"]})
+                    
                     # Özel fiyat kontrolü
                     custom_price = product_data.get("custom_price")
-                    list_price = custom_price if custom_price else product.get("list_price_try", 0)
-                    discounted_price = product.get("discounted_price_try", list_price)
+                    currency = product.get("currency", "TRY")
+                    if custom_price is not None:
+                        custom_price = float(custom_price)
+                        rate = float(exchange_rates.get(currency, 1)) if currency != 'TRY' else 1.0
+                        list_price_try = custom_price * rate
+                        discounted_price_try = custom_price * rate
+                    else:
+                        list_price_try = float(product.get("list_price_try", 0))
+                        discounted_price_try = float(product.get("discounted_price_try", 0)) if product.get("discounted_price_try") else list_price_try
                     
-                    total_list_price += list_price * quantity
-                    total_discounted_price += discounted_price * quantity
+                    # Calculate totals with quantity - SADECE LİSTE FİYATI KULLAN
+                    total_list_price += list_price_try * quantity
+                    total_discounted_price += list_price_try * quantity  # PDF için liste fiyatı kullan
                     
                     processed_products.append({
-                        "id": product_id,
-                        "name": product.get("name", ""),
+                        "id": product["id"],
+                        "name": product["name"],
+                        "description": product.get("description"),
+                        "company_name": company["name"] if company else "Unknown",
+                        "list_price": product["list_price"],
+                        "list_price_try": list_price_try,
+                        "discounted_price": product.get("discounted_price"),
+                        "discounted_price_try": discounted_price_try,
+                        "currency": product["currency"],
                         "quantity": quantity,
-                        "list_price_try": list_price,
-                        "discounted_price_try": discounted_price,
                         "custom_price": custom_price
                     })
                 else:
-                    print(f"⚠️ Ürün bulunamadı: {product_id}")
-            
-            print(f"✅ İşlenen ürün sayısı: {len(processed_products)}")
-            print(f"💰 Toplam liste fiyatı: {total_list_price}")
+                    logger.warning(f"Product not found during quote update: {product_id}")
             
             # Güncellenen ürün listesini ve toplamları ekle
             update_data["products"] = processed_products
@@ -2973,22 +2997,23 @@ class PDFQuoteGenerator:
         return footer_content
     
     def _format_price_modern(self, price):
-        """Modern Türkçe fiyat formatla"""
+        """Modern Türkçe fiyat formatla - küsüratsız"""
         try:
             if price is None:
-                return "0,00"
+                return "0"
             
             price_float = float(price)
-            if price_float == 0:
-                return "0,00"
+            price_rounded = round(price_float)
+            if price_rounded == 0:
+                return "0"
                 
-            # Türkçe format: nokta binlik ayırıcı, virgül ondalık ayırıcı
-            formatted = f"{price_float:,.2f}"
-            # Binlik ayırıcıyı nokta, ondalık ayırıcıyı virgül yap
-            formatted = formatted.replace(',', 'TEMP').replace('.', ',').replace('TEMP', '.')
+            # Türkçe format: nokta binlik ayırıcı
+            formatted = f"{price_rounded:,}"
+            # Binlik ayırıcıyı nokta yap
+            formatted = formatted.replace(',', '.')
             return formatted
         except (ValueError, TypeError):
-            return "0,00"
+            return "0"
     
     def _format_price(self, price):
         """Eski format - geriye uyumluluk için"""
@@ -3013,12 +3038,16 @@ class PDFPackageGenerator(PDFQuoteGenerator):
         )
 
     def _format_price_modern(self, price):
-        """Modern format ile fiyat gösterimi"""
-        if price is None or price == 0:
-            return "0,00"
+        """Modern format ile fiyat gösterimi - küsüratsız"""
+        if price is None:
+            return "0"
         
-        # Format price with Turkish decimal comma
-        formatted = f"{float(price):,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+        price_float = float(price)
+        price_rounded = round(price_float)
+        if price_rounded == 0:
+            return "0"
+            
+        formatted = f"{price_rounded:,}".replace(',', '.')
         return formatted
 
     def generate_package_pdf(self, package_data, products, include_prices=True, categories=None, category_groups=None):

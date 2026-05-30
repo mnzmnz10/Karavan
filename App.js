@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, memo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react';
 import './App.css';
 import axios from 'axios';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card';
@@ -10,7 +10,7 @@ import { Badge } from './components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from './components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select';
-import { Trash2, Upload, RefreshCw, Plus, TrendingUp, Building2, Package, DollarSign, Edit, Save, X, FileText, Check, Archive, Download, Wrench, Eye, EyeOff, AlertTriangle, Tags, Copy, Pin, StickyNote, Users, Star, Search, Phone, Mail, MapPin, Calculator, Battery, Loader2, ScanSearch } from 'lucide-react';
+import { Trash2, Upload, RefreshCw, Plus, TrendingUp, Building2, Package, DollarSign, Edit, Save, X, FileText, Check, Archive, Download, Wrench, Eye, EyeOff, AlertTriangle, Tags, Copy, Pin, StickyNote, Users, Star, Search, Phone, Mail, MapPin, Calculator, Battery, Loader2, ScanSearch, LogOut, PlusCircle, MinusCircle, History, Settings } from 'lucide-react';
 import { toast } from 'sonner';
 import { Toaster } from './components/ui/sonner';
 import LazyImage from './components/LazyImage';
@@ -394,7 +394,7 @@ function BatteryTestSection() {
           <Button
             onClick={analyzeAll}
             disabled={analyzingAll || batteries.every(b => b.files.length === 0)}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white h-12 text-base"
+            className="bg-indigo-500 hover:bg-indigo-600 text-white h-12 text-base"
           >
             {analyzingAll ? (
               <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> Görseller Analiz Ediliyor...</>
@@ -518,6 +518,7 @@ function App() {
   const [loadedQuote, setLoadedQuote] = useState(null); // Yüklenen teklif bilgisi
   const [showDiscountedPrices, setShowDiscountedPrices] = useState(false); // İndirimli fiyat görünürlüğü - Varsayılan KAPALI
   const [showQuoteDiscountedPrices, setShowQuoteDiscountedPrices] = useState(false); // Teklif indirimli fiyat görünürlüğü - Varsayılan KAPALI
+  const [selectedProductsCustomPrices, setSelectedProductsCustomPrices] = useState(new Map()); // Map<productId, customPrice>
   const [quoteSubTab, setQuoteSubTab] = useState('create'); // Teklif alt sekmesi: 'create' veya 'list'
   
   // Hızlı ürün ekleme için state'ler
@@ -555,6 +556,9 @@ function App() {
   const [quotes, setQuotes] = useState([]);
   const [selectedQuote, setSelectedQuote] = useState(null);
   const [quoteSearchTerm, setQuoteSearchTerm] = useState('');
+  const [quoteProductSearch, setQuoteProductSearch] = useState('');
+  const [quoteSearchDropdownPos, setQuoteSearchDropdownPos] = useState(null);
+  const quoteSearchInputRef = useRef(null);
   const [filteredQuotes, setFilteredQuotes] = useState([]);
   
   // Toplu işlemler için state'ler
@@ -586,12 +590,7 @@ function App() {
   const [newCurrency, setNewCurrency] = useState('USD');
   const [changingCurrency, setChangingCurrency] = useState(false);
 
-  // İnternet fiyat arama state'leri
-  const [marketPriceModal, setMarketPriceModal] = useState(false);
-  const [marketPriceProduct, setMarketPriceProduct] = useState(null);
-  const [marketPriceResult, setMarketPriceResult] = useState(null);
-  const [marketPriceLoading, setMarketPriceLoading] = useState(false);
-  const [marketPriceCache, setMarketPriceCache] = useState({}); // { productId: { result, timestamp } }
+
   const [newProductForm, setNewProductForm] = useState({
     name: '',
     company_id: '',
@@ -643,43 +642,7 @@ function App() {
   };
 
   // Category Groups functions
-  // İnternet fiyat arama - Gemini AI
-  const searchMarketPrice = async (product) => {
-    // Cache kontrolü - 30 dakika geçerliliği var
-    const cached = marketPriceCache[product.id];
-    if (cached && (Date.now() - cached.timestamp) < 30 * 60 * 1000) {
-      setMarketPriceProduct(product);
-      setMarketPriceResult(cached.result);
-      setMarketPriceModal(true);
-      return;
-    }
 
-    setMarketPriceProduct(product);
-    setMarketPriceResult(null);
-    setMarketPriceLoading(true);
-    setMarketPriceModal(true);
-
-    try {
-      const response = await axios.post(`${API}/market-price-search`, {
-        product_name: product.name,
-        brand: product.brand || '',
-      }, { withCredentials: true });
-
-      const result = response.data;
-      setMarketPriceResult(result);
-
-      // Cache'e kaydet
-      setMarketPriceCache(prev => ({
-        ...prev,
-        [product.id]: { result, timestamp: Date.now() }
-      }));
-    } catch (error) {
-      console.error('Market price search error:', error);
-      setMarketPriceResult({ error: 'Fiyat araması başarısız oldu.' });
-    } finally {
-      setMarketPriceLoading(false);
-    }
-  };
 
   const loadCategoryGroups = async () => {
     try {
@@ -1260,21 +1223,13 @@ function App() {
       if (forceUpdate) {
         // Force update from API
         response = await axios.post(`${API}/exchange-rates/update`);
-        const data = response.data || {};
-        // Always reflect whatever rates the backend returned (live or fallback)
-        if (data.rates) {
-          setExchangeRates(data.rates);
-        }
-        if (showToast) {
-          // Show the backend's real message so the user can tell apart
-          // "rates didn't move (market closed)" from an actual failure.
-          if (data.success === false) {
-            toast.error(data.message || 'Döviz kurları güncellenemedi');
-          } else {
-            toast.success(data.message || 'Döviz kurları güncellendi');
+        if (response.data.success) {
+          setExchangeRates(response.data.rates);
+          if (showToast) {
+            toast.success(response.data.message);
           }
+          return true;
         }
-        return data.success !== false;
       } else {
         // Regular load
         response = await axios.get(`${API}/exchange-rates`);
@@ -1398,12 +1353,13 @@ function App() {
     try {
       setLoading(true);
       
-      // Döviz kurlarını güncelle (loadExchangeRates kendi bilgilendirici toast'ını gösterir)
+      // Döviz kurlarını güncelle
       const exchangeSuccess = await loadExchangeRates(true);
-
+      
       if (exchangeSuccess) {
         // Ürünleri de yeniden yükle (güncel kurlarla fiyat hesaplaması için)
         await loadProducts(1, true);
+        toast.success('Döviz kurları başarıyla güncellendi!');
       }
     } catch (error) {
       console.error('Error refreshing exchange rates:', error);
@@ -1877,6 +1833,7 @@ function App() {
   const clearSelection = () => {
     setSelectedProducts(new Map());
     setSelectedProductsData(new Map());
+    setSelectedProductsCustomPrices(new Map());
     setQuoteDiscount(0);
     setQuoteLaborCost(0); // İşçilik maliyetini de temizle
     setQuoteNotes(''); // Teklif notlarını da temizle
@@ -1895,7 +1852,8 @@ function App() {
 
       const selectedProductData = getSelectedProductsData().map(p => ({
         id: p.id,
-        quantity: p.quantity || 1
+        quantity: p.quantity || 1,
+        custom_price: p.customPrice !== null && p.customPrice !== undefined ? parseFloat(p.customPrice) : null
       }));
 
       console.log('💾 Teklif Kaydediliyor/Güncelleniyor:');
@@ -2068,7 +2026,8 @@ function App() {
 
       const selectedProductData = getSelectedProductsData().map(p => ({
         id: p.id,
-        quantity: p.quantity || 1
+        quantity: p.quantity || 1,
+        custom_price: p.customPrice !== null && p.customPrice !== undefined ? parseFloat(p.customPrice) : null
       }));
 
       console.log('🔍 Quick quote creation data:');
@@ -2083,7 +2042,7 @@ function App() {
         discount_percentage: 0,
         labor_cost: 0,
         products: selectedProductData,
-        notes: quickQuoteNotes.trim() || `${selectedProductData.length} ürün ile oluşturulan teklif`
+        notes: quickQuoteNotes.trim() || ''
       };
 
       const response = await fetch(`${API}/quotes`, {
@@ -2207,9 +2166,15 @@ function App() {
   const getSelectedProductsData = useCallback(() => {
     return Array.from(selectedProducts.entries()).map(([productId, quantity]) => {
       const product = selectedProductsData.get(productId);
-      return product ? { ...product, quantity } : null;
+      if (!product) return null;
+      const customPrice = selectedProductsCustomPrices.get(productId);
+      return {
+        ...product,
+        quantity,
+        customPrice: customPrice !== undefined && customPrice !== null ? customPrice : null
+      };
     }).filter(Boolean);
-  }, [selectedProducts, selectedProductsData]);
+  }, [selectedProducts, selectedProductsData, selectedProductsCustomPrices]);
 
   // Function to group products by category groups
   const getProductsByGroups = (selectedProducts) => {
@@ -2873,37 +2838,87 @@ function App() {
   const calculateQuoteTotals = useMemo(() => {
     const selectedProductsData = getSelectedProductsData();
     
-    // Hangi fiyatı kullanacağımızı belirle (indirimli fiyat gösterim durumuna göre)
-    const totalListPrice = selectedProductsData.reduce((sum, p) => {
-      let price = 0;
-      if (showQuoteDiscountedPrices && p.discounted_price_try) {
-        // İndirimli fiyat gösteriliyorsa ve indirimli fiyat varsa onu kullan
-        price = parseFloat(p.discounted_price_try) || 0;
-      } else {
-        // Yoksa liste fiyatını kullan
-        price = parseFloat(p.list_price_try) || 0;
-      }
+    let totalUSD = 0;
+    let totalUSDDiscounted = 0;
+    let totalEUR = 0;
+    let totalEURDiscounted = 0;
+    let totalTRY = 0;
+    let totalTRYDiscounted = 0;
+    
+    selectedProductsData.forEach(p => {
+      const currency = p.currency || 'TRY';
       const quantity = p.quantity || 1;
-      return sum + (price * quantity);
-    }, 0);
+      const customPrice = selectedProductsCustomPrices.get(p.id);
+      
+      // Liste/Özel Fiyat belirlenmesi
+      const unitPrice = customPrice !== undefined && customPrice !== null ? parseFloat(customPrice) : (parseFloat(p.list_price) || 0);
+      
+      // Maliyet (Geliş) Fiyatı belirlenmesi
+      const discountedUnitPrice = parseFloat(p.discounted_price) || parseFloat(p.list_price) || 0;
+      
+      if (currency === 'USD') {
+        totalUSD += unitPrice * quantity;
+        totalUSDDiscounted += discountedUnitPrice * quantity;
+      } else if (currency === 'EUR') {
+        totalEUR += unitPrice * quantity;
+        totalEURDiscounted += discountedUnitPrice * quantity;
+      } else {
+        totalTRY += unitPrice * quantity;
+        totalTRYDiscounted += discountedUnitPrice * quantity;
+      }
+    });
+    
+    const usdRate = parseFloat(exchangeRates.USD) || 34.0;
+    const eurRate = parseFloat(exchangeRates.EUR) || 37.0;
+    
+    const usdInTry = totalUSD * usdRate;
+    const usdDiscountedInTry = totalUSDDiscounted * usdRate;
+    const eurInTry = totalEUR * eurRate;
+    const eurDiscountedInTry = totalEURDiscounted * eurRate;
+    
+    const eurInUsd = totalEUR * (eurRate / usdRate);
+    const eurDiscountedInUsd = totalEURDiscounted * (eurRate / usdRate);
+    
+    const totalListPrice = totalTRY + usdInTry + eurInTry;
+    const totalListPriceDiscounted = totalTRYDiscounted + usdDiscountedInTry + eurDiscountedInTry;
     
     const discountAmount = totalListPrice * (parseFloat(quoteDiscount) || 0) / 100;
+    const discountAmountDiscounted = totalListPriceDiscounted * (parseFloat(quoteDiscount) || 0) / 100;
     const laborCost = parseFloat(quoteLaborCost) || 0;
     const totalNetPrice = totalListPrice - discountAmount + laborCost;
+    const totalNetPriceDiscounted = totalListPriceDiscounted - discountAmountDiscounted + laborCost;
     
     // Toplam ürün adedi hesapla
     const totalQuantity = selectedProductsData.reduce((sum, p) => sum + (p.quantity || 1), 0);
     
     return {
+      totalUSD: isNaN(totalUSD) ? 0 : totalUSD,
+      totalUSDDiscounted: isNaN(totalUSDDiscounted) ? 0 : totalUSDDiscounted,
+      usdInTry: isNaN(usdInTry) ? 0 : usdInTry,
+      usdDiscountedInTry: isNaN(usdDiscountedInTry) ? 0 : usdDiscountedInTry,
+      
+      totalEUR: isNaN(totalEUR) ? 0 : totalEUR,
+      totalEURDiscounted: isNaN(totalEURDiscounted) ? 0 : totalEURDiscounted,
+      eurInTry: isNaN(eurInTry) ? 0 : eurInTry,
+      eurDiscountedInTry: isNaN(eurDiscountedInTry) ? 0 : eurDiscountedInTry,
+      eurInUsd: isNaN(eurInUsd) ? 0 : eurInUsd,
+      eurDiscountedInUsd: isNaN(eurDiscountedInUsd) ? 0 : eurDiscountedInUsd,
+      
+      totalTRY: isNaN(totalTRY) ? 0 : totalTRY,
+      totalTRYDiscounted: isNaN(totalTRYDiscounted) ? 0 : totalTRYDiscounted,
+      
       totalListPrice: isNaN(totalListPrice) ? 0 : totalListPrice,
+      totalListPriceDiscounted: isNaN(totalListPriceDiscounted) ? 0 : totalListPriceDiscounted,
       discountAmount: isNaN(discountAmount) ? 0 : discountAmount,
+      discountAmountDiscounted: isNaN(discountAmountDiscounted) ? 0 : discountAmountDiscounted,
       laborCost: isNaN(laborCost) ? 0 : laborCost,
       totalNetPrice: isNaN(totalNetPrice) ? 0 : totalNetPrice,
+      totalNetPriceDiscounted: isNaN(totalNetPriceDiscounted) ? 0 : totalNetPriceDiscounted,
       totalWithLaborAndDiscount: isNaN(totalNetPrice) ? 0 : totalNetPrice,
       productCount: selectedProductsData.length,
       totalQuantity: totalQuantity
     };
-  }, [selectedProducts, selectedProductsData, showQuoteDiscountedPrices, quoteDiscount, quoteLaborCost]);
+  }, [selectedProducts, selectedProductsData, showQuoteDiscountedPrices, quoteDiscount, quoteLaborCost, selectedProductsCustomPrices, exchangeRates]);
 
   // Package totals calculation (similar to quote totals)
   const calculatePackageTotals = useMemo(() => {
@@ -3171,34 +3186,26 @@ function App() {
   };
 
   const StatsCard = ({ title, value, icon: Icon, description }) => (
-    <Card className="relative overflow-hidden rounded-2xl border border-emerald-200/70 bg-gradient-to-br from-white via-emerald-50 to-emerald-100 shadow-[0_18px_40px_-24px_rgba(5,91,80,0.45)]">
+    <Card className="bg-gradient-to-br from-emerald-50 to-teal-50 border-emerald-200">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="font-display text-sm font-semibold text-emerald-800">{title}</CardTitle>
-        <span className="grid h-10 w-10 place-items-center rounded-xl bg-white/70 text-emerald-600 shadow-sm">
-          <Icon className="h-5 w-5" />
-        </span>
+        <CardTitle className="text-sm font-medium text-emerald-800">{title}</CardTitle>
+        <Icon className="h-4 w-4 text-emerald-600" />
       </CardHeader>
       <CardContent>
-        <div className="font-display tnum text-3xl font-extrabold text-emerald-900">{value}</div>
-        <p className="text-xs text-emerald-700/70 mt-1">{description}</p>
+        <div className="text-2xl font-bold text-emerald-900">{value}</div>
+        <p className="text-xs text-emerald-600 mt-1">{description}</p>
       </CardContent>
     </Card>
   );
 
   return (
-    <div
-      className="min-h-screen"
-      style={{
-        background:
-          'radial-gradient(1100px 600px at 8% -8%, #d1fae5 0%, transparent 55%), radial-gradient(900px 500px at 100% 0%, #ccfbf1 0%, transparent 50%), linear-gradient(180deg, #f3faf7 0%, #eef6f3 100%)'
-      }}
-    >
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-emerald-25 to-teal-50">
       {/* Authentication Loading */}
       {authLoading ? (
-        <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-emerald-50 via-white to-teal-50">
+        <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50">
           <div className="text-center">
             <div className="relative">
-              <div className="w-20 h-20 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin mx-auto mb-6"></div>
+              <div className="w-20 h-20 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-6"></div>
               <img 
                 src="/logo.png" 
                 alt="Logo" 
@@ -3270,187 +3277,149 @@ function App() {
           </Card>
         </div>
       ) : (
-        /* Main Application */
-        <div className="w-[80vw] mx-auto py-4">
-          {/* Header */}
-          <div className="mb-8">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-4">
-                <div className="grid place-items-center w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-100 to-amber-200 ring-1 ring-amber-300/50 shadow-[0_14px_30px_-12px_rgba(245,158,11,0.55)]">
-                  <img
-                    src="/logo.png"
-                    alt="Çorlu Karavan Logo"
-                    className="w-12 h-12 object-contain"
-                  />
-                </div>
-                <div className="flex-1">
-                  <h1 className="font-display text-4xl font-extrabold leading-tight bg-gradient-to-r from-emerald-800 via-emerald-700 to-emerald-500 bg-clip-text text-transparent">
-                    Çorlu Karavan
-                  </h1>
-                  <div className="flex items-center gap-3">
-                    <p className="text-lg text-slate-600 font-medium">Fiyat Takip Sistemi</p>
-                    <span className="text-xs text-slate-400 font-light">made by Mehmet Necdet</span>
+        /* Main Application (Sidebar Layout) */
+        <div className="w-full min-h-screen">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex min-h-screen bg-transparent">
+            {/* 1. Left Sidebar Navigation */}
+            <div className="w-72 bg-white/80 backdrop-blur-md border-r border-slate-200/80 p-6 flex flex-col justify-between shrink-0 shadow-lg h-screen sticky top-0 z-20">
+              <div className="space-y-6 flex flex-col overflow-y-auto no-scrollbar">
+                {/* Logo & Brand Info */}
+                <div className="flex items-center gap-4">
+                  <div className="flex-shrink-0">
+                    <img 
+                      src="/logo.png" 
+                      alt="Çorlu Karavan Logo" 
+                      className="w-14 h-14 object-contain"
+                    />
+                  </div>
+                  <div>
+                    <h1 className="font-extrabold text-xl leading-none text-slate-800 tracking-tight">
+                      Çorlu Karavan
+                    </h1>
+                    <p className="text-[10px] text-slate-500 font-semibold mt-1">Fiyat Takip Sistemi</p>
                   </div>
                 </div>
-              </div>
-              <Button 
-                variant="outline"
-                onClick={handleLogout}
-                className="text-slate-600 hover:text-slate-800"
-              >
-                Çıkış Yap
-              </Button>
-            </div>
-          </div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-          {loading ? (
-            // Loading skeletons
-            <>
-              {[1, 2, 3].map((i) => (
-                <Card key={i} className="animate-pulse">
-                  <CardHeader>
-                    <div className="h-4 bg-slate-200 rounded w-1/2 mb-2"></div>
-                    <div className="h-8 bg-slate-300 rounded w-1/3"></div>
-                  </CardHeader>
-                </Card>
-              ))}
-            </>
-          ) : (
-            <>
-              <StatsCard
-                title="Toplam Firma"
-                value={stats.totalCompanies}
-                icon={Building2}
-                description="Kayıtlı tedarikçi sayısı"
-              />
-              <StatsCard
-                title="Toplam Ürün"
-                value={stats.totalProducts}
-                icon={Package}
-                description="Sisteme yüklenmiş ürün"
-              />
-              <Card className="relative overflow-hidden rounded-2xl border border-amber-200/70 bg-gradient-to-br from-white via-amber-50 to-amber-100 shadow-[0_18px_40px_-24px_rgba(245,158,11,0.4)]">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="font-display text-sm font-semibold text-amber-800">Döviz Kurları</CardTitle>
-                  <span className="grid h-10 w-10 place-items-center rounded-xl bg-white/70 text-amber-600 shadow-sm">
-                    <DollarSign className="h-5 w-5" />
-                  </span>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-1">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-amber-700/80">USD/₺</span>
-                      <span className="font-display tnum text-xl font-extrabold text-amber-900">
+                {/* Unified Currency Rates Panel (Always Static & Visible at Top) */}
+                <div className="bg-slate-50/80 border border-slate-100 p-3.5 rounded-2xl space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider px-1">Döviz Kurları</p>
+                    {loading && <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-600" />}
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-2">
+                    {/* USD / TRY Card */}
+                    <div className="flex flex-col bg-amber-50/80 border border-amber-200/60 p-2 rounded-xl text-amber-900 shadow-2xs">
+                      <span className="text-[9px] uppercase font-bold text-amber-600 tracking-wider">USD/TRY</span>
+                      <span className="font-extrabold text-sm tracking-tight mt-0.5">
                         {exchangeRates.USD ? formatExchangeRate(exchangeRates.USD) : '---'}
                       </span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-amber-700/80">EUR/₺</span>
-                      <span className="font-display tnum text-xl font-extrabold text-amber-900">
+                    
+                    {/* EUR / TRY Card */}
+                    <div className="flex flex-col bg-emerald-50/80 border border-emerald-200/60 p-2 rounded-xl text-emerald-900 shadow-2xs">
+                      <span className="text-[9px] uppercase font-bold text-emerald-600 tracking-wider">EUR/TRY</span>
+                      <span className="font-extrabold text-sm tracking-tight mt-0.5">
                         {exchangeRates.EUR ? formatExchangeRate(exchangeRates.EUR) : '---'}
                       </span>
                     </div>
                   </div>
-                  <p className="text-xs text-emerald-600 mt-1 font-medium">● Güncel döviz kurları</p>
-                </CardContent>
-              </Card>
-            </>
-          )}
-        </div>
+                  
+                  {/* Kurları Güncelle Button */}
+                  <Button 
+                    onClick={refreshPrices} 
+                    disabled={loading}
+                    className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white h-9 px-4 text-xs font-extrabold shadow-2xs rounded-xl flex items-center justify-center gap-1.5 border border-emerald-500/10 active:scale-95 transition-all duration-200"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                    Kurları Güncelle
+                  </Button>
+                </div>
 
-        {/* Action Buttons */}
-        <div className="flex flex-wrap gap-4 mb-8">
-          <Button 
-            onClick={refreshPrices} 
-            disabled={loading}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white"
-          >
-            <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-            Kurları Güncelle
-          </Button>
-        </div>
+                {/* Navigation Tab List (Vertical) */}
+                <div className="space-y-2">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2">Menü</p>
+                  <TabsList className="flex flex-col gap-1.5 w-full h-auto p-0 bg-transparent border-0 shadow-none">
+                    <TabsTrigger 
+                      value="products" 
+                      className="flex items-center justify-start gap-3 w-full h-11 px-4 text-sm font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100 rounded-xl data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
+                    >
+                      <Package className="w-4 h-4" />
+                      <span>Ürünler</span>
+                    </TabsTrigger>
+                    
+                    <TabsTrigger 
+                      value="quotes" 
+                      className="flex items-center justify-start gap-3 w-full h-11 px-4 text-sm font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100 rounded-xl data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
+                    >
+                      <FileText className="w-4 h-4" />
+                      <span className="flex-1 text-left">Teklifler</span>
+                      {selectedProducts.size > 0 && (
+                        <Badge className="ml-auto bg-amber-500 hover:bg-amber-600 text-white text-[10px] px-1.5 py-0.5 font-bold">
+                          {selectedProducts.size}
+                        </Badge>
+                      )}
+                    </TabsTrigger>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 h-auto sm:h-16 p-1.5 bg-white/70 border border-emerald-100 rounded-2xl shadow-sm">
-            {/* Unified tab style: neutral inactive (slate), single emerald brand accent when active */}
-            <TabsTrigger
-              value="products"
-              className="h-12 sm:h-14 text-sm sm:text-base font-medium text-slate-600 transition-all duration-200 hover:bg-slate-200/70 data-[state=active]:bg-gradient-to-br data-[state=active]:from-emerald-500 data-[state=active]:to-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-[0_8px_18px_-8px_rgba(5,150,105,0.7)] rounded-lg"
-            >
-              <div className="flex items-center gap-1 sm:gap-2">
-                <Package className="w-4 h-4 sm:w-5 sm:h-5" />
-                <span className="hidden sm:inline">Ürünler</span>
-                <span className="sm:hidden">Ürün</span>
+                    <TabsTrigger 
+                      value="packages" 
+                      className="flex items-center justify-start gap-3 w-full h-11 px-4 text-sm font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100 rounded-xl data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
+                    >
+                      <Package className="w-4 h-4" />
+                      <span>Paketler</span>
+                    </TabsTrigger>
+
+                    <TabsTrigger 
+                      value="companies" 
+                      className="flex items-center justify-start gap-3 w-full h-11 px-4 text-sm font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100 rounded-xl data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
+                    >
+                      <Building2 className="w-4 h-4" />
+                      <span>Firmalar</span>
+                    </TabsTrigger>
+
+                    <TabsTrigger 
+                      value="categories" 
+                      className="flex items-center justify-start gap-3 w-full h-11 px-4 text-sm font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100 rounded-xl data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
+                    >
+                      <Tags className="w-4 h-4" />
+                      <span>Kategoriler</span>
+                    </TabsTrigger>
+
+                    <TabsTrigger 
+                      value="upload" 
+                      className="flex items-center justify-start gap-3 w-full h-11 px-4 text-sm font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100 rounded-xl data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
+                    >
+                      <Upload className="w-4 h-4" />
+                      <span>Excel Yükle</span>
+                    </TabsTrigger>
+
+                    <TabsTrigger 
+                      value="battery-test" 
+                      className="flex items-center justify-start gap-3 w-full h-11 px-4 text-sm font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100 rounded-xl data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
+                    >
+                      <Battery className="w-4 h-4" />
+                      <span>Akü Test</span>
+                    </TabsTrigger>
+                  </TabsList>
+                </div>
               </div>
-            </TabsTrigger>
-            <TabsTrigger
-              value="quotes"
-              className="h-12 sm:h-14 text-sm sm:text-base font-medium text-slate-600 transition-all duration-200 hover:bg-slate-200/70 data-[state=active]:bg-gradient-to-br data-[state=active]:from-emerald-500 data-[state=active]:to-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-[0_8px_18px_-8px_rgba(5,150,105,0.7)] rounded-lg"
-            >
-              <div className="flex items-center gap-1 sm:gap-2">
-                <FileText className="w-4 h-4 sm:w-5 sm:h-5" />
-                <span className="hidden sm:inline">Teklifler</span>
-                <span className="sm:hidden">Teklif</span>
-                {selectedProducts.size > 0 && (
-                  <Badge variant="secondary" className="ml-1 bg-white text-emerald-700">
-                    {selectedProducts.size}
-                  </Badge>
-                )}
+
+              {/* Bottom section: Logout */}
+              <div className="pt-4 border-t border-slate-100">
+                <Button 
+                  variant="outline"
+                  onClick={handleLogout}
+                  className="w-full text-slate-600 hover:text-slate-800 hover:bg-slate-100 border-slate-200 h-10 px-4 text-sm font-semibold rounded-xl flex items-center justify-center gap-2 shadow-2xs"
+                >
+                  <LogOut className="w-4 h-4" />
+                  Çıkış Yap
+                </Button>
               </div>
-            </TabsTrigger>
-            <TabsTrigger
-              value="packages"
-              className="h-12 sm:h-14 text-sm sm:text-base font-medium text-slate-600 transition-all duration-200 hover:bg-slate-200/70 data-[state=active]:bg-gradient-to-br data-[state=active]:from-emerald-500 data-[state=active]:to-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-[0_8px_18px_-8px_rgba(5,150,105,0.7)] rounded-lg"
-            >
-              <div className="flex items-center gap-1 sm:gap-2">
-                <Package className="w-4 h-4 sm:w-5 sm:h-5" />
-                <span className="hidden sm:inline">Paketler</span>
-                <span className="sm:hidden">Paket</span>
-              </div>
-            </TabsTrigger>
-            <TabsTrigger
-              value="companies"
-              className="h-12 sm:h-14 text-sm sm:text-base font-medium text-slate-600 transition-all duration-200 hover:bg-slate-200/70 data-[state=active]:bg-gradient-to-br data-[state=active]:from-emerald-500 data-[state=active]:to-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-[0_8px_18px_-8px_rgba(5,150,105,0.7)] rounded-lg"
-            >
-              <div className="flex items-center gap-1 sm:gap-2">
-                <Building2 className="w-4 h-4 sm:w-5 sm:h-5" />
-                <span className="hidden sm:inline">Firmalar</span>
-                <span className="sm:hidden">Firma</span>
-              </div>
-            </TabsTrigger>
-            <TabsTrigger
-              value="categories"
-              className="h-12 sm:h-14 text-sm sm:text-base font-medium text-slate-600 transition-all duration-200 hover:bg-slate-200/70 data-[state=active]:bg-gradient-to-br data-[state=active]:from-emerald-500 data-[state=active]:to-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-[0_8px_18px_-8px_rgba(5,150,105,0.7)] rounded-lg"
-            >
-              <div className="flex items-center gap-1 sm:gap-2">
-                <Tags className="w-4 h-4 sm:w-5 sm:h-5" />
-                <span className="hidden sm:inline">Kategoriler</span>
-                <span className="sm:hidden">Ktgr</span>
-              </div>
-            </TabsTrigger>
-            <TabsTrigger
-              value="upload"
-              className="h-12 sm:h-14 text-sm sm:text-base font-medium text-slate-600 transition-all duration-200 hover:bg-slate-200/70 data-[state=active]:bg-gradient-to-br data-[state=active]:from-emerald-500 data-[state=active]:to-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-[0_8px_18px_-8px_rgba(5,150,105,0.7)] rounded-lg"
-            >
-              <div className="flex items-center gap-1 sm:gap-2">
-                <Upload className="w-4 h-4 sm:w-5 sm:h-5" />
-                <span className="hidden sm:inline">Excel Yükle</span>
-                <span className="sm:hidden">Excel</span>
-              </div>
-            </TabsTrigger>
-            <TabsTrigger
-              value="battery-test"
-              className="h-12 sm:h-14 text-sm sm:text-base font-medium text-slate-600 transition-all duration-200 hover:bg-slate-200/70 data-[state=active]:bg-gradient-to-br data-[state=active]:from-emerald-500 data-[state=active]:to-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-[0_8px_18px_-8px_rgba(5,150,105,0.7)] rounded-lg"
-            >
-              <div className="flex items-center gap-1 sm:gap-2">
-                <Battery className="w-4 h-4 sm:w-5 sm:h-5" />
-                <span className="hidden sm:inline">Akü Test</span>
-                <span className="sm:hidden">Akü</span>
-              </div>
-            </TabsTrigger>
-          </TabsList>
+            </div>
+
+            {/* 2. Right Main Work Area */}
+            <div className="flex-1 overflow-y-auto p-8 bg-slate-50/30">
+              <div className="w-full space-y-6">
 
           {/* Companies Tab */}
           <TabsContent value="companies" className="space-y-6">
@@ -3694,7 +3663,7 @@ function App() {
                     <span className="text-purple-600 font-medium">💡 Grupları sürükleyerek sıralarını değiştirebilirsiniz</span>
                   </CardDescription>
                 </div>
-                <Button onClick={() => setShowCategoryGroupDialog(true)} className="bg-emerald-600 hover:bg-emerald-700">
+                <Button onClick={() => setShowCategoryGroupDialog(true)} className="bg-purple-600 hover:bg-purple-700">
                   <Plus className="w-4 h-4 mr-2" />
                   Grup Ekle
                 </Button>
@@ -3786,7 +3755,7 @@ function App() {
                     <Tags className="w-16 h-16 text-slate-300 mx-auto mb-4" />
                     <h3 className="text-lg font-medium text-slate-800 mb-2">Henüz kategori grubu yok</h3>
                     <p className="text-slate-600 mb-4">Kategorilerinizi gruplandırmak için "Grup Ekle" butonuna tıklayın</p>
-                    <Button onClick={() => setShowCategoryGroupDialog(true)} className="bg-emerald-600 hover:bg-emerald-700">
+                    <Button onClick={() => setShowCategoryGroupDialog(true)} className="bg-purple-600 hover:bg-purple-700">
                       <Plus className="w-4 h-4 mr-2" />
                       İlk Grubumu Oluştur
                     </Button>
@@ -3806,7 +3775,7 @@ function App() {
                     <h2 className="text-2xl font-bold text-slate-800">Paket Yönetimi</h2>
                     <p className="text-slate-600 mt-1">Hazır paketler oluşturun ve yönetin</p>
                   </div>
-                  <Button onClick={() => setShowPackageDialog(true)} className="bg-emerald-600 hover:bg-emerald-700">
+                  <Button onClick={() => setShowPackageDialog(true)} className="bg-teal-600 hover:bg-teal-700">
                     <Plus className="w-4 h-4 mr-2" />
                     Yeni Paket
                   </Button>
@@ -3906,7 +3875,7 @@ function App() {
                   <Package className="w-16 h-16 text-slate-300 mx-auto mb-4" />
                   <h3 className="text-lg font-medium text-slate-800 mb-2">Henüz paket yok</h3>
                   <p className="text-slate-600 mb-4">İlk paketinizi oluşturmak için "Yeni Paket" butonuna tıklayın</p>
-                  <Button onClick={() => setShowPackageDialog(true)} className="bg-emerald-600 hover:bg-emerald-700">
+                  <Button onClick={() => setShowPackageDialog(true)} className="bg-teal-600 hover:bg-teal-700">
                     <Plus className="w-4 h-4 mr-2" />
                     Yeni Paket Oluştur
                   </Button>
@@ -3932,7 +3901,7 @@ function App() {
                     </Button>
                     <Button
                       onClick={updatePackage}
-                      className="bg-emerald-600 hover:bg-emerald-700"
+                      className="bg-teal-600 hover:bg-teal-700"
                       disabled={!packageForm.name}
                     >
                       <Save className="w-4 h-4 mr-2" />
@@ -4279,7 +4248,7 @@ function App() {
                           </div>
                           <Button
                             onClick={addProductsToPackage}
-                            className="bg-emerald-600 hover:bg-emerald-700"
+                            className="bg-teal-600 hover:bg-teal-700"
                             disabled={packageSelectedProducts.size === 0}
                           >
                             <Save className="w-4 h-4 mr-2" />
@@ -4455,7 +4424,7 @@ function App() {
                                 e.stopPropagation(); // Header click'ini engellemek için
                                 addSuppliesToPackage();
                               }}
-                              className="bg-emerald-600 hover:bg-emerald-700"
+                              className="bg-orange-600 hover:bg-orange-700"
                               disabled={packageSelectedSupplies.size === 0}
                             >
                               <Save className="w-4 h-4 mr-2" />
@@ -4624,7 +4593,7 @@ function App() {
                                   setPackageLaborCost(0);
                                   toast.success(`₺${formatPrice(previousAmount)} işçilik maliyeti kaldırıldı!`);
                                 }}
-                                className="bg-emerald-600 hover:bg-emerald-700 px-2"
+                                className="bg-green-600 hover:bg-green-700 px-2"
                                 title="İşçilik tutarını temizle"
                               >
                                 <Check className="w-4 h-4" />
@@ -4844,10 +4813,6 @@ function App() {
           {/* Products Tab */}
           <TabsContent value="products" className="space-y-6">
             <Card>
-              <CardHeader>
-                <CardTitle>Ürün Listesi</CardTitle>
-                <CardDescription>Tüm yüklenmiş ürünler ve fiyatları</CardDescription>
-              </CardHeader>
               <CardContent>
                 {/* Toplu İşlemler Bar */}
                 {selectedProductsForBulk.size > 0 && (
@@ -4870,7 +4835,7 @@ function App() {
                         <Button
                           size="sm"
                           onClick={() => setShowBulkPriceModal(true)}
-                          className="bg-emerald-600 hover:bg-emerald-700"
+                          className="bg-orange-600 hover:bg-orange-700"
                         >
                           <DollarSign className="w-4 h-4 mr-2" />
                           Toplu Fiyat
@@ -4878,7 +4843,7 @@ function App() {
                         <Button
                           size="sm"
                           onClick={() => setShowBulkCategoryModal(true)}
-                          className="bg-emerald-600 hover:bg-emerald-700"
+                          className="bg-purple-600 hover:bg-purple-700"
                         >
                           <Tags className="w-4 h-4 mr-2" />
                           Toplu Kategori
@@ -4889,11 +4854,13 @@ function App() {
                 )}
 
                 {/* Action Bar */}
-                <div className="flex justify-between items-center mb-4">
-                  <div className="flex items-center gap-4">
-                    <h3 className="text-lg font-semibold">Ürün Yönetimi</h3>
+                <div className="flex flex-col gap-3 border-b border-slate-100 pb-4 pt-3 mb-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex flex-wrap items-center gap-3 self-end sm:self-auto">
+                    <div className="translate-y-1">
+                      <h3 className="text-xl font-extrabold tracking-tight text-slate-900">Ürün Listesi</h3>
+                    </div>
                     {selectedProducts.size > 0 && (
-                      <div className="flex items-center gap-2 text-sm text-emerald-600">
+                      <div className="flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700 ring-1 ring-emerald-100">
                         <Check className="w-4 h-4" />
                         {selectedProducts.size} ürün seçili
                       </div>
@@ -4911,7 +4878,7 @@ function App() {
                         </Button>
                         <Button 
                           onClick={() => setShowQuickQuoteDialog(true)}
-                          className="bg-emerald-600 hover:bg-emerald-700"
+                          className="bg-blue-600 hover:bg-blue-700"
                           size="sm"
                         >
                           <FileText className="w-4 h-4 mr-2" />
@@ -5084,18 +5051,31 @@ function App() {
                 </div>
 
                 {/* Search and Filter Controls */}
-                <div className="flex flex-col md:flex-row gap-4 mb-6">
-                  <div className="flex-1">
-                    <Input
-                      placeholder="Ürün ara..."
-                      value={searchQuery}
-                      onChange={(e) => handleSearch(e.target.value)}
-                      className="w-full"
-                    />
-                  </div>
-                  <div className="flex gap-2">
+                <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_12px_35px_rgba(15,118,110,0.10)]">
+                  <div className="grid gap-3 lg:grid-cols-[1fr_240px_auto] lg:items-center">
+                    <div className="relative">
+                      <div className="absolute left-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm">
+                        <Search className="h-4.5 w-4.5" />
+                      </div>
+                      <Input
+                        placeholder="Ürün adı, marka, firma veya açıklama ara..."
+                        value={searchQuery}
+                        onChange={(e) => handleSearch(e.target.value)}
+                        className="h-14 w-full rounded-2xl border-2 border-emerald-100 bg-gradient-to-r from-emerald-50/70 to-white pl-16 pr-12 text-base font-bold text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/15"
+                      />
+                      {searchQuery && (
+                        <button
+                          type="button"
+                          onClick={() => handleSearch('')}
+                          className="absolute right-3 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-white text-slate-400 shadow-sm ring-1 ring-slate-200 transition hover:text-slate-700"
+                          aria-label="Aramayı temizle"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
                     <Select value={selectedCategory || "all"} onValueChange={handleCategoryFilter}>
-                      <SelectTrigger className="w-48">
+                      <SelectTrigger className="h-14 rounded-2xl border-2 border-slate-100 bg-slate-50 px-4 font-bold text-slate-700 shadow-sm">
                         <SelectValue placeholder="Kategori seç" />
                       </SelectTrigger>
                       <SelectContent>
@@ -5108,22 +5088,33 @@ function App() {
                             return a.name.localeCompare(b.name);
                           })
                           .map((category) => (
-                          <SelectItem key={category.id} value={category.id}>
-                            {category.name}
-                          </SelectItem>
-                        ))}
+                            <SelectItem key={category.id} value={category.id}>
+                              {category.name}
+                            </SelectItem>
+                          ))}
                       </SelectContent>
                     </Select>
                     {(searchQuery || selectedCategory) && (
-                      <Button 
-                        variant="outline" 
+                      <Button
+                        variant="outline"
                         onClick={() => {
                           handleSearch('');
                           handleCategoryFilter('');
                         }}
+                        className="h-14 rounded-2xl border-slate-200 bg-white px-5 font-bold text-slate-600 hover:bg-slate-50"
                       >
                         Temizle
                       </Button>
+                    )}
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
+                    <span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-700 ring-1 ring-emerald-100">
+                      {searchQuery ? `"${searchQuery}" aranıyor` : `${totalProducts} ürün içinde arama`}
+                    </span>
+                    {selectedCategory && (
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">
+                        Kategori filtresi aktif
+                      </span>
                     )}
                   </div>
                 </div>
@@ -5208,21 +5199,36 @@ function App() {
                       return (
                         <div key={categoryId} className="space-y-4">
                           {/* Category Header */}
-                          <div className="flex items-center gap-3 pb-2 border-b-2" style={{borderColor: categoryColor}}>
-                            <div 
-                              className="w-4 h-4 rounded-full" 
-                              style={{backgroundColor: categoryColor}}
-                            ></div>
-                            <h3 className="text-lg font-semibold text-slate-800">
-                              {categoryName}
-                            </h3>
-                            <div className="flex items-center gap-2 ml-auto">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b-2" style={{borderColor: categoryColor}}>
+                            <div className="flex items-center gap-3">
+                              <div 
+                                className="w-5 h-5 rounded-lg flex items-center justify-center shadow-sm" 
+                                style={{backgroundColor: categoryColor}}
+                              >
+                                <Package className="w-3 h-3 text-white" />
+                              </div>
+                              <h3 className="text-xl font-bold text-slate-800 tracking-tight">
+                                {categoryName}
+                              </h3>
+                              <div className="flex gap-2">
+                                <Badge variant="secondary" className="bg-slate-100 text-slate-700 font-medium">
+                                  {categoryProducts.length} ürün
+                                </Badge>
+                                {favoriteProducts.length > 0 && (
+                                  <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700 flex items-center gap-1 font-medium">
+                                    <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                                    {favoriteProducts.length} favori
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
                               {/* İndirimli Fiyat Toggle Butonu - Her kategoride göster */}
                               <Button
                                 variant="outline"
                                 size="sm"
                                 onClick={() => setShowDiscountedPrices(!showDiscountedPrices)}
-                                className="p-2"
+                                className="p-2 border-slate-200 text-slate-600 hover:text-slate-800 hover:bg-slate-50 h-9 w-9"
                                 title={showDiscountedPrices ? "İndirimli fiyatları gizle" : "İndirimli fiyatları göster"}
                               >
                                 {showDiscountedPrices ? (
@@ -5231,188 +5237,101 @@ function App() {
                                   <Eye className="w-4 h-4" />
                                 )}
                               </Button>
-                              <Badge variant="outline">
-                                {categoryProducts.length} ürün
-                                {favoriteProducts.length > 0 && ` (${favoriteProducts.length} favori)`}
-                              </Badge>
                             </div>
                           </div>
 
-                          {/* Products Table for this category */}
-                          <div className="overflow-x-auto">
+                          {/* Modern Premium Product List Table */}
+                          <div className="overflow-hidden bg-white border border-slate-100 rounded-2xl shadow-sm">
                             <Table className="table-fixed w-full">
                               <TableHeader>
-                                <TableRow>
-                                  <TableHead className="w-12">
-                                    <div className="flex items-center gap-2">
-                                      <input
-                                        type="checkbox"
-                                        className="rounded border-gray-300"
-                                        checked={visibleProducts.every(p => selectedProducts.has(p.id))}
-                                        onChange={(e) => {
-                                          if (e.target.checked) {
-                                            const newSelected = new Map(selectedProducts);
-                                            visibleProducts.forEach(p => newSelected.set(p.id, 1));
-                                            setSelectedProducts(newSelected);
-                                          } else {
-                                            const newSelected = new Map(selectedProducts);
-                                            visibleProducts.forEach(p => newSelected.delete(p.id));
-                                            setSelectedProducts(newSelected);
-                                          }
-                                        }}
-                                      />
-                                      <span className="text-xs">Seç / Adet</span>
-                                    </div>
-                                  </TableHead>
-                                  <TableHead className="w-80">Ürün</TableHead>
-                                  <TableHead className="w-32">Firma</TableHead>
-                                  <TableHead className="w-28">Marka</TableHead>
-                                  <TableHead className="w-28">Liste Fiyatı</TableHead>
-                                  {showDiscountedPrices && <TableHead className="w-28">İndirimli Fiyat</TableHead>}
-                                  <TableHead className="w-24">Para Birimi</TableHead>
-                                  <TableHead className="w-28">TL Fiyat</TableHead>
-                                  {showDiscountedPrices && <TableHead className="w-28">TL İndirimli</TableHead>}
-                                  <TableHead className="w-24">Stok</TableHead>
-                                  <TableHead className="w-16">Toplu</TableHead>
-                                  <TableHead className="w-24">İşlemler</TableHead>
+                                <TableRow className="bg-slate-50/80 hover:bg-slate-50/80 border-b border-slate-200">
+                                  <TableHead className="w-16 text-center font-bold text-slate-500 text-xs">SEÇ / ADET</TableHead>
+                                  <TableHead className="w-72 font-bold text-slate-500 text-xs">ÜRÜN BİLGİSİ</TableHead>
+                                  <TableHead className="w-28 font-bold text-slate-500 text-xs">FİRMA</TableHead>
+                                  <TableHead className="w-28 font-bold text-slate-500 text-xs">MARKA</TableHead>
+                                  <TableHead className="w-28 font-extrabold text-slate-700 text-xs">FİYAT (ASIL)</TableHead>
+                                  <TableHead className="w-28 font-bold text-slate-500 text-xs text-primary font-black">TL FİYAT</TableHead>
+                                  {showDiscountedPrices && (
+                                    <>
+                                      <TableHead className="w-28 font-bold text-amber-600 text-xs">İNDİRİMLİ</TableHead>
+                                      <TableHead className="w-28 font-bold text-rose-600 text-xs">TL İNDİRİMLİ</TableHead>
+                                    </>
+                                  )}
+                                  <TableHead className="w-28 font-bold text-slate-500 text-xs text-center">İŞLEMLER</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
                                 {visibleProducts.map((product) => {
                                   const company = companies.find(c => c.id === product.company_id);
                                   const isEditing = editingProduct === product.id;
-                                  
-                                  return (
-                                    <TableRow 
-                                      key={product.id}
-                                      className={selectedProducts.has(product.id) ? 'bg-blue-50 border-blue-200' : ''}
-                                    >
-                                      <TableCell>
-                                        <div className="flex items-center gap-3 relative z-10">
-                                          {/* Teklif için checkbox */}
-                                          <input
-                                            type="checkbox"
-                                            className="rounded border-gray-300 relative z-20 flex-shrink-0"
-                                            checked={selectedProducts.has(product.id)}
-                                            onChange={(e) => {
-                                              if (e.target.checked) {
-                                                toggleProductSelection(product.id, 1);
-                                              } else {
-                                                toggleProductSelection(product.id, 0);
-                                              }
-                                            }}
-                                            title="Teklif için seç"
-                                          />
-                                          {selectedProducts.has(product.id) && (
-                                            <input
-                                              type="number"
-                                              min="1"
-                                              value={selectedProducts.get(product.id) || 1}
-                                              onChange={(e) => {
-                                                const quantity = parseInt(e.target.value) || 1;
-                                                toggleProductSelection(product.id, quantity);
-                                              }}
-                                              className="w-10 px-1 py-0.5 text-xs border rounded relative z-30 bg-white flex-shrink-0"
-                                              placeholder="1"
-                                            />
-                                          )}
-                                        </div>
-                                      </TableCell>
-                                      <TableCell className="font-medium">
-                                        {isEditing ? (
-                                          <div className="space-y-2">
+                                  const isSelectedForOffer = selectedProducts.has(product.id);
+                                  const isSelectedForBulk = selectedProductsForBulk.has(product.id);
+
+                                  if (isEditing) {
+                                    return (
+                                      <TableRow key={product.id} className="bg-slate-50/50 border-b border-slate-100">
+                                        {/* Selection Checkbox (disabled during edit) */}
+                                        <TableCell className="text-center">
+                                          <span className="text-[10px] font-bold text-slate-400">---</span>
+                                        </TableCell>
+                                        
+                                        {/* Name & Description Inputs */}
+                                        <TableCell className="p-3">
+                                          <div className="space-y-1.5">
                                             <Input
                                               value={editForm.name}
                                               onChange={(e) => setEditForm({...editForm, name: e.target.value})}
-                                              className="min-w-[200px]"
+                                              className="w-full text-xs font-semibold py-1 h-8"
                                               placeholder="Ürün adı"
                                             />
                                             <Input
                                               value={editForm.description}
                                               onChange={(e) => setEditForm({...editForm, description: e.target.value})}
-                                              className="min-w-[200px]"
+                                              className="w-full text-[11px] py-1 h-8"
                                               placeholder="Açıklama (opsiyonel)"
-                                            />
-                                            <Input
-                                              value={editForm.brand}
-                                              onChange={(e) => setEditForm({...editForm, brand: e.target.value})}
-                                              className="min-w-[200px]"
-                                              placeholder="Marka (opsiyonel)"
                                             />
                                             <Input
                                               value={editForm.image_url}
                                               onChange={(e) => setEditForm({...editForm, image_url: e.target.value})}
-                                              className="min-w-[200px]"
+                                              className="w-full text-[10px] py-0.5 h-7 font-mono"
                                               placeholder="Görsel URL (opsiyonel)"
                                               type="url"
                                             />
-                                            <Select 
-                                              value={editForm.category_id || "none"} 
-                                              onValueChange={(value) => setEditForm({...editForm, category_id: value === "none" ? "" : value})}
-                                            >
-                                              <SelectTrigger className="min-w-[200px]">
-                                                <SelectValue placeholder="Kategori" />
-                                              </SelectTrigger>
-                                              <SelectContent>
-                                                <SelectItem value="none">Kategorisiz</SelectItem>
-                                                {categories
-                                                  .sort((a, b) => {
-                                                    if (a.sort_order !== b.sort_order) {
-                                                      return a.sort_order - b.sort_order;
-                                                    }
-                                                    return a.name.localeCompare(b.name);
-                                                  })
-                                                  .map((category) => (
-                                                  <SelectItem key={category.id} value={category.id}>
-                                                    {category.name}
-                                                  </SelectItem>
-                                                ))}
-                                              </SelectContent>
-                                            </Select>
-                                          </div>
-                                        ) : (
-                                          <div className="space-y-1">
-                                            <div className="flex items-start gap-3 relative z-0 ml-2">
-                                              {product.image_url && (
-                                                <img 
-                                                  src={product.image_url} 
-                                                  alt={product.name}
-                                                  className="w-12 h-12 object-cover rounded border cursor-pointer hover:opacity-75 transition-opacity relative z-0 flex-shrink-0"
-                                                  onError={(e) => {e.target.style.display = 'none'}}
-                                                  onClick={() => openImagePreview(product.image_url, product.name)}
-                                                  title="Görseli büyük boyutta görüntülemek için tıklayın"
-                                                />
-                                              )}
-                                              <div className="flex-1 min-w-0">
-                                                <div className="flex items-center gap-2">
-                                                  <div className="font-medium truncate pr-2" title={product.name}>{product.name}</div>
-                                                  <button
-                                                    onClick={() => toggleProductFavorite(product.id)}
-                                                    className={`flex-shrink-0 p-1 rounded-full hover:bg-gray-100 transition-colors ${
-                                                      product.is_favorite ? 'text-amber-500' : 'text-gray-300 hover:text-amber-400'
-                                                    }`}
-                                                    title={product.is_favorite ? 'Favorilerden çıkar' : 'Favorilere ekle'}
-                                                  >
-                                                    <svg className="w-4 h-4" fill={product.is_favorite ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                                      <path strokeLinecap="round" strokeLinejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                                                    </svg>
-                                                  </button>
-                                                </div>
-                                                {product.description && (
-                                                  <div className="text-sm text-slate-500 mt-1 truncate" title={product.description}>{product.description}</div>
-                                                )}
-                                              </div>
+                                            <div className="pt-1">
+                                              <Select 
+                                                value={editForm.category_id || "none"} 
+                                                onValueChange={(value) => setEditForm({...editForm, category_id: value === "none" ? "" : value})}
+                                              >
+                                                <SelectTrigger className="w-full text-[11px] h-7">
+                                                  <SelectValue placeholder="Kategori" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                  <SelectItem value="none">Kategorisiz</SelectItem>
+                                                  {categories
+                                                    .sort((a, b) => {
+                                                      if (a.sort_order !== b.sort_order) {
+                                                        return a.sort_order - b.sort_order;
+                                                      }
+                                                      return a.name.localeCompare(b.name);
+                                                    })
+                                                    .map((category) => (
+                                                    <SelectItem key={category.id} value={category.id}>
+                                                      {category.name}
+                                                    </SelectItem>
+                                                  ))}
+                                                </SelectContent>
+                                              </Select>
                                             </div>
                                           </div>
-                                        )}
-                                      </TableCell>
-                                      <TableCell className="w-32">
-                                        {isEditing ? (
+                                        </TableCell>
+
+                                        {/* Company Selector */}
+                                        <TableCell className="p-2">
                                           <Select 
                                             value={editForm.company_id} 
                                             onValueChange={(value) => setEditForm({...editForm, company_id: value})}
                                           >
-                                            <SelectTrigger className="w-28">
+                                            <SelectTrigger className="w-full text-xs h-8">
                                               <SelectValue placeholder="Firma" />
                                             </SelectTrigger>
                                             <SelectContent>
@@ -5423,169 +5342,278 @@ function App() {
                                               ))}
                                             </SelectContent>
                                           </Select>
-                                        ) : (
-                                          <div className="space-y-1">
-                                            <Badge variant="outline" className="truncate" title={company?.name || 'Unknown'}>{company?.name || 'Unknown'}</Badge>
-                                          </div>
-                                        )}
-                                      </TableCell>
-                                      <TableCell className="w-28">
-                                        {isEditing ? (
+                                        </TableCell>
+
+                                        {/* Brand Input */}
+                                        <TableCell className="p-2">
                                           <Input
                                             value={editForm.brand}
                                             onChange={(e) => setEditForm({...editForm, brand: e.target.value})}
-                                            className="w-24"
+                                            className="w-full text-xs h-8"
                                             placeholder="Marka"
                                           />
-                                        ) : (
-                                          product.brand && (
-                                            <Badge variant="secondary" className="truncate" title={product.brand}>
-                                              {product.brand}
-                                            </Badge>
-                                          )
-                                        )}
-                                      </TableCell>
-                                      <TableCell className="w-28">
-                                        {isEditing ? (
-                                          <Input
-                                            type="number"
-                                            step="0.01"
-                                            value={editForm.list_price}
-                                            onChange={(e) => setEditForm({...editForm, list_price: e.target.value})}
-                                            className="w-24"
-                                          />
-                                        ) : (
-                                          `${getCurrencySymbol(product.currency)} ${formatPrice(product.list_price)}`
-                                        )}
-                                      </TableCell>
-                                      {showDiscountedPrices && (
-                                        <TableCell>
-                                          {isEditing ? (
+                                        </TableCell>
+
+                                        {/* Original List Price & Currency Selector */}
+                                        <TableCell className="p-2">
+                                          <div className="space-y-1">
                                             <Input
                                               type="number"
                                               step="0.01"
-                                              value={editForm.discounted_price}
-                                              onChange={(e) => setEditForm({...editForm, discounted_price: e.target.value})}
-                                              className="w-24"
-                                              placeholder="İndirimli fiyat"
+                                              value={editForm.list_price}
+                                              onChange={(e) => setEditForm({...editForm, list_price: e.target.value})}
+                                              className="w-full text-xs h-8"
+                                              placeholder="Liste fiyatı"
+                                            />
+                                            <Select 
+                                              value={editForm.currency} 
+                                              onValueChange={(value) => setEditForm({...editForm, currency: value})}
+                                            >
+                                              <SelectTrigger className="w-full text-[10px] h-7 font-bold">
+                                                <SelectValue />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                <SelectItem value="USD">USD</SelectItem>
+                                                <SelectItem value="EUR">EUR</SelectItem>
+                                                <SelectItem value="TRY">TRY</SelectItem>
+                                              </SelectContent>
+                                            </Select>
+                                          </div>
+                                        </TableCell>
+
+                                        {/* Converted TL Price indicator (reads list_price placeholder) */}
+                                        <TableCell className="p-2 text-center">
+                                          <span className="text-[11px] font-bold text-slate-400">Otomatik</span>
+                                        </TableCell>
+
+                                        {/* Discounted Price Fields (if active) */}
+                                        {showDiscountedPrices && (
+                                          <>
+                                            <TableCell className="p-2">
+                                              <Input
+                                                type="number"
+                                                step="0.01"
+                                                value={editForm.discounted_price}
+                                                onChange={(e) => setEditForm({...editForm, discounted_price: e.target.value})}
+                                                className="w-full text-xs h-8"
+                                                placeholder="İndirimli fiyat"
+                                              />
+                                            </TableCell>
+                                            <TableCell className="p-2 text-center">
+                                              <span className="text-[11px] font-bold text-slate-400">Otomatik</span>
+                                            </TableCell>
+                                          </>
+                                        )}
+
+                                        {/* Save & Cancel Row Actions */}
+                                        <TableCell className="p-2 text-center">
+                                          <div className="flex justify-center gap-1.5">
+                                            <Button 
+                                              size="sm" 
+                                              onClick={saveEditProduct}
+                                              disabled={loading}
+                                              className="bg-green-600 hover:bg-green-700 text-white p-1.5 h-8 w-8 rounded-lg flex items-center justify-center"
+                                              title="Değişiklikleri Kaydet"
+                                            >
+                                              <Save className="w-4 h-4" />
+                                            </Button>
+                                            <Button 
+                                              size="sm" 
+                                              variant="outline" 
+                                              onClick={cancelEditProduct}
+                                              className="border-slate-200 text-slate-600 hover:bg-slate-50 p-1.5 h-8 w-8 rounded-lg flex items-center justify-center"
+                                              title="İptal Et"
+                                            >
+                                              <X className="w-4 h-4" />
+                                            </Button>
+                                          </div>
+                                        </TableCell>
+                                      </TableRow>
+                                    );
+                                  }
+
+                                  return (
+                                    <TableRow 
+                                      key={product.id}
+                                      className={`border-b border-slate-200/80 transition-all duration-150 ${
+                                        isSelectedForOffer 
+                                          ? 'bg-emerald-50/15 hover:bg-emerald-50/30' 
+                                          : 'hover:bg-slate-100/90 bg-white/40'
+                                      }`}
+                                    >
+                                      {/* Proposal Checkbox & Qty selection cell */}
+                                      <TableCell className={`p-3 transition-all ${
+                                        isSelectedForOffer 
+                                          ? 'border-l-4 border-l-emerald-600 pl-2' 
+                                          : ''
+                                      }`}>
+                                        <div className="flex flex-col items-center gap-1.5">
+                                          <input
+                                            type="checkbox"
+                                            className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
+                                            checked={isSelectedForOffer}
+                                            onChange={(e) => {
+                                              if (e.target.checked) {
+                                                toggleProductSelection(product.id, 1);
+                                              } else {
+                                                toggleProductSelection(product.id, 0);
+                                              }
+                                            }}
+                                            title="Teklif için seç"
+                                          />
+                                          {isSelectedForOffer && (
+                                            <input
+                                              type="number"
+                                              min="1"
+                                              value={selectedProducts.get(product.id) || 1}
+                                              onChange={(e) => {
+                                                const quantity = parseInt(e.target.value) || 1;
+                                                toggleProductSelection(product.id, quantity);
+                                              }}
+                                              className="w-10 px-1 py-0.5 text-center text-[10px] font-extrabold border border-slate-200 rounded-md bg-white text-slate-800 focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                                              placeholder="1"
+                                              title="Teklif adedi"
+                                            />
+                                          )}
+                                        </div>
+                                      </TableCell>
+
+                                      {/* Product Image & Details cell */}
+                                      <TableCell className="p-3">
+                                        <div className="flex items-center gap-3">
+                                          {product.image_url ? (
+                                            <img 
+                                              src={product.image_url} 
+                                              alt={product.name}
+                                              className="w-11 h-11 object-cover rounded-lg border border-slate-100 shadow-xs cursor-pointer hover:scale-105 transition-transform duration-200"
+                                              onError={(e) => {e.target.style.display = 'none'}}
+                                              onClick={() => openImagePreview(product.image_url, product.name)}
+                                              title="Büyük boyutta görüntülemek için tıklayın"
                                             />
                                           ) : (
-                                            product.discounted_price ? (
-                                              `${getCurrencySymbol(product.currency)} ${formatPrice(product.discounted_price)}`
-                                            ) : '-'
+                                            <div className="w-11 h-11 bg-slate-50 flex items-center justify-center rounded-lg border border-slate-100 text-slate-300">
+                                              <Package className="w-5 h-5 stroke-[1.5]" />
+                                            </div>
                                           )}
-                                        </TableCell>
-                                      )}
-                                      <TableCell className="w-24">
-                                        {isEditing ? (
-                                          <Select 
-                                            value={editForm.currency} 
-                                            onValueChange={(value) => setEditForm({...editForm, currency: value})}
-                                          >
-                                            <SelectTrigger className="w-20">
-                                              <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                              <SelectItem value="USD">USD</SelectItem>
-                                              <SelectItem value="EUR">EUR</SelectItem>
-                                              <SelectItem value="TRY">TRY</SelectItem>
-                                            </SelectContent>
-                                          </Select>
+                                          <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-1.5">
+                                              <div className="font-bold text-slate-800 text-sm truncate" title={product.name}>
+                                                {product.name}
+                                              </div>
+                                              <button
+                                                onClick={() => toggleProductFavorite(product.id)}
+                                                className={`flex-shrink-0 p-0.5 rounded-md hover:bg-slate-100 transition-colors ${
+                                                  product.is_favorite ? 'text-amber-500' : 'text-slate-300 hover:text-amber-400'
+                                                }`}
+                                                title={product.is_favorite ? 'Favorilerden çıkar' : 'Favorilere ekle'}
+                                              >
+                                                <Star className="w-3.5 h-3.5" fill={product.is_favorite ? 'currentColor' : 'none'} />
+                                              </button>
+                                            </div>
+                                            {product.description && (
+                                              <div className="text-xs text-slate-500 truncate mt-0.5" title={product.description}>
+                                                {product.description}
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </TableCell>
+
+                                      {/* Company badge cell */}
+                                      <TableCell className="p-3">
+                                        {company?.name ? (
+                                          <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 bg-slate-800 text-white rounded-md shadow-xs tracking-wider inline-block max-w-full truncate" title={company.name}>
+                                            {company.name}
+                                          </span>
                                         ) : (
-                                          <Badge 
-                                            className="cursor-pointer hover:bg-primary/90" 
-                                            onClick={() => startEditProduct(product)}
-                                          >
-                                            {product.currency}
-                                          </Badge>
+                                          <span className="text-slate-400/80 italic text-xs">---</span>
                                         )}
                                       </TableCell>
-                                      <TableCell className="w-28">
-                                        ₺ {product.list_price_try ? formatPrice(product.list_price_try) : '---'}
+
+                                      {/* Brand badge cell */}
+                                      <TableCell className="p-3">
+                                        {product.brand ? (
+                                          <span className="text-[10px] font-bold uppercase px-2 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded-md inline-block max-w-full truncate" title={product.brand}>
+                                            {product.brand}
+                                          </span>
+                                        ) : (
+                                          <span className="text-slate-400/80 italic text-xs">---</span>
+                                        )}
                                       </TableCell>
+
+                                      {/* Original List Price cell (stacked layout) */}
+                                      <TableCell className="p-3 font-semibold text-slate-600 text-sm">
+                                        <div className="flex flex-col">
+                                          <span className="text-[9px] text-slate-500 font-extrabold uppercase tracking-wider">ASIL</span>
+                                          <span className="text-slate-900 font-black text-sm mt-0.5">
+                                            {getCurrencySymbol(product.currency)} {formatPrice(product.list_price)}
+                                          </span>
+                                        </div>
+                                      </TableCell>
+
+                                      {/* Converted TL Price cell (stacked layout) */}
+                                      <TableCell className="p-3 font-extrabold text-slate-800 text-sm">
+                                        <div className="flex flex-col">
+                                          <span className="text-[9px] text-emerald-700 font-extrabold uppercase tracking-wider">TL FİYAT</span>
+                                          <span className="text-emerald-950 font-black text-sm mt-0.5">
+                                            ₺ {product.list_price_try ? formatPrice(product.list_price_try) : '---'}
+                                          </span>
+                                        </div>
+                                      </TableCell>
+
+                                      {/* Discounted Prices cells (if active) */}
                                       {showDiscountedPrices && (
-                                        <TableCell className="w-28">
-                                          {product.discounted_price_try ? (
-                                            `₺ ${formatPrice(product.discounted_price_try)}`
-                                          ) : '-'}
-                                        </TableCell>
+                                        <>
+                                          <TableCell className="p-3">
+                                            <div className="flex flex-col">
+                                              <span className="text-[9px] text-amber-700 font-extrabold uppercase tracking-wider">İNDİRİMLİ</span>
+                                              <span className="text-amber-950 font-black text-sm mt-0.5">
+                                                {product.discounted_price ? (
+                                                  `${getCurrencySymbol(product.currency)} ${formatPrice(product.discounted_price)}`
+                                                ) : (
+                                                  <span className="text-slate-400">-</span>
+                                                )}
+                                              </span>
+                                            </div>
+                                          </TableCell>
+                                          <TableCell className="p-3">
+                                            <div className="flex flex-col">
+                                              <span className="text-[9px] text-rose-700 font-extrabold uppercase tracking-wider">TL İNDİRİMLİ</span>
+                                              <span className="text-rose-950 font-black text-sm mt-0.5">
+                                                {product.discounted_price_try ? (
+                                                  `₺ ${formatPrice(product.discounted_price_try)}`
+                                                ) : (
+                                                  <span className="text-slate-400">-</span>
+                                                )}
+                                              </span>
+                                            </div>
+                                          </TableCell>
+                                        </>
                                       )}
-                                      <TableCell className="w-24">
-                                        {product.is_favorite ? (
-                                          <Input
-                                            type="number"
-                                            min="0"
-                                            value={product.stock_quantity || 0}
-                                            onChange={(e) => updateProductStock(product.id, parseInt(e.target.value) || 0)}
-                                            className="w-16 text-center text-sm"
-                                            placeholder="0"
-                                          />
-                                        ) : (
-                                          <span className="text-gray-400 text-sm">-</span>
-                                        )}
-                                      </TableCell>
-                                      <TableCell className="w-16">
-                                        {/* Toplu işlem seçimi - Sağ tarafta */}
-                                        <Button
-                                          size="sm"
-                                          variant={selectedProductsForBulk.has(product.id) ? "default" : "outline"}
-                                          onClick={() => toggleProductSelectionForBulk(product.id)}
-                                          className={selectedProductsForBulk.has(product.id) ? "bg-emerald-600 hover:bg-emerald-700" : ""}
-                                        >
-                                          {selectedProductsForBulk.has(product.id) ? (
-                                            <Check className="w-4 h-4" />
-                                          ) : (
-                                            <Plus className="w-4 h-4" />
-                                          )}
-                                        </Button>
-                                      </TableCell>
-                                      <TableCell className="w-24">
-                                        <div className="flex gap-2">
-                                          {isEditing ? (
-                                            <>
-                                              <Button 
-                                                size="sm" 
-                                                onClick={saveEditProduct}
-                                                disabled={loading}
-                                                className="bg-emerald-600 hover:bg-emerald-700"
-                                              >
-                                                <Save className="w-4 h-4" />
-                                              </Button>
-                                              <Button 
-                                                size="sm" 
-                                                variant="outline" 
-                                                onClick={cancelEditProduct}
-                                              >
-                                                <X className="w-4 h-4" />
-                                              </Button>
-                                            </>
-                                          ) : (
-                                            <>
-                                              <Button
-                                                size="sm"
-                                                variant="outline"
-                                                onClick={() => searchMarketPrice(product)}
-                                                className="text-blue-600 hover:text-blue-800 hover:bg-blue-50 border-blue-200"
-                                                title="İnternette fiyat ara"
-                                              >
-                                                <ScanSearch className="w-4 h-4" />
-                                              </Button>
-                                              <Button 
-                                                size="sm" 
-                                                variant="outline" 
-                                                onClick={() => startEditProduct(product)}
-                                              >
-                                                <Edit className="w-4 h-4" />
-                                              </Button>
-                                              <Button 
-                                                size="sm" 
-                                                variant="destructive" 
-                                                onClick={() => deleteProduct(product.id)}
-                                              >
-                                                <Trash2 className="w-4 h-4" />
-                                              </Button>
-                                            </>
-                                          )}
+
+
+
+                                      {/* Action buttons cell */}
+                                      <TableCell className="p-3">
+                                        <div className="flex gap-1 justify-center">
+                                          <Button 
+                                            size="sm" 
+                                            variant="outline" 
+                                            onClick={() => startEditProduct(product)}
+                                            className="text-slate-600 border-slate-200 hover:bg-slate-100 p-1.5 h-8 w-8 rounded-lg flex items-center justify-center"
+                                            title="Düzenle"
+                                          >
+                                            <Edit className="w-3.5 h-3.5" />
+                                          </Button>
+                                          <Button 
+                                            size="sm" 
+                                            variant="destructive" 
+                                            onClick={() => deleteProduct(product.id)}
+                                            className="text-rose-600 hover:text-rose-700 bg-white hover:bg-rose-50 border-rose-100 hover:border-rose-200 p-1.5 h-8 w-8 rounded-lg flex items-center justify-center"
+                                            title="Sil"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </Button>
                                         </div>
                                       </TableCell>
                                     </TableRow>
@@ -5613,846 +5641,713 @@ function App() {
                               </Button>
                             </div>
                           )}
-                          
-                          {/* Daha Az Göster Butonu */}
-                          {isExpanded && (
-                            <div className="flex justify-center pt-3 border-t">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => {
-                                  const newExpanded = new Set(expandedCategories);
-                                  newExpanded.delete(categoryId);
-                                  setExpandedCategories(newExpanded);
-                                }}
-                                className="bg-gray-50 text-gray-700 border-gray-300 hover:bg-gray-100"
-                              >
-                                <X className="w-4 h-4 mr-2" />
-                                Daha Az Göster
-                              </Button>
-                            </div>
-                          )}
                         </div>
                       );
-                    });
-                  })()}
-                </div>
-                
-                {/* Product count display */}
-                {products.length > 0 && (
-                  <div className="mt-4 text-center text-sm text-slate-600">
-                    Toplam {totalProducts} ürün gösteriliyor
+                    })})()}
                   </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Quotes Tab - Modern Redesigned */}
+                </CardContent>
+              </Card>
+            </TabsContent>
+                           {/* Quotes Tab - Redesigned to be high-productivity and single-screen */}
           <TabsContent value="quotes" className="space-y-6">
-            <Card className="border-t-4 border-t-blue-500">
-              <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b">
-                <CardTitle className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center">
-                    <FileText className="w-6 h-6 text-white" />
-                  </div>
-                  <div>
-                    <div className="text-xl font-bold text-blue-900">Teklif Yönetimi</div>
-                    <div className="text-sm font-normal text-blue-600">Hızlı ve profesyonel teklif oluşturun</div>
-                  </div>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
-                {/* Internal Tab System */}
-                <div className="border-b bg-white">
-                  <div className="flex">
-                    <button
-                      className={`px-6 py-3 font-medium transition-all ${
-                        quoteSubTab === 'create'
-                          ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
-                          : 'text-gray-600 hover:text-blue-600 hover:bg-gray-50'
-                      }`}
-                      onClick={() => setQuoteSubTab('create')}
-                    >
-                      <div className="flex items-center gap-2">
-                        <FileText className="w-4 h-4" />
-                        <span>Yeni Teklif</span>
-                        {selectedProducts.size > 0 && (
-                          <span className="ml-1 px-2 py-0.5 text-xs bg-blue-600 text-white rounded-full">
-                            {selectedProducts.size}
-                          </span>
-                        )}
-                      </div>
-                    </button>
-                    <button
-                      className={`px-6 py-3 font-medium transition-all ${
-                        quoteSubTab === 'list'
-                          ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
-                          : 'text-gray-600 hover:text-blue-600 hover:bg-gray-50'
-                      }`}
-                      onClick={() => setQuoteSubTab('list')}
-                    >
-                      <div className="flex items-center gap-2">
-                        <Archive className="w-4 h-4" />
-                        <span>Tekliflerim</span>
-                        {quotes.length > 0 && (
-                          <span className="ml-1 px-2 py-0.5 text-xs bg-gray-600 text-white rounded-full">
-                            {quotes.length}
-                          </span>
-                        )}
-                      </div>
-                    </button>
-                  </div>
-                </div>
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
+              
+              {/* PDF Canvas Workspace (col-span-3) - A4 Styled Sheet */}
+              <div className="lg:col-span-3 space-y-6">
 
-                {/* Create Quote Tab Content */}
-                {quoteSubTab === 'create' && (
-                  <div className="p-6">
-                    {selectedProducts.size > 0 ? (
-                  <div className="space-y-6">
-                    {/* Selected Products Summary - Modern Blue Theme */}
-                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl p-5 shadow-sm">
-                      <div className="flex items-center justify-between mb-3">
-                        <h4 className="font-bold text-blue-900 flex items-center gap-2">
-                          <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center">
-                            <Package className="w-4 h-4 text-white" />
-                          </div>
-                          Seçili Ürünler ({selectedProducts.size} çeşit, {calculateQuoteTotals.totalQuantity} adet)
-                        </h4>
-                        <div className="flex items-center gap-2">
-                          {selectedProducts.size > 0 && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={async () => {
-                                // Eğer yüklü bir teklif varsa ve değişiklik yapıldıysa otomatik kaydet
-                                if (loadedQuote && loadedQuote.id) {
-                                  try {
-                                    const selectedProductData = getSelectedProductsData().map(p => ({
-                                      id: p.id,
-                                      quantity: p.quantity || 1
-                                    }));
-                                    
-                                    console.log('🔄 Teklif kapatılmadan önce otomatik güncelleniyor...');
-                                    
-                                    const updateResponse = await fetch(`${API}/quotes/${loadedQuote.id}`, {
-                                      method: 'PUT',
-                                      headers: {
-                                        'Content-Type': 'application/json',
-                                      },
-                                      body: JSON.stringify({
-                                        name: loadedQuote.name,
-                                        customer_id: selectedQuoteCustomer || null,
-                                        labor_cost: parseFloat(quoteLaborCost) || 0,
-                                        discount_percentage: parseFloat(quoteDiscount) || 0,
-                                        products: selectedProductData,
-                                        notes: quoteNotes.trim() || ''
-                                      })
-                                    });
-                                    
-                                    if (updateResponse.ok) {
-                                      await fetchQuotes();
-                                      toast.success('Değişiklikler kaydedildi');
-                                    }
-                                  } catch (error) {
-                                    console.error('Otomatik kaydetme hatası:', error);
-                                  }
-                                }
-                                
-                                // Sonra teklifi kapat
-                                clearSelection();
-                              }}
-                              className="p-1.5 text-red-600 hover:text-red-800 hover:bg-red-50 border-red-200"
-                              title="Teklifi Kapat"
-                            >
-                              <X className="w-4 h-4 mr-1" />
-                              <span className="text-xs font-medium">Teklifi Kapat</span>
-                            </Button>
-                          )}
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setShowQuoteDiscountedPrices(!showQuoteDiscountedPrices);
-                            }}
-                            className="p-1.5 border-blue-300 hover:bg-blue-100"
-                            title={showQuoteDiscountedPrices ? "İndirimli fiyatları gizle" : "İndirimli fiyatları göster"}
-                          >
-                            {showQuoteDiscountedPrices ? (
-                              <EyeOff className="w-4 h-4 text-blue-600" />
-                            ) : (
-                              <Eye className="w-4 h-4 text-blue-600" />
-                            )}
-                          </Button>
+                {/* A4 Paper Canvas */}
+                <div className="w-full bg-white shadow-xl border border-slate-200 p-8 sm:p-12 rounded-2xl font-sans min-h-[1050px] flex flex-col justify-between relative overflow-hidden select-text">
+                  
+                  {/* Decorative Header Bar */}
+                  <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-emerald-600 to-teal-600" />
+                  
+                  <div>
+                    {/* 1. Header Details */}
+                    <div className="flex justify-between items-center border-b pb-6 mb-8 gap-4">
+                      {/* Premium Quote Header */}
+                        <div className="relative overflow-hidden rounded-xl px-6 py-4 select-none flex-1" style={{background: 'linear-gradient(135deg, #064e3b 0%, #065f46 40%, #0d9488 100%)'}}>
+                          {/* Geometric circles decoration */}
+                          <div style={{position:'absolute', top:'-20px', right:'-20px', width:'100px', height:'100px', borderRadius:'50%', background:'rgba(255,255,255,0.05)'}} />
+                          <div style={{position:'absolute', bottom:'-30px', right:'60px', width:'80px', height:'80px', borderRadius:'50%', background:'rgba(255,255,255,0.04)'}} />
+                          <div style={{position:'absolute', top:'10px', right:'80px', width:'40px', height:'40px', borderRadius:'50%', background:'rgba(255,255,255,0.06)'}} />
+                          {/* Left accent bar */}
+                          <div style={{position:'absolute', left:0, top:0, bottom:0, width:'4px', background:'linear-gradient(180deg, #34d399, #06b6d4)'}} />
+                          <h2 style={{fontSize:'22px', fontWeight:900, color:'white', letterSpacing:'-0.5px', lineHeight:1.1, textTransform:'uppercase', margin:0}}>Fiyat Teklif Formu</h2>
                         </div>
+                      <div className="flex items-center gap-3 text-right text-xs font-bold text-slate-400 select-none">
+                        <button
+                          type="button"
+                          onClick={() => setShowQuoteDiscountedPrices(!showQuoteDiscountedPrices)}
+                          className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors flex items-center justify-center text-slate-500 hover:text-slate-700"
+                          title="Maliyet/Geliş fiyatlarını göster/gizle"
+                        >
+                          {showQuoteDiscountedPrices ? (
+                            <EyeOff className="w-3.5 h-3.5 text-rose-500" />
+                          ) : (
+                            <Eye className="w-3.5 h-3.5 text-emerald-500" />
+                          )}
+                        </button>
+                        <span>•</span>
+                        <div>{new Date().toLocaleDateString('tr-TR')}</div>
                       </div>
-                      
-                      {/* Hızlı Ürün Ekleme - Kompakt */}
-                      <div className="border-t-2 border-blue-200 pt-4 mt-3">
-                        <div className="flex items-center gap-3">
-                          {/* Kategori Seçimi */}
-                          <select
-                            value={quickAddCategory}
-                            onChange={(e) => setQuickAddCategory(e.target.value)}
-                            className="px-3 py-2 border border-blue-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
-                          >
-                            <option value="all">Tüm Kategoriler</option>
-                            {categories.map(cat => (
-                              <option key={cat.id} value={cat.id}>{cat.name}</option>
-                            ))}
-                          </select>
-                          
-                          {/* Arama Kutusu */}
-                          <div className="flex-1 relative">
-                            <input
-                              type="text"
-                              placeholder="Ürün ara ve ekle..."
-                              value={quickAddSearch}
-                              onChange={(e) => {
-                                setQuickAddSearch(e.target.value);
-                                setShowQuickAddDropdown(e.target.value.length > 0);
-                              }}
-                              onFocus={() => quickAddSearch.length > 0 && setShowQuickAddDropdown(true)}
-                              className="w-full px-4 py-2 border border-blue-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                            />
-                            <Search className="absolute right-3 top-2.5 w-4 h-4 text-gray-400" />
-                            
-                            {/* Dropdown Sonuçlar */}
-                            {showQuickAddDropdown && (
-                              <div className="absolute z-50 w-full mt-1 bg-white border-2 border-blue-300 rounded-lg shadow-lg max-h-64 overflow-y-auto">
-                                {getQuickAddProducts().length > 0 ? (
-                                  getQuickAddProducts().map(product => {
-                                    const company = companies.find(c => c.id === product.company_id);
-                                    return (
-                                      <div
-                                        key={product.id}
-                                        className="flex items-center justify-between p-2 hover:bg-blue-50 cursor-pointer border-b last:border-b-0"
-                                        onClick={() => {
-                                          toggleProductSelection(product.id, quickAddQuantity);
-                                          setQuickAddSearch('');
-                                          setShowQuickAddDropdown(false);
-                                          setQuickAddQuantity(1);
-                                          toast.success(`${product.name} eklendi`);
-                                        }}
-                                      >
-                                        <div className="flex-1">
-                                          <div className="text-sm font-medium text-gray-900">{product.name}</div>
-                                          <div className="text-xs text-gray-500">{company?.name}</div>
-                                        </div>
-                                        <div className="text-sm font-bold text-blue-700">
-                                          ₺{formatPrice(product.list_price_try || 0)}
-                                        </div>
+                    </div>
+
+                    {/* 2. Editable Title Field */}
+                    <div className="mb-6 space-y-1">
+                      <label className="text-[9px] font-extrabold text-emerald-700 uppercase tracking-wider block">Teklif Başlığı</label>
+                      <input
+                        type="text"
+                        value={quoteName}
+                        onChange={(e) => setQuoteName(e.target.value)}
+                        placeholder="Teklif Başlığı Girin (Örn: Mehmet Bey Karavan Güneş Paneli Teklifi)"
+                        className="w-full border-none bg-transparent hover:bg-slate-50 focus:bg-slate-50 focus:ring-1 focus:ring-emerald-500 rounded px-2.5 py-1.5 text-base font-black text-slate-800 focus:outline-none transition-all"
+                      />
+                    </div>
+
+                    {/* 3. Products Table */}
+                    <div className="border border-slate-200/80 rounded-xl mb-8 bg-slate-50/20 shadow-xxs overflow-visible">
+                      <Table className="table-auto w-full text-left">
+                        <TableHeader>
+                          <TableRow className="bg-slate-50/80 hover:bg-slate-50/80 border-b border-slate-200">
+                            <TableHead className="w-16 text-center text-xs font-black text-slate-600">Resim</TableHead>
+                            <TableHead className="text-xs font-black text-slate-600">Ürün Bilgisi</TableHead>
+                            <TableHead className="w-28 text-xs font-black text-slate-600">Marka</TableHead>
+                            <TableHead className="w-28 text-xs font-black text-slate-600 text-center">Adet</TableHead>
+                            <TableHead className="w-32 text-xs font-black text-slate-600 text-right">Birim Fiyat</TableHead>
+                            <TableHead className="w-32 text-xs font-black text-slate-600 text-right">Tutar</TableHead>
+                            <TableHead className="w-12 text-center"></TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {getSelectedProductsData().length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={7} className="p-12 text-center text-slate-400/80 italic text-xs">
+                                Teklifinizde henüz ürün bulunmamaktadır. Alttaki arama satırından hızlıca ürün ekleyebilirsiniz.
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            getSelectedProductsData().map((product) => {
+                              const customPrice = selectedProductsCustomPrices.get(product.id);
+                              const currentUnitPrice = customPrice !== undefined && customPrice !== null ? customPrice : (product.list_price || 0);
+                              return (
+                                <TableRow key={product.id} className="border-b border-slate-100 hover:bg-slate-50/30 transition-colors">
+                                  {/* Product Image */}
+                                  <TableCell className="p-3.5 text-center select-none">
+                                    {product.image_url ? (
+                                      <img 
+                                        src={product.image_url} 
+                                        alt="" 
+                                        onClick={() => openImagePreview(product.image_url, product.name)}
+                                        className="w-14 h-14 object-cover rounded-xl border border-slate-100 shadow-xxs cursor-pointer hover:scale-105 hover:opacity-90 transition-all duration-200" 
+                                        title="Görseli Büyüt"
+                                      />
+                                    ) : (
+                                      <div className="w-14 h-14 bg-slate-100 rounded-xl border border-slate-100 flex items-center justify-center text-slate-300">
+                                        <Package className="w-6 h-6" />
                                       </div>
-                                    );
-                                  })
-                                ) : (
-                                  <div className="p-3 text-sm text-gray-500 text-center">
-                                    Ürün bulunamadı
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
+                                    )}
+                                  </TableCell>
+                                  
+                                  {/* Name / Desc */}
+                                  <TableCell className="p-3.5">
+                                    <div className="font-bold text-slate-800 text-sm" title={product.name}>
+                                      {product.name}
+                                    </div>
+                                    {product.description && (
+                                      <div className="text-xs text-slate-500 mt-1" title={product.description}>
+                                        {product.description}
+                                      </div>
+                                    )}
+                                  </TableCell>
+                                  
+                                  {/* Brand */}
+                                  <TableCell className="p-3.5 text-slate-600 text-sm font-semibold">
+                                    {product.brand || <span className="text-slate-300">-</span>}
+                                  </TableCell>
+                                  
+                                  {/* Quantity adjusters inside cell */}
+                                  <TableCell className="p-3.5">
+                                    <div className="flex items-center justify-center gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleProductSelection(product.id, Math.max(1, (selectedProducts.get(product.id) || 1) - 1))}
+                                        className="w-6 h-6 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg flex items-center justify-center text-slate-600 hover:text-slate-800 transition-colors text-sm font-bold"
+                                      >
+                                        -
+                                      </button>
+                                      <span className="w-6 text-center text-sm font-extrabold text-slate-800">
+                                        {selectedProducts.get(product.id) || 1}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleProductSelection(product.id, (selectedProducts.get(product.id) || 1) + 1)}
+                                        className="w-6 h-6 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg flex items-center justify-center text-slate-600 hover:text-slate-800 transition-colors text-sm font-bold"
+                                      >
+                                        +
+                                      </button>
+                                    </div>
+                                  </TableCell>
+                                  
+                                  {/* Unit Price (Editable in product base currency) */}
+                                  <TableCell className="p-3.5 text-right text-sm">
+                                    <div className="flex flex-col items-end">
+                                      <div className="flex items-center justify-end gap-1 font-bold text-slate-700">
+                                        <span className="text-slate-400 text-xs font-black select-none">{getCurrencySymbol(product.currency)}</span>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          step="1"
+                                          value={customPrice !== undefined && customPrice !== null ? Math.round(customPrice) : Math.round(product.list_price || 0)}
+                                          onChange={(e) => {
+                                            const val = e.target.value;
+                                            const newMap = new Map(selectedProductsCustomPrices);
+                                            if (val === '') {
+                                              newMap.delete(product.id);
+                                            } else {
+                                              newMap.set(product.id, parseFloat(val) >= 0 ? parseFloat(val) : 0);
+                                            }
+                                            setSelectedProductsCustomPrices(newMap);
+                                          }}
+                                          className={`w-20 text-right border-b border-dashed focus:outline-none bg-transparent font-bold p-0.5 transition-colors ${
+                                            customPrice !== undefined && customPrice !== null 
+                                              ? 'border-purple-300 text-purple-700 focus:border-purple-500 font-extrabold' 
+                                              : 'border-slate-200 hover:border-slate-400 focus:border-emerald-500 text-slate-800'
+                                          }`}
+                                          title="Özel Birim Fiyat Tanımla"
+                                        />
+                                      </div>
+                                      {customPrice !== undefined && customPrice !== null && (
+                                        <div className="text-[9px] text-purple-600 font-extrabold mt-0.5 select-none bg-purple-50 px-1 py-0.5 rounded border border-purple-100/50 flex items-center justify-center max-w-[65px] ml-auto">
+                                          Özel Fiyat
+                                        </div>
+                                      )}
+                                      {showQuoteDiscountedPrices && (
+                                        <div className="text-[10px] text-purple-600 font-extrabold mt-1">
+                                          Geliş: {getCurrencySymbol(product.currency)} {formatPrice(product.discounted_price || product.list_price || 0)}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </TableCell>
+                                  
+                                  {/* Line Total */}
+                                  <TableCell className="p-3.5 text-right text-sm">
+                                    <div className="flex flex-col items-end">
+                                      <div className={`font-black ${customPrice !== undefined && customPrice !== null ? 'text-purple-700' : 'text-slate-900'}`}>
+                                        {getCurrencySymbol(product.currency)} {formatPrice(currentUnitPrice * (selectedProducts.get(product.id) || 1))}
+                                      </div>
+                                      {customPrice !== undefined && customPrice !== null && (
+                                        <span className="text-[9px] text-purple-500 font-bold mt-0.5 select-none">(Özel Toplam)</span>
+                                      )}
+                                      {showQuoteDiscountedPrices && (
+                                        <div className="text-[10px] text-purple-500 font-bold mt-1">
+                                          Geliş: {getCurrencySymbol(product.currency)} {formatPrice((parseFloat(product.discounted_price) || parseFloat(product.list_price) || 0) * (selectedProducts.get(product.id) || 1))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </TableCell>
+                                  
+                                  {/* Remove row */}
+                                  <TableCell className="p-3.5 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleProductSelection(product.id, 0)}
+                                      className="text-slate-400 hover:text-rose-600 p-1.5 hover:bg-rose-50 rounded-lg transition-colors"
+                                      title="Ürünü Çıkar"
+                                    >
+                                      <X className="w-4 h-4" />
+                                    </button>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })
+                          )}
                           
-                          {/* Adet Girişi */}
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm text-gray-700">Adet:</span>
+                          {/* Autocomplete Input Row (Styled as a blank row inside table) */}
+                          <TableRow className="bg-slate-50/40 hover:bg-slate-50/60 border-t border-slate-200">
+                            <TableCell className="p-3.5 text-center">
+                              <Search className="w-4.5 h-4.5 text-emerald-500 mx-auto" />
+                            </TableCell>
+                            <TableCell colSpan={6} className="p-2.5 relative">
+                              <input
+                                ref={quoteSearchInputRef}
+                                type="text"
+                                placeholder="Teklif sayfasına ürün eklemek için yazın..."
+                                value={quoteProductSearch}
+                                onChange={(e) => {
+                                  setQuoteProductSearch(e.target.value);
+                                  if (quoteSearchInputRef.current) {
+                                    const rect = quoteSearchInputRef.current.getBoundingClientRect();
+                                    setQuoteSearchDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+                                  }
+                                }}
+                                className="w-full border-none bg-transparent focus:ring-0 focus:outline-none text-sm font-bold text-emerald-800 placeholder-emerald-600/40 px-2.5 py-3"
+                              />
+                              
+                              {/* Inline Search Dropdown */}
+                              {quoteProductSearch && quoteSearchDropdownPos && (
+                                <div
+                                  style={{
+                                    position: 'fixed',
+                                    top: quoteSearchDropdownPos.top,
+                                    left: quoteSearchDropdownPos.left,
+                                    width: quoteSearchDropdownPos.width,
+                                    zIndex: 9999
+                                  }}
+                                  className="bg-white border border-slate-200 rounded-xl shadow-2xl max-h-64 overflow-y-auto">
+                                  {products
+                                    .filter(p => 
+                                      p.name.toLowerCase().includes(quoteProductSearch.toLowerCase()) || 
+                                      (p.brand && p.brand.toLowerCase().includes(quoteProductSearch.toLowerCase()))
+                                    )
+                                    .slice(0, 8)
+                                    .map(p => (
+                                      <div
+                                        key={p.id}
+                                        onClick={() => {
+                                          toggleProductSelection(p.id, 1);
+                                          setQuoteProductSearch('');
+                                        }}
+                                        className="p-3 hover:bg-emerald-50/40 hover:text-emerald-950 cursor-pointer flex items-center justify-between text-xs transition-colors border-b border-slate-50"
+                                      >
+                                        <div className="flex items-center gap-2">
+                                          {p.image_url ? (
+                                            <img src={p.image_url} alt="" className="w-8 h-8 min-w-[32px] min-h-[32px] max-w-[32px] max-h-[32px] object-cover rounded" />
+                                          ) : (
+                                            <div className="w-8 h-8 min-w-[32px] min-h-[32px] bg-slate-100 rounded flex items-center justify-center text-slate-300">
+                                              <Package className="w-4 h-4" />
+                                            </div>
+                                          )}
+                                          <div>
+                                            <span className="font-bold text-slate-800">{p.name}</span>
+                                            {p.brand && <span className="text-[10px] text-slate-400 ml-1.5 uppercase font-black">{p.brand}</span>}
+                                          </div>
+                                        </div>
+                                        <span className="font-extrabold text-emerald-700">₺ {formatPrice(p.list_price_try || 0)}</span>
+                                      </div>
+                                    ))}
+                                  {products.filter(p => 
+                                    p.name.toLowerCase().includes(quoteProductSearch.toLowerCase()) || 
+                                    (p.brand && p.brand.toLowerCase().includes(quoteProductSearch.toLowerCase()))
+                                  ).length === 0 && (
+                                    <div className="p-3 text-slate-400 italic text-center text-xs">Aramayla eşleşen ürün bulunamadı</div>
+                                  )}
+                                </div>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        </TableBody>
+                      </Table>
+                    </div>
+                    
+                    {/* 4. Bottom Calculations Grid and Notes */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start pt-6 border-t border-slate-200">
+                      
+                      {/* Left: Interactive Notes */}
+                      <div className="space-y-1.5">
+                        <label className="text-[9px] font-extrabold text-emerald-700 uppercase tracking-wider block">Teklif Notları (Sayfa Altı Açıklamalar)</label>
+                        <textarea
+                          value={quoteNotes}
+                          onChange={(e) => setQuoteNotes(e.target.value)}
+                          placeholder="Örn: Ödeme koşulları, nakliye, teslim süresi ve montaj detayları bu alana yazılır."
+                          className="w-full min-h-[100px] border-none bg-transparent hover:bg-slate-50 focus:bg-slate-50 focus:ring-1 focus:ring-emerald-500 rounded-lg p-2 text-xs text-slate-700 focus:outline-none transition-all leading-relaxed"
+                        />
+                      </div>
+
+                      {/* Right: Calculations Grid */}
+                      <div className="bg-slate-50/50 rounded-2xl p-[18px] space-y-3 border border-slate-100 max-w-sm ml-auto w-full text-xs">
+                        
+                        {/* Dövizli Detaylar (Sadece ilgili para biriminde ürün varsa gösterilir) */}
+                        {calculateQuoteTotals.totalUSD > 0 && (
+                          <div className="border-b border-slate-100 pb-2 space-y-1">
+                            <div className="flex justify-between items-center text-slate-500 font-medium">
+                              <span>USD Ürün Toplamı</span>
+                              <span className="font-extrabold text-blue-600">$ {formatPrice(calculateQuoteTotals.totalUSD)}</span>
+                            </div>
+                            <div className="text-[10px] text-slate-400 text-right font-bold">
+                              Karşılığı: ₺ {formatPrice(calculateQuoteTotals.usdInTry)} (1 USD = ₺{exchangeRates.USD || '34.00'})
+                            </div>
+                          </div>
+                        )}
+
+                        {calculateQuoteTotals.totalEUR > 0 && (
+                          <div className="border-b border-slate-100 pb-2 space-y-1">
+                            <div className="flex justify-between items-center text-slate-500 font-medium">
+                              <span>EUR Ürün Toplamı</span>
+                              <span className="font-extrabold text-indigo-600">€ {formatPrice(calculateQuoteTotals.totalEUR)}</span>
+                            </div>
+                            <div className="text-[10px] text-slate-400 text-right font-bold space-y-0.5">
+                              <div>Karşılığı: ₺ {formatPrice(calculateQuoteTotals.eurInTry)} (1 EUR = ₺{exchangeRates.EUR || '37.00'})</div>
+                              <div>Dolar Karşılığı: $ {formatPrice(calculateQuoteTotals.eurInUsd)} (1 EUR = $ {((parseFloat(exchangeRates.EUR) || 37.0) / (parseFloat(exchangeRates.USD) || 34.0)).toFixed(4)})</div>
+                            </div>
+                          </div>
+                        )}
+
+                        {calculateQuoteTotals.totalTRY > 0 && (
+                          <div className="flex justify-between items-center text-slate-500 pb-1">
+                            <span>TRY Ürün Toplamı</span>
+                            <span className="font-extrabold text-slate-700">₺ {formatPrice(calculateQuoteTotals.totalTRY)}</span>
+                          </div>
+                        )}
+
+                        <div className="flex justify-between items-center text-slate-500 pt-1.5 border-t border-slate-200/60">
+                          <span className="font-bold">Genel Liste Toplamı</span>
+                          <span className="font-black text-slate-800">₺ {formatPrice(calculateQuoteTotals.totalListPrice)}</span>
+                        </div>
+
+                        {/* Inline Edit Discount */}
+                        <div className="flex justify-between items-center text-rose-600 font-medium">
+                          <span>Uygulanan İndirim (%)</span>
+                          <div className="flex items-center gap-1.5">
                             <input
                               type="number"
-                              min="1"
-                              value={quickAddQuantity}
-                              onChange={(e) => setQuickAddQuantity(parseInt(e.target.value) || 1)}
-                              className="w-16 px-2 py-2 border border-blue-300 rounded-lg text-sm text-center focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              min="0"
+                              max="100"
+                              value={quoteDiscount || 0}
+                              onChange={(e) => setQuoteDiscount(Math.max(0, Math.min(100, parseFloat(e.target.value) || 0)))}
+                              className="w-12 h-6 border border-slate-200 focus:border-rose-500 focus:ring-1 focus:ring-rose-500 rounded-md text-center text-xs font-bold text-rose-700 focus:outline-none bg-white"
                             />
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="grid gap-2 max-h-96 overflow-y-auto mt-4">
-                        {getSelectedProductsData().map((product) => {
-                          const company = companies.find(c => c.id === product.company_id);
-                          return (
-                            <div key={product.id} className="flex items-center justify-between bg-white rounded-lg p-3 text-sm shadow-sm border border-blue-100 hover:border-blue-300 transition-all">
-                              <div className="flex items-center gap-3 flex-1 relative z-0">
-                                {product.image_url && (
-                                  <img 
-                                    src={product.image_url} 
-                                    alt={product.name}
-                                    className="w-12 h-12 object-cover rounded-lg cursor-pointer hover:opacity-75 transition-opacity border border-gray-200 relative z-0"
-                                    onError={(e) => {e.target.style.display = 'none'}}
-                                    onClick={() => openImagePreview(product.image_url, product.name)}
-                                    title="Görseli büyük boyutta görüntülemek için tıklayın"
-                                  />
-                                )}
-                                <div className="flex-1 min-w-0">
-                                  <div className="font-semibold text-gray-900 truncate">{product.name}</div>
-                                  <div className="text-slate-500 text-xs">{company?.name}</div>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-4 relative z-10">
-                                <div className="flex items-center gap-2 relative z-20">
-                                  <span className="text-xs text-slate-600 font-medium">Adet:</span>
-                                  <input
-                                    type="number"
-                                    min="1"
-                                    value={product.quantity || 1}
-                                    onChange={(e) => {
-                                      const quantity = parseInt(e.target.value) || 1;
-                                      toggleProductSelection(product.id, quantity);
-                                    }}
-                                    className="w-16 px-2 py-1.5 text-sm border border-blue-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent relative z-30 bg-white"
-                                  />
-                                </div>
-                                <div className="text-right min-w-[120px]">
-                                  {showQuoteDiscountedPrices && product.discounted_price_try ? (
-                                    <>
-                                      <div className="font-bold text-green-600">₺ {formatPrice((product.discounted_price_try || 0) * (product.quantity || 1))}</div>
-                                      <div className="text-xs text-slate-500 line-through">
-                                        ₺ {formatPrice((product.list_price_try || 0) * (product.quantity || 1))}
-                                      </div>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <div className="font-bold text-blue-900">₺ {formatPrice((product.list_price_try || 0) * (product.quantity || 1))}</div>
-                                      <div className="text-xs text-slate-500">
-                                        ₺ {formatPrice(product.list_price_try || 0)} × {product.quantity || 1}
-                                      </div>
-                                    </>
-                                  )}
-                                </div>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => toggleProductSelection(product.id, 0)}
-                                  className="text-red-600 hover:text-red-800 hover:bg-red-50 p-1.5"
-                                >
-                                  <X className="w-4 h-4" />
-                                </Button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Grid Layout: Left - Form Fields, Right - Live Summary */}
-                    <div className="grid md:grid-cols-3 gap-6">
-                      {/* Left Column - Form Fields */}
-                      <div className="md:col-span-2 space-y-4">
-                        {/* Teklif Adı */}
-                        <div className="bg-white border-2 border-blue-200 rounded-xl p-4 shadow-sm">
-                          <div className="flex items-center gap-2 mb-3">
-                            <div className="w-8 h-8 bg-blue-500 text-white rounded-lg flex items-center justify-center">
-                              <FileText className="w-4 h-4" />
-                            </div>
-                            <span className="font-semibold text-blue-900">Teklif Adı</span>
-                          </div>
-                          <Input
-                            placeholder="Teklif adını girin..."
-                            value={quoteName}
-                            onChange={(e) => setQuoteName(e.target.value)}
-                            className="w-full border-blue-200 focus:border-blue-500 focus:ring-blue-500"
-                          />
-                        </div>
-
-                        {/* İndirim */}
-                        <div className="bg-white border-2 border-amber-200 rounded-xl p-4 shadow-sm">
-                          <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center gap-2">
-                              <div className="w-8 h-8 bg-amber-500 text-white rounded-lg flex items-center justify-center">
-                                <TrendingUp className="w-4 h-4" />
-                              </div>
-                              <span className="font-semibold text-amber-900">İndirim Oranı</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Input
-                                type="number"
-                                min="0"
-                                max="100"
-                                step="1"
-                                placeholder="0"
-                                value={quoteDiscount}
-                                onChange={(e) => setQuoteDiscount(parseFloat(e.target.value) || 0)}
-                                className="w-20 text-center border-amber-300 focus:border-amber-500"
-                              />
-                              <span className="text-amber-700 font-bold">%</span>
-                            </div>
-                          </div>
-                          <div className="flex gap-2">
-                            {[5, 10, 15, 20, 25].map(percent => (
-                              <Button
-                                key={percent}
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setQuoteDiscount(percent)}
-                                className={`flex-1 text-xs ${quoteDiscount === percent ? 'bg-amber-100 border-amber-500 text-amber-900' : 'border-amber-300 hover:bg-amber-50'}`}
-                              >
-                                {percent}%
-                              </Button>
-                            ))}
+                            <span className="font-extrabold">- ₺ {formatPrice(calculateQuoteTotals.discountAmount)}</span>
                           </div>
                         </div>
 
-                        {/* İşçilik Maliyeti */}
-                        <div className="bg-white border-2 border-cyan-200 rounded-xl p-4 shadow-sm">
-                          <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center gap-2">
-                              <div className="w-8 h-8 bg-cyan-500 text-white rounded-lg flex items-center justify-center">
-                                <Wrench className="w-4 h-4" />
-                              </div>
-                              <span className="font-semibold text-cyan-900">İşçilik Maliyeti</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-cyan-700 font-bold">₺</span>
-                              <Input
-                                type="number"
-                                min="0"
-                                step="100"
-                                placeholder="0"
-                                value={quoteLaborCost}
-                                onChange={(e) => setQuoteLaborCost(parseFloat(e.target.value) || 0)}
-                                className="w-32 text-right border-cyan-300 focus:border-cyan-500"
-                              />
-                              {quoteLaborCost > 0 && (
-                                <Button
-                                  size="sm"
-                                  onClick={() => setQuoteLaborCost(0)}
-                                  className="bg-emerald-600 hover:bg-emerald-700 px-2 py-1"
-                                  title="Temizle"
-                                >
-                                  <Check className="w-4 h-4" />
-                                </Button>
-                              )}
-                            </div>
-                          </div>
-                          <div className="grid grid-cols-4 gap-2">
-                            {[2000, 5000, 10000, 20000].map(amount => (
-                              <Button
-                                key={amount}
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setQuoteLaborCost(amount)}
-                                className={`text-xs ${quoteLaborCost === amount ? 'bg-cyan-100 border-cyan-500 text-cyan-900' : 'border-cyan-300 hover:bg-cyan-50'}`}
-                              >
-                                ₺{amount/1000}k
-                              </Button>
-                            ))}
-                          </div>
-                        </div>
-                        
-                        {/* Teklif Notları - Collapsible */}
-                        <details className="bg-white border-2 border-gray-200 rounded-xl shadow-sm">
-                          <summary className="cursor-pointer p-4 font-semibold text-gray-900 hover:bg-gray-50 rounded-xl flex items-center gap-2">
-                            <FileText className="w-4 h-4 text-gray-600" />
-                            <span>Teklif Notları {quoteNotes && `(${quoteNotes.length} karakter)`}</span>
-                          </summary>
-                          <div className="p-4 pt-0">
-                            <textarea
-                              className="flex min-h-[80px] w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                              value={quoteNotes}
-                              onChange={(e) => setQuoteNotes(e.target.value)}
-                              placeholder="Teklif ile ilgili özel notlar, açıklamalar veya koşullar..."
+                        {/* Inline Edit Labor */}
+                        <div className="flex justify-between items-center text-cyan-600 font-medium">
+                          <span>İşçilik Maliyeti (₺)</span>
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="number"
+                              min="0"
+                              value={quoteLaborCost || 0}
+                              onChange={(e) => setQuoteLaborCost(Math.max(0, parseFloat(e.target.value) || 0))}
+                              className="w-20 h-6 border border-slate-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 rounded-md text-center text-xs font-bold text-cyan-700 focus:outline-none bg-white"
                             />
+                            <span className="font-extrabold">+ ₺ {formatPrice(calculateQuoteTotals.laborCost)}</span>
                           </div>
-                        </details>
-                      </div>
+                        </div>
 
-                      {/* Right Column - Live Summary */}
-                      <div className="md:col-span-1">
-                        <div className="bg-gradient-to-br from-emerald-50 to-green-50 border-2 border-emerald-300 rounded-xl p-5 shadow-lg sticky top-4">
-                          <h4 className="font-bold text-emerald-900 mb-4 text-lg flex items-center gap-2">
-                            <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center">
-                              <Calculator className="w-4 h-4 text-white" />
-                            </div>
-                            Canlı Özet
-                          </h4>
-                          <div className="space-y-3">
-                            <div className="bg-white rounded-lg p-3 border border-emerald-200">
-                              <div className="text-xs text-emerald-700 mb-1">Ürün Sayısı</div>
-                              <div className="text-2xl font-bold text-emerald-900">
-                                {calculateQuoteTotals.productCount}
-                              </div>
-                            </div>
-                            <div className="bg-white rounded-lg p-3 border border-emerald-200">
-                              <div className="text-xs text-emerald-700 mb-1">Toplam Liste Fiyatı</div>
-                              <div className="text-xl font-bold text-gray-900">
-                                ₺ {formatPrice(calculateQuoteTotals.totalListPrice)}
-                              </div>
-                            </div>
-                            {quoteDiscount > 0 && (
-                              <div className="bg-red-50 rounded-lg p-3 border border-red-200">
-                                <div className="text-xs text-red-700 mb-1">İndirim ({quoteDiscount}%)</div>
-                                <div className="text-xl font-bold text-red-600">
-                                  - ₺ {formatPrice(calculateQuoteTotals.discountAmount)}
-                                </div>
+                        {/* Net Grand Total */}
+                        <div className="border-t border-slate-200 pt-3 mt-1.5 flex flex-col items-end">
+                          <div className="flex justify-between items-center w-full font-black text-slate-900 text-sm">
+                            <span>NET TOPLAM</span>
+                            <span className="text-emerald-700 text-base">₺ {formatPrice(calculateQuoteTotals.totalNetPrice)}</span>
+                          </div>
+                          
+                          {calculateQuoteTotals.totalNetPrice > 0 && exchangeRates.EUR && (
+                            <span className="text-[10px] font-extrabold text-slate-400 mt-1">
+                              € {formatPrice(calculateQuoteTotals.totalNetPrice / exchangeRates.EUR)} EUR
+                            </span>
+                          )}
+                          {calculateQuoteTotals.totalNetPrice > 0 && exchangeRates.USD && (
+                            <span className="text-[10px] font-extrabold text-slate-400 mt-0.5">
+                              $ {formatPrice(calculateQuoteTotals.totalNetPrice / exchangeRates.USD)} USD
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Maliyet Gözü Kartı (Sadece göz ikonu aktifse satıcıya maliyetleri gösterir) */}
+                        {showQuoteDiscountedPrices && (
+                          <div className="mt-4 pt-3 border-t border-dashed border-purple-200 bg-purple-50/40 rounded-xl p-3 text-[11px] space-y-2 text-purple-950 font-medium">
+                            <div className="font-bold text-purple-800 uppercase tracking-wider text-[9px] mb-1 select-none">BANA GELİŞ MALİYETLERİ (GİZLİ)</div>
+                            
+                            {calculateQuoteTotals.totalUSDDiscounted > 0 && (
+                              <div className="flex justify-between">
+                                <span>USD Geliş Toplamı:</span>
+                                <span className="font-bold">$ {formatPrice(calculateQuoteTotals.totalUSDDiscounted)}</span>
                               </div>
                             )}
-                            {quoteLaborCost > 0 && (
-                              <div className="bg-green-50 rounded-lg p-3 border border-green-200">
-                                <div className="text-xs text-green-700 mb-1">İşçilik</div>
-                                <div className="text-xl font-bold text-green-600">
-                                  + ₺ {formatPrice(calculateQuoteTotals.laborCost)}
-                                </div>
+                            
+                            {calculateQuoteTotals.totalEURDiscounted > 0 && (
+                              <div className="flex justify-between">
+                                <span>EUR Geliş Toplamı:</span>
+                                <span className="font-bold">€ {formatPrice(calculateQuoteTotals.totalEURDiscounted)}</span>
                               </div>
                             )}
-                            <div className="bg-gradient-to-r from-emerald-100 to-green-100 rounded-lg p-4 border-2 border-emerald-400 mt-4">
-                              <div className="text-sm text-emerald-800 mb-2 font-semibold">NET TOPLAM</div>
-                              <div className="text-3xl font-bold text-emerald-900">
-                                ₺ {formatPrice(calculateQuoteTotals.totalNetPrice)}
-                              </div>
-                              <div className="text-xs text-emerald-700 italic mt-2">
-                                € {formatPrice(calculateQuoteTotals.totalNetPrice / (exchangeRates.EUR || 48.5))} EUR
-                              </div>
+                            
+                            <div className="flex justify-between">
+                              <span>Geliş Liste Toplamı:</span>
+                              <span className="font-bold">₺ {formatPrice(calculateQuoteTotals.totalListPriceDiscounted)}</span>
+                            </div>
+                            
+                            <div className="flex justify-between text-rose-700">
+                              <span>İndirim Payı (-%):</span>
+                              <span>- ₺ {formatPrice(calculateQuoteTotals.discountAmountDiscounted)}</span>
+                            </div>
+                            
+                            <div className="flex justify-between text-emerald-700">
+                              <span>İşçilik Payı (+):</span>
+                              <span>+ ₺ {formatPrice(calculateQuoteTotals.laborCost)}</span>
+                            </div>
+                            
+                            <div className="flex justify-between text-purple-700 font-extrabold border-t border-purple-200/60 pt-2 text-xs">
+                              <span>NET GELİŞ TOPLAMI:</span>
+                              <span>₺ {formatPrice(calculateQuoteTotals.totalNetPriceDiscounted)}</span>
+                            </div>
+                            
+                            <div className="flex justify-between text-emerald-800 font-black border-t border-purple-200/60 pt-1.5 text-xs select-none">
+                              <span>BRÜT KAZANÇ (KÂR):</span>
+                              <span>₺ {formatPrice(calculateQuoteTotals.totalNetPrice - calculateQuoteTotals.totalNetPriceDiscounted)}</span>
                             </div>
                           </div>
-                        </div>
+                        )}
                       </div>
+
                     </div>
+                  </div>
 
-                    {/* Action Buttons - Modern Blue Theme */}
-                    <div className="flex flex-wrap gap-3 pt-4 border-t-2 border-blue-100">
-                      <Button 
-                        onClick={saveQuote}
-                        disabled={selectedProducts.size === 0}
-                        className="bg-emerald-600 hover:bg-emerald-700 flex-1 min-w-[200px] h-12 text-base font-semibold shadow-md"
-                      >
-                        <Save className="w-5 h-5 mr-2" />
-                        {loadedQuote && (loadedQuote.name === quoteName || quoteName === '') 
-                          ? 'Teklifi Güncelle' 
-                          : 'Teklifi Kaydet'}
-                      </Button>
+                  {/* PDF Footer Watermark */}
+                  <div className="text-center text-[9px] text-slate-300 border-t pt-4 mt-12 font-semibold tracking-widest uppercase">
+                    Karavan Elektrik Entegrasyon ve Dağıtım Sistemleri
+                  </div>
 
-                      <Button 
-                        onClick={async () => {
-                          try {
-                            let quoteId = null;
-                            
-                            // Eğer mevcut bir teklif yüklenmişse ve isim değişmemişse onu güncelle
-                            if (loadedQuote && loadedQuote.id && 
-                                (loadedQuote.name === quoteName || quoteName === '')) {
-                              
-                              const selectedProductData = getSelectedProductsData().map(p => ({
-                                id: p.id,
-                                quantity: p.quantity || 1
-                              }));
-                              
-                              const updateResponse = await fetch(`${API}/quotes/${loadedQuote.id}`, {
-                                method: 'PUT',
-                                headers: {
-                                  'Content-Type': 'application/json',
-                                },
-                                body: JSON.stringify({
-                                  name: loadedQuote.name, // İsmi aynı tut
-                                  labor_cost: parseFloat(quoteLaborCost) || 0,
-                                  discount_percentage: parseFloat(quoteDiscount) || 0,
-                                  products: selectedProductData,
-                                  notes: quoteNotes.trim() || ''
-                                })
-                              });
-                              
-                              if (!updateResponse.ok) {
-                                throw new Error('Teklif güncellenemedi');
-                              }
-                              
-                              const updatedQuote = await updateResponse.json();
-                              quoteId = updatedQuote.id;
-                              
-                              // Teklifler listesini yenile
-                              await fetchQuotes();
-                              
-                              toast.success(`"${loadedQuote.name}" teklifi güncellendi!`);
-                            } else {
-                              // Yeni teklif oluştur veya farklı isimle kaydet
-                              const selectedProductData = getSelectedProductsData().map(p => ({
-                                id: p.id,
-                                quantity: p.quantity || 1
-                              }));
-                              
-                              console.log('🔍 Quotes tab - quote creation data:');
-                              console.log('🔍 selectedProducts Map:', selectedProducts);
-                              console.log('🔍 selectedProductsData Map:', selectedProductsData);
-                              console.log('🔍 getSelectedProductsData() result:', getSelectedProductsData());
-                              console.log('🔍 selectedProductData for API:', selectedProductData);
+                </div>
+              </div>
 
-                              const newQuoteData = {
-                                name: quoteName || `Teklif - ${new Date().toLocaleDateString('tr-TR')}`,
-                                customer_id: selectedQuoteCustomer || null,
-                                discount_percentage: parseFloat(quoteDiscount) || 0,
-                                labor_cost: parseFloat(quoteLaborCost) || 0,
-                                products: selectedProductData,
-                                notes: quoteNotes.trim() || ''
-                              };
-                              
-                              const createResponse = await fetch(`${API}/quotes`, {
-                                method: 'POST',
-                                headers: {
-                                  'Content-Type': 'application/json',
-                                },
-                                body: JSON.stringify(newQuoteData)
-                              });
-                              
-                              if (!createResponse.ok) {
-                                throw new Error('Teklif oluşturulamadı');
-                              }
-                              
-                              const savedQuote = await createResponse.json();
-                              quoteId = savedQuote.id;
-                              
-                              // Teklifler listesini yenile
-                              await fetchQuotes();
-                              
-                              toast.success('Teklif başarıyla oluşturuldu!');
-                            }
-                            
-                            // PDF'i hemen indir
-                            const pdfUrl = `${API}/quotes/${quoteId}/pdf`;
-                            const link = document.createElement('a');
-                            link.href = pdfUrl;
-                            link.download = `${loadedQuote?.name || quoteName || 'Teklif'}.pdf`;
-                            document.body.appendChild(link);
-                            link.click();
-                            document.body.removeChild(link);
-                            
-                            // Teklifleri yenile
-                            await fetchQuotes();
-                            
-                          } catch (error) {
-                            console.error('PDF oluşturma hatası:', error);
-                            toast.error('PDF oluşturulamadı: ' + error.message);
-                          }
-                        }}
-                        className="bg-emerald-600 hover:bg-emerald-700 flex-1 min-w-[180px] h-12 text-base font-semibold shadow-md"
-                      >
-                        <Download className="w-5 h-5 mr-2" />
-                        PDF İndir
-                      </Button>
-                      
-                      {loadedQuote && loadedQuote.id && (
-                        <Button
-                          variant="outline"
-                          onClick={() => {
-                            shareViaWhatsAppWithPDF(loadedQuote.name, loadedQuote.id);
-                          }}
-                          className="bg-green-500 text-white hover:bg-green-600 border-green-600 min-w-[160px] h-12 text-base font-semibold shadow-md"
-                          title="Teklifi WhatsApp ile paylaş"
-                        >
-                          <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893A11.821 11.821 0 0020.885 3.488"/>
-                          </svg>
-                          WhatsApp
-                        </Button>
-                      )}
-                      
-                      <Button 
-                        variant="outline" 
-                        onClick={async () => {
-                          // Eğer yüklü bir teklif varsa ve değişiklik yapıldıysa otomatik kaydet
+              {/* Controls Panel & History (col-span-1) */}
+              <div className="lg:col-span-1 space-y-5">
+
+                {/* 2. Action Controls Panel */}
+                <Card className="border-2 border-emerald-200 rounded-3xl shadow-lg bg-gradient-to-b from-emerald-50/80 to-white p-5 space-y-3.5">
+                  
+                  {/* Master Save Trigger */}
+                  <Button
+                    onClick={saveQuote}
+                    disabled={selectedProducts.size === 0}
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold py-5.5 rounded-2xl flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all active:scale-98"
+                  >
+                    <Save className="w-4.5 h-4.5" />
+                    {loadedQuote ? 'Değişiklikleri Güncelle' : 'Teklifi Kaydet'}
+                  </Button>
+                  
+                  <div className="grid grid-cols-2 gap-2">
+                    {/* PDF Generation and Download */}
+                    <Button
+                      variant="outline"
+                      disabled={selectedProducts.size === 0}
+                      onClick={async () => {
+                        if (selectedProducts.size === 0) {
+                          toast.error('Önce teklife ürün ekleyin');
+                          return;
+                        }
+                        try {
+                          let quoteId = loadedQuote?.id;
+                          
+                          // Auto save/update quote
+                          const selectedProductData = getSelectedProductsData().map(p => ({
+                            id: p.id,
+                            quantity: p.quantity || 1,
+                            custom_price: p.customPrice !== null && p.customPrice !== undefined ? parseFloat(p.customPrice) : null
+                          }));
+                          
+                          const newQuoteData = {
+                            name: quoteName || `Teklif - ${new Date().toLocaleDateString('tr-TR')}`,
+                            discount_percentage: parseFloat(quoteDiscount) || 0,
+                            labor_cost: parseFloat(quoteLaborCost) || 0,
+                            products: selectedProductData,
+                            notes: quoteNotes.trim() || ''
+                          };
+                          
                           if (loadedQuote && loadedQuote.id) {
-                            try {
-                              const selectedProductData = getSelectedProductsData().map(p => ({
-                                id: p.id,
-                                quantity: p.quantity || 1
-                              }));
-                              
-                              console.log('🔄 Teklif temizlenmeden önce otomatik güncelleniyor...');
-                              
-                              const updateResponse = await fetch(`${API}/quotes/${loadedQuote.id}`, {
-                                method: 'PUT',
-                                headers: {
-                                  'Content-Type': 'application/json',
-                                },
-                                body: JSON.stringify({
-                                  name: loadedQuote.name,
-                                  customer_id: selectedQuoteCustomer || null,
-                                  labor_cost: parseFloat(quoteLaborCost) || 0,
-                                  discount_percentage: parseFloat(quoteDiscount) || 0,
-                                  products: selectedProductData,
-                                  notes: quoteNotes.trim() || ''
-                                })
-                              });
-                              
-                              if (updateResponse.ok) {
-                                await fetchQuotes();
-                                toast.success('Değişiklikler kaydedildi');
-                              }
-                            } catch (error) {
-                              console.error('Otomatik kaydetme hatası:', error);
-                            }
+                            await fetch(`${API}/quotes/${loadedQuote.id}`, {
+                              method: 'PUT',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify(newQuoteData)
+                            });
+                          } else {
+                            const createResponse = await fetch(`${API}/quotes`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify(newQuoteData)
+                            });
+                            const savedQuote = await createResponse.json();
+                            quoteId = savedQuote.id;
                           }
                           
-                          // Sonra temizle
-                          clearSelection();
-                        }}
-                        className="border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700 min-w-[140px] h-12 text-base font-semibold"
-                      >
-                        <X className="w-5 h-5 mr-2" />
-                        Temizle
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-center py-16 text-slate-500">
-                    <div className="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <FileText className="w-12 h-12 text-blue-400" />
-                    </div>
-                    <h3 className="text-xl font-bold mb-2 text-gray-900">Henüz Ürün Seçilmedi</h3>
-                    <p className="text-sm mb-6 text-gray-600">
-                      Teklif oluşturmak için önce "Ürünler" sekmesinden ürün seçin
-                    </p>
-                    <Button 
-                      variant="outline"
-                      onClick={() => setActiveTab('products')}
-                      className="bg-blue-50 border-blue-300 text-blue-700 hover:bg-blue-100"
+                          await fetchQuotes();
+                          
+                          // Download PDF
+                          const pdfUrl = `${API}/quotes/${quoteId}/pdf`;
+                          const link = document.createElement('a');
+                          link.href = pdfUrl;
+                          link.download = `${loadedQuote?.name || quoteName || 'Teklif'}.pdf`;
+                          document.body.appendChild(link);
+                          link.click();
+                          document.body.removeChild(link);
+                          toast.success('PDF indiriliyor...');
+                        } catch (e) {
+                          toast.error('PDF indirme başarısız oldu');
+                        }
+                      }}
+                      className="border-slate-200 hover:bg-slate-50 text-slate-700 font-bold py-4 rounded-xl flex items-center justify-center gap-1.5 transition-colors text-xs"
                     >
-                      <Package className="w-4 h-4 mr-2" />
-                      Ürünlere Git
+                      <Download className="w-4 h-4 text-blue-500" />
+                      PDF İndir
+                    </Button>
+
+                    {/* WhatsApp integration */}
+                    <Button
+                      variant="outline"
+                      disabled={!loadedQuote}
+                      onClick={async () => {
+                        if (!loadedQuote?.id) {
+                          toast.error('Paylaşmak için lütfen önce teklifi kaydedin');
+                          return;
+                        }
+                        shareViaWhatsAppWithPDF(loadedQuote.name, loadedQuote.id);
+                      }}
+                      className="border-slate-200 hover:bg-slate-50 text-slate-700 font-bold py-4 rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-50 transition-colors text-xs"
+                      title={loadedQuote ? "WhatsApp ile Paylaş" : "Önce teklifi kaydetmelisiniz"}
+                    >
+                      <Phone className="w-4 h-4 text-emerald-600" />
+                      WhatsApp
                     </Button>
                   </div>
-                )}
-                  </div>
-                )}
 
-                {/* List Quotes Tab Content */}
-                {quoteSubTab === 'list' && (
-                  <div className="p-6">
-                    {/* Search and Stats Header */}
-                    <div className="mb-6">
-                      <div className="flex items-center justify-between mb-4">
-                        <div>
-                          <h3 className="text-xl font-bold text-gray-900">Kayıtlı Teklifler</h3>
-                          <p className="text-sm text-gray-600 mt-1">
-                            {quotes.length} teklif
-                            {filteredQuotes.length !== quotes.length && ` (${filteredQuotes.length} sonuç gösteriliyor)`}
-                          </p>
-                        </div>
-                      </div>
-                      
-                      {/* Search Box */}
-                      <div className="relative">
-                        <input
-                          type="text"
-                          placeholder="Teklif adı ile ara..."
-                          value={quoteSearchTerm}
-                          onChange={(e) => handleQuoteSearch(e.target.value)}
-                          className="w-full px-4 py-3 pl-10 border-2 border-blue-200 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-none"
-                        />
-                        <svg className="w-5 h-5 text-gray-400 absolute left-3 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                        </svg>
-                      </div>
+                  {/* Reset Canvas Sheet */}
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      clearSelection();
+                      toast.success('Yeni teklif hazırlama alanına geçildi');
+                    }}
+                    className="w-full text-slate-400 hover:text-slate-600 hover:bg-slate-50 font-bold py-2 rounded-xl text-xs flex items-center justify-center gap-1"
+                  >
+                    <X className="w-4 h-4" />
+                    Temizle / Yeni Teklif
+                  </Button>
+                </Card>
+
+                {/* 3. Searchable Saved Quotes panel */}
+                <Card className="border-2 border-slate-200 rounded-3xl shadow-lg bg-gradient-to-b from-slate-50 to-white">
+                  <CardHeader className="bg-slate-100/60 border-b border-slate-200 pb-3 rounded-t-3xl">
+                    <div className="flex justify-between items-center">
+                      <CardTitle className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                        <History className="w-4 h-4 text-slate-500" />
+                        Kayıtlı Teklifler ({quotes.length})
+                      </CardTitle>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="p-4 space-y-3.5">
+                    
+                    {/* Search query input */}
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="Kayıtlı tekliflerde arama..."
+                        value={quoteSearchTerm}
+                        onChange={(e) => handleQuoteSearch(e.target.value)}
+                        className="w-full px-3.5 py-2 pl-9 border border-slate-200 rounded-xl text-xs bg-slate-50/50 text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                      />
+                      <Search className="absolute left-3 top-2.5 w-3.5 h-3.5 text-slate-400" />
                     </div>
 
-                    {/* Quote List */}
+                    {/* Saved Quotes List */}
                     {quotes.length === 0 ? (
-                      <div className="text-center py-16">
-                        <div className="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                          <FileText className="w-12 h-12 text-blue-400" />
-                        </div>
-                        <h3 className="text-xl font-bold mb-2 text-gray-900">Henüz Teklif Yok</h3>
-                        <p className="text-sm mb-6 text-gray-600">
-                          İlk teklifinizi oluşturmak için "Yeni Teklif" sekmesine gidin
-                        </p>
-                        <Button 
-                          variant="outline"
-                          onClick={() => setQuoteSubTab('create')}
-                          className="bg-blue-50 border-blue-300 text-blue-700 hover:bg-blue-100"
-                        >
-                          <FileText className="w-4 h-4 mr-2" />
-                          Yeni Teklif Oluştur
-                        </Button>
+                      <div className="text-center py-8 text-slate-400 text-xs italic">
+                        Kayıtlı bir teklif bulunmamaktadır
                       </div>
                     ) : filteredQuotes.length === 0 ? (
-                        <div className="text-center py-12 text-slate-500">
-                          <FileText className="w-16 h-16 mx-auto mb-4 opacity-50" />
-                          <p className="text-lg mb-2">"{quoteSearchTerm}" araması için sonuç bulunamadı</p>
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            className="mt-2"
-                            onClick={() => handleQuoteSearch('')}
-                          >
-                            Aramayı Temizle
-                          </Button>
-                        </div>
-                      ) : (
-                        <div className="space-y-4">
-                          {filteredQuotes.map((quote) => (
-                          <div key={quote.id} className="border-2 border-blue-100 rounded-xl p-5 hover:border-blue-300 hover:shadow-md transition-all bg-white">
-                            <div className="flex flex-col lg:flex-row lg:justify-between lg:items-start gap-4">
-                              <div className="flex-1">
-                                <h4 className="font-bold text-lg text-gray-900 mb-2">{quote.name}</h4>
-                                <div className="flex flex-wrap items-center gap-3 text-sm">
-                                  <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full font-medium">
-                                    {quote.products.length} ürün
-                                  </span>
-                                  <span className="px-3 py-1 bg-amber-100 text-amber-700 rounded-full font-medium">
-                                    %{quote.discount_percentage} indirim
-                                  </span>
-                                  {quote.labor_cost > 0 && (
-                                    <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full font-medium">
-                                      ₺{formatPrice(quote.labor_cost)} işçilik
+                      <div className="text-center py-6 text-slate-400 text-xs italic">
+                        "{quoteSearchTerm}" araması için sonuç bulunamadı
+                      </div>
+                    ) : (
+                      <div className="space-y-2.5 max-h-[650px] overflow-y-auto pr-1 no-scrollbar">
+                        {filteredQuotes.map((quote) => {
+                          const isActiveEditingThis = loadedQuote?.id === quote.id;
+                          return (
+                            <div
+                              key={quote.id} 
+                              className={`p-[18px] border rounded-2xl transition-all shadow-sm flex flex-col justify-between gap-3.5 ${
+                                isActiveEditingThis 
+                                  ? 'border-emerald-500 bg-emerald-50/40 ring-2 ring-emerald-500/20 shadow-md'
+                                  : 'border-slate-200 bg-white ring-1 ring-slate-100/80 shadow-[0_8px_22px_rgba(15,23,42,0.07)] hover:border-emerald-200 hover:ring-emerald-100 hover:shadow-lg'
+                              }`}
+                            >
+                              <div className="flex justify-between items-start gap-3.5">
+                                <div className="min-w-0 flex-1">
+                                  <h5 className="font-extrabold text-slate-900 text-[15px] truncate leading-snug" title={quote.name}>
+                                    {quote.name}
+                                  </h5>
+                                  <div className="flex flex-wrap items-center gap-2 mt-2.5 text-xs font-bold text-slate-500">
+                                    <span className="bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-full ring-1 ring-emerald-100">
+                                      {quote.products?.length || 0} Ürün
                                     </span>
+                                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">
+                                      {new Date(quote.created_at).toLocaleDateString('tr-TR')}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="text-right whitespace-nowrap">
+                                  <span className="font-black text-slate-950 text-base tabular-nums">
+                                    ₺ {formatPrice(quote.total_net_price)}
+                                  </span>
+                                  {quote.discount_percentage > 0 && (
+                                    <div className="text-[11px] text-rose-500 font-extrabold mt-1">
+                                      %{quote.discount_percentage} İndirim
+                                    </div>
                                   )}
                                 </div>
-                                <div className="flex flex-wrap items-center gap-4 mt-3 text-sm text-slate-600">
-                                  <span className="font-semibold text-gray-900 text-base">
-                                    Net: ₺{formatPrice(quote.total_net_price)}
-                                  </span>
-                                  <span className="text-xs text-slate-500">
-                                    {new Date(quote.created_at).toLocaleDateString('tr-TR')}
-                                  </span>
-                                </div>
                               </div>
-                              <div className="flex flex-wrap gap-2">
-                                <Button
-                                  variant="secondary"
-                                  size="sm"
+
+                              {/* Card Action Buttons (Compact text links style) */}
+                              <div className="flex items-center justify-between gap-2 pt-3 border-t border-slate-100 text-[11px] font-bold">
+                                {/* Load / Edit */}
+                                <button
+                                  type="button"
                                   onClick={() => {
                                     try {
                                       const productIds = new Map();
                                       const productData = new Map();
+                                      const customPrices = new Map();
                                       
                                       quote.products.forEach(p => {
                                         productIds.set(p.id, p.quantity || 1);
-                                        
-                                        // Ürün detaylarını products array'inden bul
+                                        if (p.custom_price !== undefined && p.custom_price !== null) {
+                                          let loadedCustomPrice = parseFloat(p.custom_price);
+                                          const fullProduct = products.find(prod => prod.id === p.id);
+                                          if (fullProduct && fullProduct.currency && fullProduct.currency !== 'TRY') {
+                                            const rate = parseFloat(exchangeRates[fullProduct.currency]) || (fullProduct.currency === 'USD' ? 34.0 : 37.0);
+                                            // If the custom price is far larger than base list price, it was stored in TRY
+                                            if (loadedCustomPrice > (parseFloat(fullProduct.list_price) || 0) * 3) {
+                                              loadedCustomPrice = loadedCustomPrice / rate;
+                                            }
+                                          }
+                                          customPrices.set(p.id, loadedCustomPrice);
+                                        }
                                         const fullProduct = products.find(prod => prod.id === p.id);
                                         if (fullProduct) {
-                                          // Tam ürün bilgilerini kullan (görsel dahil)
-                                          productData.set(p.id, {
-                                            ...fullProduct,
-                                            quantity: p.quantity || 1
-                                          });
+                                          productData.set(p.id, { ...fullProduct, quantity: p.quantity || 1 });
                                         } else {
-                                          // Bulunamazsa backend'den gelen veriyi kullan
                                           productData.set(p.id, p);
                                         }
                                       });
                                       
                                       setSelectedProducts(new Map(productIds));
                                       setSelectedProductsData(new Map(productData));
+                                      setSelectedProductsCustomPrices(customPrices);
                                       setQuoteDiscount(quote.discount_percentage);
                                       setQuoteLaborCost(quote.labor_cost || 0);
                                       setQuoteNotes(quote.notes || '');
-                                      setLoadedQuote({...quote});
+                                      setLoadedQuote({ ...quote });
                                       setQuoteName(quote.name);
-                                      setQuoteSubTab('create');
                                       
-                                      toast.success(`"${quote.name}" teklifi düzenleme için yüklendi`);
-                                    } catch (error) {
-                                      toast.error('Teklif yükleme işlemi başarısız oldu');
+                                      toast.success(`"${quote.name}" teklifi yüklendi`);
+                                    } catch (e) {
+                                      toast.error('Teklif yükleme başarısız oldu');
                                     }
                                   }}
-                                  className="bg-blue-100 text-blue-700 hover:bg-blue-200 border-blue-300"
-                                  title={`"${quote.name}" teklifini önizle`}
+                                  className={`flex flex-1 items-center justify-center gap-1 px-3 py-2 rounded-xl border text-[11px] font-extrabold transition-all duration-150 ${
+                                    isActiveEditingThis
+                                      ? 'bg-emerald-600 border-emerald-600 text-white shadow-xs'
+                                      : 'bg-emerald-50/50 border-emerald-200/60 text-emerald-700 hover:bg-emerald-600 hover:text-white hover:border-emerald-600 hover:shadow-xs'
+                                  }`}
                                 >
-                                  <Eye className="w-4 h-4 mr-1" />
-                                  Önizle
-                                </Button>
-                                  
-                                <Button
-                                  variant="default"
-                                  size="sm"
+                                  <Edit className="w-3.5 h-3.5" />
+                                  {isActiveEditingThis ? 'Düzenleniyor' : 'Düzenle'}
+                                </button>
+                                
+                                {/* PDF */}
+                                <button
+                                  type="button"
                                   onClick={() => {
                                     const pdfUrl = `${API}/quotes/${quote.id}/pdf`;
                                     const link = document.createElement('a');
@@ -6463,82 +6358,50 @@ function App() {
                                     document.body.removeChild(link);
                                     toast.success('PDF indiriliyor...');
                                   }}
-                                  className="bg-emerald-600 hover:bg-emerald-700"
+                                  className="flex flex-1 items-center justify-center gap-1 px-3 py-2 rounded-xl border bg-blue-50/50 border-blue-200/60 text-blue-700 hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all duration-150 text-[11px] font-extrabold hover:shadow-xs"
                                 >
-                                  <Download className="w-4 h-4 mr-1" />
-                                  PDF
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => {
-                                    shareViaWhatsAppWithPDF(quote.name, quote.id);
-                                  }}
-                                  className="bg-green-500 text-white hover:bg-green-600 border-green-600"
-                                  title="PDF'i WhatsApp ile paylaş"
-                                >
-                                  <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 24 24">
-                                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.520-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893A11.821 11.821 0 0020.885 3.488"/>
-                                  </svg>
-                                  WhatsApp
-                                </Button>
-                                  
-                                <Button
-                                  variant="destructive"
-                                  size="sm"
+                                  <Download className="w-3.5 h-3.5" />
+                                  PDF İndir
+                                </button>
+
+                                {/* Delete */}
+                                <button
+                                  type="button"
                                   onClick={async () => {
                                     if (window.confirm(`"${quote.name}" teklifini silmek istediğinizden emin misiniz?`)) {
                                       try {
-                                        const response = await fetch(`${API}/quotes/${quote.id}`, {
-                                          method: 'DELETE'
-                                        });
-                                        
+                                        const response = await fetch(`${API}/quotes/${quote.id}`, { method: 'DELETE' });
                                         if (response.ok) {
-                                          await fetchQuotes();
                                           toast.success('Teklif silindi');
+                                          await fetchQuotes();
+                                          if (loadedQuote?.id === quote.id) {
+                                            clearSelection();
+                                          }
                                         } else {
-                                          throw new Error('Silme işlemi başarısız');
+                                          toast.error('Teklif silinemedi');
                                         }
-                                      } catch (error) {
+                                      } catch (e) {
                                         toast.error('Teklif silinemedi');
                                       }
                                     }
                                   }}
-                                  className="bg-red-600 hover:bg-red-700"
+                                  className="flex flex-1 items-center justify-center gap-1 px-3 py-2 rounded-xl border bg-rose-50/50 border-rose-200/60 text-rose-600 hover:bg-rose-600 hover:text-white hover:border-rose-600 transition-all duration-150 text-[11px] font-extrabold hover:shadow-xs"
                                 >
-                                  <X className="w-4 h-4 mr-1" />
+                                  <Trash2 className="w-3.5 h-3.5" />
                                   Sil
-                                </Button>
+                                </button>
                               </div>
                             </div>
-                            
-                            {/* Product Details - Collapsible */}
-                            <details className="mt-4">
-                              <summary className="cursor-pointer text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center gap-2">
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                </svg>
-                                Ürünleri Göster ({quote.products.length} ürün)
-                              </summary>
-                              <div className="mt-3 space-y-2 pl-6">
-                                {quote.products.map((product, index) => (
-                                  <div key={index} className="flex justify-between items-center py-2 px-3 bg-blue-50 rounded-lg text-sm border border-blue-100">
-                                    <span className="font-medium text-gray-900">{product.name}</span>
-                                    <span className="text-slate-600">
-                                      ₺{formatPrice(product.discounted_price_try || product.list_price_try)} × {product.quantity}
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            </details>
-                          </div>
-                        ))}
-                        </div>
-                      )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+              </div>
+              
+            </div>
           </TabsContent>
 
             {/* Para Birimi Değiştirme Dialog */}
@@ -6597,7 +6460,7 @@ function App() {
                   <Button 
                     onClick={changeCurrency} 
                     disabled={changingCurrency || !newCurrency}
-                    className="bg-emerald-600 hover:bg-emerald-700"
+                    className="bg-yellow-600 hover:bg-yellow-700"
                   >
                     {changingCurrency ? (
                       <>
@@ -6612,103 +6475,6 @@ function App() {
                     )}
                   </Button>
                 </div>
-              </DialogContent>
-            </Dialog>
-
-            {/* İnternet Fiyat Arama Modal */}
-            <Dialog open={marketPriceModal} onOpenChange={setMarketPriceModal}>
-              <DialogContent className="max-w-md">
-                <DialogHeader>
-                  <DialogTitle className="flex items-center gap-2">
-                    <ScanSearch className="w-5 h-5 text-blue-600" />
-                    İnternet Fiyatları
-                  </DialogTitle>
-                  <DialogDescription className="truncate">
-                    {marketPriceProduct?.name}
-                  </DialogDescription>
-                </DialogHeader>
-
-                {marketPriceLoading ? (
-                  <div className="flex flex-col items-center justify-center py-10 gap-3">
-                    <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-                    <p className="text-sm text-slate-500">Gemini AI internette araştırıyor...</p>
-                  </div>
-                ) : marketPriceResult?.error ? (
-                  <div className="py-6 text-center text-red-500 text-sm">{marketPriceResult.error}</div>
-                ) : marketPriceResult ? (
-                  <div className="space-y-4">
-                    {/* Ortalama fiyat */}
-                    {marketPriceResult.average_price && (
-                      <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-lg px-4 py-3">
-                        <span className="text-sm font-medium text-green-800">İnternet ortalaması</span>
-                        <span className="text-xl font-bold text-green-700">
-                          {marketPriceResult.currency === 'TRY' ? '₺' : marketPriceResult.currency} {Number(marketPriceResult.average_price).toLocaleString('tr-TR')}
-                        </span>
-                      </div>
-                    )}
-
-                    {/* Sistemdeki fiyatla karşılaştırma */}
-                    {marketPriceProduct?.list_price_try && marketPriceResult.average_price && (
-                      <div className="flex items-center justify-between text-sm px-1">
-                        <span className="text-slate-500">Sistemdeki fiyatın</span>
-                        {(() => {
-                          const diff = ((marketPriceResult.average_price - marketPriceProduct.list_price_try) / marketPriceProduct.list_price_try * 100).toFixed(1);
-                          return (
-                            <span className={diff > 0 ? 'text-red-600 font-medium' : 'text-green-600 font-medium'}>
-                              {diff > 0 ? `%${diff} üzerinde` : `%${Math.abs(diff)} altında`}
-                            </span>
-                          );
-                        })()}
-                      </div>
-                    )}
-
-                    {/* Site listesi */}
-                    {marketPriceResult.results?.length > 0 && (
-                      <div className="space-y-2">
-                        <p className="text-xs text-slate-400 font-medium uppercase tracking-wide">Bulunan fiyatlar</p>
-                        {marketPriceResult.results.map((item, i) => (
-                          <div key={i} className="flex items-center justify-between py-2 px-3 bg-slate-50 rounded-lg">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <span className="text-sm text-slate-700 truncate">{item.site}</span>
-                            </div>
-                            <div className="flex items-center gap-2 flex-shrink-0">
-                              <span className="text-sm font-medium text-slate-800">
-                                {item.currency === 'TRY' ? '₺' : item.currency} {Number(item.price).toLocaleString('tr-TR')}
-                              </span>
-                              {item.url && (
-                                <a href={item.url} target="_blank" rel="noreferrer" className="text-blue-500 hover:text-blue-700">
-                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                  </svg>
-                                </a>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {marketPriceResult.note && (
-                      <p className="text-xs text-slate-400 italic">{marketPriceResult.note}</p>
-                    )}
-
-                    <div className="flex items-center justify-between pt-2 border-t">
-                      <p className="text-xs text-slate-400">Gemini AI · 30 dk cache</p>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          setMarketPriceCache(prev => { const n = {...prev}; delete n[marketPriceProduct.id]; return n; });
-                          searchMarketPrice(marketPriceProduct);
-                        }}
-                        className="text-xs"
-                      >
-                        <RefreshCw className="w-3 h-3 mr-1" />
-                        Yenile
-                      </Button>
-                    </div>
-                  </div>
-                ) : null}
               </DialogContent>
             </Dialog>
 
@@ -6851,7 +6617,9 @@ function App() {
             <BatteryTestSection />
           </TabsContent>
 
-        </Tabs>
+              </div> {/* max-w container */}
+            </div> {/* Right Main Work Area */}
+          </Tabs> {/* Root Sidebar Tabs */}
 
         {/* Kategori Ürün Atama Dialog'u */}
       <Dialog open={showCategoryProductDialog} onOpenChange={setShowCategoryProductDialog}>
@@ -6982,7 +6750,7 @@ function App() {
             {selectedProductsForCategory.size > 0 && (
               <Button 
                 onClick={assignProductsToCategory}
-                className="bg-emerald-600 hover:bg-emerald-700"
+                className="bg-blue-600 hover:bg-blue-700"
               >
                 <Plus className="w-4 h-4 mr-2" />
                 {selectedProductsForCategory.size} Ürünü Kategoriye Ekle
@@ -7073,7 +6841,7 @@ function App() {
             <Button 
               onClick={createQuickQuote}
               disabled={!quickQuoteCustomerName.trim()}
-              className="bg-emerald-600 hover:bg-emerald-700"
+              className="bg-blue-600 hover:bg-blue-700"
             >
               <FileText className="w-4 h-4 mr-2" />
               Teklif Oluştur
@@ -7384,7 +7152,7 @@ function App() {
             <Button 
               onClick={editingCategoryGroup ? updateCategoryGroup : createCategoryGroup}
               disabled={!categoryGroupForm.name.trim()}
-              className="bg-emerald-600 hover:bg-emerald-700"
+              className="bg-purple-600 hover:bg-purple-700"
             >
               {editingCategoryGroup ? 'Güncelle' : 'Oluştur'}
             </Button>
@@ -7523,7 +7291,7 @@ function App() {
             <Button variant="outline" onClick={() => setShowBulkPriceModal(false)}>
               İptal
             </Button>
-            <Button onClick={bulkUpdatePrice} className="bg-emerald-600 hover:bg-emerald-700">
+            <Button onClick={bulkUpdatePrice} className="bg-orange-600 hover:bg-orange-700">
               Güncelle
             </Button>
           </DialogFooter>
@@ -7560,7 +7328,7 @@ function App() {
             <Button variant="outline" onClick={() => setShowBulkCategoryModal(false)}>
               İptal
             </Button>
-            <Button onClick={bulkUpdateCategory} className="bg-emerald-600 hover:bg-emerald-700">
+            <Button onClick={bulkUpdateCategory} className="bg-purple-600 hover:bg-purple-700">
               Ata
             </Button>
           </DialogFooter>
@@ -7595,7 +7363,7 @@ function App() {
               <Button 
                 onClick={scrapeWebsite} 
                 disabled={isScraping || !scrapeUrl.trim()}
-                className="bg-emerald-600 hover:bg-emerald-700"
+                className="bg-blue-600 hover:bg-blue-700"
               >
                 {isScraping ? (
                   <>
@@ -7782,7 +7550,7 @@ function App() {
             <Button 
               onClick={saveScratedProducts}
               disabled={!scrapeCompanyId || selectedScrapedProducts.size === 0}
-              className="bg-emerald-600 hover:bg-emerald-700"
+              className="bg-green-600 hover:bg-green-700"
             >
               <Save className="w-4 h-4 mr-2" />
               {selectedScrapedProducts.size} Ürünü Kaydet
