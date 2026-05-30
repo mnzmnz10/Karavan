@@ -5667,7 +5667,7 @@ function App() {
                         <TableHeader>
                           <TableRow className="bg-slate-50/80 hover:bg-slate-50/80 border-b border-slate-200">
                             <TableHead className="w-12 text-center text-[10px] font-bold text-slate-500">Resim</TableHead>
-                            <TableHead className="w-56 text-[10px] font-bold text-slate-500">Ürün Bilgisi</TableHead>
+                            <TableHead className="text-[10px] font-bold text-slate-500">Ürün Bilgisi</TableHead>
                             <TableHead className="w-24 text-[10px] font-bold text-slate-500">Marka</TableHead>
                             <TableHead className="w-24 text-[10px] font-bold text-slate-500 text-center">Adet</TableHead>
                             <TableHead className="w-28 text-[10px] font-bold text-slate-500 text-right">Birim Fiyat</TableHead>
@@ -5699,11 +5699,11 @@ function App() {
                                   
                                   {/* Name / Desc */}
                                   <TableCell className="p-2">
-                                    <div className="font-bold text-slate-800 text-xs truncate max-w-[200px]" title={product.name}>
+                                    <div className="font-bold text-slate-800 text-xs" title={product.name}>
                                       {product.name}
                                     </div>
                                     {product.description && (
-                                      <div className="text-[10px] text-slate-400 truncate max-w-[200px]" title={product.description}>
+                                      <div className="text-[10px] text-slate-400 mt-0.5" title={product.description}>
                                         {product.description}
                                       </div>
                                     )}
@@ -5905,48 +5905,6 @@ function App() {
 
               {/* Controls Panel & History (col-span-1) */}
               <div className="lg:col-span-1 space-y-6">
-                
-                {/* 1. Interactive Adjustments Drawer (Sliders) */}
-                <Card className="border border-slate-200/80 rounded-3xl shadow-sm bg-white p-4.5 space-y-4">
-                  <h4 className="font-extrabold text-slate-800 text-xs uppercase tracking-wider flex items-center gap-1.5 pb-2 border-b border-slate-100">
-                    <Settings className="w-4 h-4 text-emerald-600" />
-                    Hassas Ayar Sürgüleri
-                  </h4>
-                  
-                  {/* Discount range slider */}
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="font-bold text-slate-500">İndirim Oranı:</span>
-                      <span className="font-black text-rose-600">% {quoteDiscount || 0}</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0"
-                      max="50"
-                      step="1"
-                      value={quoteDiscount || 0}
-                      onChange={(e) => setQuoteDiscount(parseInt(e.target.value))}
-                      className="w-full h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-rose-600"
-                    />
-                  </div>
-
-                  {/* Labor range slider */}
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="font-bold text-slate-500">İşçilik Bedeli:</span>
-                      <span className="font-black text-cyan-600">₺ {formatPrice(quoteLaborCost || 0)}</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0"
-                      max="50000"
-                      step="500"
-                      value={quoteLaborCost || 0}
-                      onChange={(e) => setQuoteLaborCost(parseInt(e.target.value))}
-                      className="w-full h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-cyan-600"
-                    />
-                  </div>
-                </Card>
 
                 {/* 2. Action Controls Panel */}
                 <Card className="border border-slate-200/80 rounded-3xl shadow-sm bg-white p-4.5 space-y-3.5">
@@ -6092,7 +6050,7 @@ function App() {
                         "{quoteSearchTerm}" araması için sonuç bulunamadı
                       </div>
                     ) : (
-                      <div className="space-y-2.5 max-h-[300px] overflow-y-auto pr-1 no-scrollbar">
+                      <div className="space-y-2.5 max-h-[650px] overflow-y-auto pr-1 no-scrollbar">
                         {filteredQuotes.map((quote) => {
                           const isActiveEditingThis = loadedQuote?.id === quote.id;
                           return (
