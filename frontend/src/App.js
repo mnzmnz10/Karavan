@@ -5594,15 +5594,6 @@ function App() {
               
               {/* PDF Canvas Workspace (col-span-3) - A4 Styled Sheet */}
               <div className="lg:col-span-3 space-y-6">
-                
-                {/* Visual Status Indicator */}
-                {loadedQuote && (
-                  <div className="flex items-center justify-end bg-slate-100/50 border border-slate-200/50 rounded-2xl px-5 py-2 shadow-xs">
-                    <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] uppercase py-0.5 px-2 tracking-wider">
-                      Düzenleme Modu: {loadedQuote.name}
-                    </Badge>
-                  </div>
-                )}
 
                 {/* A4 Paper Canvas */}
                 <div className="w-full bg-white shadow-xl border border-slate-200 p-8 sm:p-12 rounded-2xl font-sans min-h-[1050px] flex flex-col justify-between relative overflow-hidden select-text">
@@ -5638,13 +5629,13 @@ function App() {
                       <Table className="table-auto w-full text-left">
                         <TableHeader>
                           <TableRow className="bg-slate-50/80 hover:bg-slate-50/80 border-b border-slate-200">
-                            <TableHead className="w-12 text-center text-[10px] font-bold text-slate-500">Resim</TableHead>
-                            <TableHead className="text-[10px] font-bold text-slate-500">Ürün Bilgisi</TableHead>
-                            <TableHead className="w-24 text-[10px] font-bold text-slate-500">Marka</TableHead>
-                            <TableHead className="w-24 text-[10px] font-bold text-slate-500 text-center">Adet</TableHead>
-                            <TableHead className="w-28 text-[10px] font-bold text-slate-500 text-right">Birim Fiyat</TableHead>
-                            <TableHead className="w-28 text-[10px] font-bold text-slate-500 text-right">Tutar</TableHead>
-                            <TableHead className="w-10 text-center"></TableHead>
+                            <TableHead className="w-16 text-center text-xs font-black text-slate-600">Resim</TableHead>
+                            <TableHead className="text-xs font-black text-slate-600">Ürün Bilgisi</TableHead>
+                            <TableHead className="w-28 text-xs font-black text-slate-600">Marka</TableHead>
+                            <TableHead className="w-28 text-xs font-black text-slate-600 text-center">Adet</TableHead>
+                            <TableHead className="w-32 text-xs font-black text-slate-600 text-right">Birim Fiyat</TableHead>
+                            <TableHead className="w-32 text-xs font-black text-slate-600 text-right">Tutar</TableHead>
+                            <TableHead className="w-12 text-center"></TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -5659,50 +5650,50 @@ function App() {
                               return (
                                 <TableRow key={product.id} className="border-b border-slate-100 hover:bg-slate-50/30 transition-colors">
                                   {/* Product Image */}
-                                  <TableCell className="p-2 text-center">
+                                  <TableCell className="p-3.5 text-center">
                                     {product.image_url ? (
-                                      <img src={product.image_url} alt="" className="w-8 h-8 object-cover rounded border border-slate-100 shadow-xxs" />
+                                      <img src={product.image_url} alt="" className="w-14 h-14 object-cover rounded-xl border border-slate-100 shadow-xxs" />
                                     ) : (
-                                      <div className="w-8 h-8 bg-slate-100 rounded border border-slate-100 flex items-center justify-center text-slate-300">
-                                        <Package className="w-4 h-4" />
+                                      <div className="w-14 h-14 bg-slate-100 rounded-xl border border-slate-100 flex items-center justify-center text-slate-300">
+                                        <Package className="w-6 h-6" />
                                       </div>
                                     )}
                                   </TableCell>
                                   
                                   {/* Name / Desc */}
-                                  <TableCell className="p-2">
-                                    <div className="font-bold text-slate-800 text-xs" title={product.name}>
+                                  <TableCell className="p-3.5">
+                                    <div className="font-bold text-slate-800 text-sm" title={product.name}>
                                       {product.name}
                                     </div>
                                     {product.description && (
-                                      <div className="text-[10px] text-slate-400 mt-0.5" title={product.description}>
+                                      <div className="text-xs text-slate-500 mt-1" title={product.description}>
                                         {product.description}
                                       </div>
                                     )}
                                   </TableCell>
                                   
                                   {/* Brand */}
-                                  <TableCell className="p-2 text-slate-600 text-xs font-semibold">
+                                  <TableCell className="p-3.5 text-slate-600 text-sm font-semibold">
                                     {product.brand || <span className="text-slate-300">-</span>}
                                   </TableCell>
                                   
                                   {/* Quantity adjusters inside cell */}
-                                  <TableCell className="p-2">
-                                    <div className="flex items-center justify-center gap-1.5">
+                                  <TableCell className="p-3.5">
+                                    <div className="flex items-center justify-center gap-2">
                                       <button
                                         type="button"
                                         onClick={() => toggleProductSelection(product.id, Math.max(1, (selectedProducts.get(product.id) || 1) - 1))}
-                                        className="w-5 h-5 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-md flex items-center justify-center text-slate-600 hover:text-slate-800 transition-colors text-xs font-bold"
+                                        className="w-6 h-6 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg flex items-center justify-center text-slate-600 hover:text-slate-800 transition-colors text-sm font-bold"
                                       >
                                         -
                                       </button>
-                                      <span className="w-5 text-center text-xs font-extrabold text-slate-800">
+                                      <span className="w-6 text-center text-sm font-extrabold text-slate-800">
                                         {selectedProducts.get(product.id) || 1}
                                       </span>
                                       <button
                                         type="button"
                                         onClick={() => toggleProductSelection(product.id, (selectedProducts.get(product.id) || 1) + 1)}
-                                        className="w-5 h-5 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-md flex items-center justify-center text-slate-600 hover:text-slate-800 transition-colors text-xs font-bold"
+                                        className="w-6 h-6 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg flex items-center justify-center text-slate-600 hover:text-slate-800 transition-colors text-sm font-bold"
                                       >
                                         +
                                       </button>
@@ -5710,24 +5701,24 @@ function App() {
                                   </TableCell>
                                   
                                   {/* List Price */}
-                                  <TableCell className="p-2 text-right font-bold text-slate-700 text-xs">
+                                  <TableCell className="p-3.5 text-right font-bold text-slate-700 text-sm">
                                     ₺ {formatPrice(product.list_price_try || 0)}
                                   </TableCell>
                                   
                                   {/* Line Total */}
-                                  <TableCell className="p-2 text-right font-black text-slate-900 text-xs">
+                                  <TableCell className="p-3.5 text-right font-black text-slate-900 text-sm">
                                     ₺ {formatPrice((product.list_price_try || 0) * (selectedProducts.get(product.id) || 1))}
                                   </TableCell>
                                   
                                   {/* Remove row */}
-                                  <TableCell className="p-2 text-center">
+                                  <TableCell className="p-3.5 text-center">
                                     <button
                                       type="button"
                                       onClick={() => toggleProductSelection(product.id, 0)}
-                                      className="text-slate-400 hover:text-rose-600 p-1 hover:bg-rose-50 rounded-lg transition-colors"
+                                      className="text-slate-400 hover:text-rose-600 p-1.5 hover:bg-rose-50 rounded-lg transition-colors"
                                       title="Ürünü Çıkar"
                                     >
-                                      <X className="w-3.5 h-3.5" />
+                                      <X className="w-4 h-4" />
                                     </button>
                                   </TableCell>
                                 </TableRow>
@@ -5737,16 +5728,16 @@ function App() {
                           
                           {/* Autocomplete Input Row (Styled as a blank row inside table) */}
                           <TableRow className="bg-slate-50/40 hover:bg-slate-50/60 border-t border-slate-200">
-                            <TableCell className="p-2.5 text-center">
-                              <Search className="w-4 h-4 text-emerald-500 mx-auto" />
+                            <TableCell className="p-3.5 text-center">
+                              <Search className="w-4.5 h-4.5 text-emerald-500 mx-auto" />
                             </TableCell>
-                            <TableCell colSpan={6} className="p-1 relative">
+                            <TableCell colSpan={6} className="p-2.5 relative">
                               <input
                                 type="text"
                                 placeholder="Teklif sayfasına ürün eklemek için yazın..."
                                 value={quoteProductSearch}
                                 onChange={(e) => setQuoteProductSearch(e.target.value)}
-                                className="w-full border-none bg-transparent focus:ring-0 focus:outline-none text-xs font-bold text-emerald-800 placeholder-emerald-600/40 px-2.5 py-2"
+                                className="w-full border-none bg-transparent focus:ring-0 focus:outline-none text-sm font-bold text-emerald-800 placeholder-emerald-600/40 px-2.5 py-3"
                               />
                               
                               {/* Inline Search Dropdown */}
