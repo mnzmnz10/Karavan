@@ -394,7 +394,7 @@ function BatteryTestSection() {
           <Button
             onClick={analyzeAll}
             disabled={analyzingAll || batteries.every(b => b.files.length === 0)}
-            className="bg-indigo-500 hover:bg-indigo-600 text-white h-12 text-base"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white h-12 text-base"
           >
             {analyzingAll ? (
               <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> Görseller Analiz Ediliyor...</>
@@ -1260,13 +1260,21 @@ function App() {
       if (forceUpdate) {
         // Force update from API
         response = await axios.post(`${API}/exchange-rates/update`);
-        if (response.data.success) {
-          setExchangeRates(response.data.rates);
-          if (showToast) {
-            toast.success(response.data.message);
-          }
-          return true;
+        const data = response.data || {};
+        // Always reflect whatever rates the backend returned (live or fallback)
+        if (data.rates) {
+          setExchangeRates(data.rates);
         }
+        if (showToast) {
+          // Show the backend's real message so the user can tell apart
+          // "rates didn't move (market closed)" from an actual failure.
+          if (data.success === false) {
+            toast.error(data.message || 'Döviz kurları güncellenemedi');
+          } else {
+            toast.success(data.message || 'Döviz kurları güncellendi');
+          }
+        }
+        return data.success !== false;
       } else {
         // Regular load
         response = await axios.get(`${API}/exchange-rates`);
@@ -1390,13 +1398,12 @@ function App() {
     try {
       setLoading(true);
       
-      // Döviz kurlarını güncelle
+      // Döviz kurlarını güncelle (loadExchangeRates kendi bilgilendirici toast'ını gösterir)
       const exchangeSuccess = await loadExchangeRates(true);
-      
+
       if (exchangeSuccess) {
         // Ürünleri de yeniden yükle (güncel kurlarla fiyat hesaplaması için)
         await loadProducts(1, true);
-        toast.success('Döviz kurları başarıyla güncellendi!');
       }
     } catch (error) {
       console.error('Error refreshing exchange rates:', error);
@@ -3164,26 +3171,34 @@ function App() {
   };
 
   const StatsCard = ({ title, value, icon: Icon, description }) => (
-    <Card className="bg-gradient-to-br from-emerald-50 to-teal-50 border-emerald-200">
+    <Card className="relative overflow-hidden rounded-2xl border border-emerald-200/70 bg-gradient-to-br from-white via-emerald-50 to-emerald-100 shadow-[0_18px_40px_-24px_rgba(5,91,80,0.45)]">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium text-emerald-800">{title}</CardTitle>
-        <Icon className="h-4 w-4 text-emerald-600" />
+        <CardTitle className="font-display text-sm font-semibold text-emerald-800">{title}</CardTitle>
+        <span className="grid h-10 w-10 place-items-center rounded-xl bg-white/70 text-emerald-600 shadow-sm">
+          <Icon className="h-5 w-5" />
+        </span>
       </CardHeader>
       <CardContent>
-        <div className="text-2xl font-bold text-emerald-900">{value}</div>
-        <p className="text-xs text-emerald-600 mt-1">{description}</p>
+        <div className="font-display tnum text-3xl font-extrabold text-emerald-900">{value}</div>
+        <p className="text-xs text-emerald-700/70 mt-1">{description}</p>
       </CardContent>
     </Card>
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-emerald-25 to-teal-50">
+    <div
+      className="min-h-screen"
+      style={{
+        background:
+          'radial-gradient(1100px 600px at 8% -8%, #d1fae5 0%, transparent 55%), radial-gradient(900px 500px at 100% 0%, #ccfbf1 0%, transparent 50%), linear-gradient(180deg, #f3faf7 0%, #eef6f3 100%)'
+      }}
+    >
       {/* Authentication Loading */}
       {authLoading ? (
-        <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50">
+        <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-emerald-50 via-white to-teal-50">
           <div className="text-center">
             <div className="relative">
-              <div className="w-20 h-20 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-6"></div>
+              <div className="w-20 h-20 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin mx-auto mb-6"></div>
               <img 
                 src="/logo.png" 
                 alt="Logo" 
@@ -3261,17 +3276,19 @@ function App() {
           <div className="mb-8">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-4">
-                <img 
-                  src="/logo.png" 
-                  alt="Çorlu Karavan Logo" 
-                  className="w-16 h-16 object-contain"
-                />
+                <div className="grid place-items-center w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-100 to-amber-200 ring-1 ring-amber-300/50 shadow-[0_14px_30px_-12px_rgba(245,158,11,0.55)]">
+                  <img
+                    src="/logo.png"
+                    alt="Çorlu Karavan Logo"
+                    className="w-12 h-12 object-contain"
+                  />
+                </div>
                 <div className="flex-1">
-                  <h1 className="text-4xl font-bold text-slate-800">
+                  <h1 className="font-display text-4xl font-extrabold leading-tight bg-gradient-to-r from-emerald-800 via-emerald-700 to-emerald-500 bg-clip-text text-transparent">
                     Çorlu Karavan
                   </h1>
                   <div className="flex items-center gap-3">
-                    <p className="text-lg text-slate-600">Fiyat Takip Sistemi</p>
+                    <p className="text-lg text-slate-600 font-medium">Fiyat Takip Sistemi</p>
                     <span className="text-xs text-slate-400 font-light">made by Mehmet Necdet</span>
                   </div>
                 </div>
@@ -3287,7 +3304,7 @@ function App() {
           </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
           {loading ? (
             // Loading skeletons
             <>
@@ -3314,27 +3331,29 @@ function App() {
                 icon={Package}
                 description="Sisteme yüklenmiş ürün"
               />
-              <Card className="bg-gradient-to-br from-emerald-50 to-teal-50 border-emerald-200">
+              <Card className="relative overflow-hidden rounded-2xl border border-amber-200/70 bg-gradient-to-br from-white via-amber-50 to-amber-100 shadow-[0_18px_40px_-24px_rgba(245,158,11,0.4)]">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium text-emerald-800">Döviz Kurları</CardTitle>
-                  <DollarSign className="h-4 w-4 text-emerald-600" />
+                  <CardTitle className="font-display text-sm font-semibold text-amber-800">Döviz Kurları</CardTitle>
+                  <span className="grid h-10 w-10 place-items-center rounded-xl bg-white/70 text-amber-600 shadow-sm">
+                    <DollarSign className="h-5 w-5" />
+                  </span>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-1">
                     <div className="flex justify-between items-center">
-                      <span className="text-sm text-emerald-700">USD/TRY:</span>
-                      <span className="text-lg font-bold text-emerald-900">
+                      <span className="text-sm text-amber-700/80">USD/₺</span>
+                      <span className="font-display tnum text-xl font-extrabold text-amber-900">
                         {exchangeRates.USD ? formatExchangeRate(exchangeRates.USD) : '---'}
                       </span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-sm text-emerald-700">EUR/TRY:</span>
-                      <span className="text-lg font-bold text-emerald-900">
+                      <span className="text-sm text-amber-700/80">EUR/₺</span>
+                      <span className="font-display tnum text-xl font-extrabold text-amber-900">
                         {exchangeRates.EUR ? formatExchangeRate(exchangeRates.EUR) : '---'}
                       </span>
                     </div>
                   </div>
-                  <p className="text-xs text-emerald-600 mt-1">Güncel döviz kurları</p>
+                  <p className="text-xs text-emerald-600 mt-1 font-medium">● Güncel döviz kurları</p>
                 </CardContent>
               </Card>
             </>
@@ -3354,10 +3373,11 @@ function App() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 h-auto sm:h-16 p-1 bg-slate-100 rounded-xl">
-            <TabsTrigger 
-              value="products" 
-              className="h-12 sm:h-14 text-sm sm:text-base font-medium transition-all duration-200 data-[state=active]:bg-blue-500 data-[state=active]:text-white data-[state=active]:shadow-lg hover:bg-blue-100 text-blue-700 rounded-lg"
+          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 h-auto sm:h-16 p-1.5 bg-white/70 border border-emerald-100 rounded-2xl shadow-sm">
+            {/* Unified tab style: neutral inactive (slate), single emerald brand accent when active */}
+            <TabsTrigger
+              value="products"
+              className="h-12 sm:h-14 text-sm sm:text-base font-medium text-slate-600 transition-all duration-200 hover:bg-slate-200/70 data-[state=active]:bg-gradient-to-br data-[state=active]:from-emerald-500 data-[state=active]:to-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-[0_8px_18px_-8px_rgba(5,150,105,0.7)] rounded-lg"
             >
               <div className="flex items-center gap-1 sm:gap-2">
                 <Package className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -3365,24 +3385,24 @@ function App() {
                 <span className="sm:hidden">Ürün</span>
               </div>
             </TabsTrigger>
-            <TabsTrigger 
+            <TabsTrigger
               value="quotes"
-              className="h-12 sm:h-14 text-sm sm:text-base font-medium transition-all duration-200 data-[state=active]:bg-purple-500 data-[state=active]:text-white data-[state=active]:shadow-lg hover:bg-purple-100 text-purple-700 rounded-lg"
+              className="h-12 sm:h-14 text-sm sm:text-base font-medium text-slate-600 transition-all duration-200 hover:bg-slate-200/70 data-[state=active]:bg-gradient-to-br data-[state=active]:from-emerald-500 data-[state=active]:to-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-[0_8px_18px_-8px_rgba(5,150,105,0.7)] rounded-lg"
             >
               <div className="flex items-center gap-1 sm:gap-2">
                 <FileText className="w-4 h-4 sm:w-5 sm:h-5" />
                 <span className="hidden sm:inline">Teklifler</span>
                 <span className="sm:hidden">Teklif</span>
                 {selectedProducts.size > 0 && (
-                  <Badge variant="secondary" className="ml-1 bg-white text-purple-700">
+                  <Badge variant="secondary" className="ml-1 bg-white text-emerald-700">
                     {selectedProducts.size}
                   </Badge>
                 )}
               </div>
             </TabsTrigger>
-            <TabsTrigger 
+            <TabsTrigger
               value="packages"
-              className="h-12 sm:h-14 text-sm sm:text-base font-medium transition-all duration-200 data-[state=active]:bg-teal-500 data-[state=active]:text-white data-[state=active]:shadow-lg hover:bg-teal-100 text-teal-700 rounded-lg"
+              className="h-12 sm:h-14 text-sm sm:text-base font-medium text-slate-600 transition-all duration-200 hover:bg-slate-200/70 data-[state=active]:bg-gradient-to-br data-[state=active]:from-emerald-500 data-[state=active]:to-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-[0_8px_18px_-8px_rgba(5,150,105,0.7)] rounded-lg"
             >
               <div className="flex items-center gap-1 sm:gap-2">
                 <Package className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -3390,9 +3410,9 @@ function App() {
                 <span className="sm:hidden">Paket</span>
               </div>
             </TabsTrigger>
-            <TabsTrigger 
+            <TabsTrigger
               value="companies"
-              className="h-12 sm:h-14 text-sm sm:text-base font-medium transition-all duration-200 data-[state=active]:bg-green-500 data-[state=active]:text-white data-[state=active]:shadow-lg hover:bg-green-100 text-green-700 rounded-lg"
+              className="h-12 sm:h-14 text-sm sm:text-base font-medium text-slate-600 transition-all duration-200 hover:bg-slate-200/70 data-[state=active]:bg-gradient-to-br data-[state=active]:from-emerald-500 data-[state=active]:to-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-[0_8px_18px_-8px_rgba(5,150,105,0.7)] rounded-lg"
             >
               <div className="flex items-center gap-1 sm:gap-2">
                 <Building2 className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -3400,9 +3420,9 @@ function App() {
                 <span className="sm:hidden">Firma</span>
               </div>
             </TabsTrigger>
-            <TabsTrigger 
+            <TabsTrigger
               value="categories"
-              className="h-12 sm:h-14 text-sm sm:text-base font-medium transition-all duration-200 data-[state=active]:bg-orange-500 data-[state=active]:text-white data-[state=active]:shadow-lg hover:bg-orange-100 text-orange-700 rounded-lg"
+              className="h-12 sm:h-14 text-sm sm:text-base font-medium text-slate-600 transition-all duration-200 hover:bg-slate-200/70 data-[state=active]:bg-gradient-to-br data-[state=active]:from-emerald-500 data-[state=active]:to-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-[0_8px_18px_-8px_rgba(5,150,105,0.7)] rounded-lg"
             >
               <div className="flex items-center gap-1 sm:gap-2">
                 <Tags className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -3410,9 +3430,9 @@ function App() {
                 <span className="sm:hidden">Ktgr</span>
               </div>
             </TabsTrigger>
-            <TabsTrigger 
+            <TabsTrigger
               value="upload"
-              className="h-12 sm:h-14 text-sm sm:text-base font-medium transition-all duration-200 data-[state=active]:bg-indigo-500 data-[state=active]:text-white data-[state=active]:shadow-lg hover:bg-indigo-100 text-indigo-700 rounded-lg"
+              className="h-12 sm:h-14 text-sm sm:text-base font-medium text-slate-600 transition-all duration-200 hover:bg-slate-200/70 data-[state=active]:bg-gradient-to-br data-[state=active]:from-emerald-500 data-[state=active]:to-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-[0_8px_18px_-8px_rgba(5,150,105,0.7)] rounded-lg"
             >
               <div className="flex items-center gap-1 sm:gap-2">
                 <Upload className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -3420,9 +3440,9 @@ function App() {
                 <span className="sm:hidden">Excel</span>
               </div>
             </TabsTrigger>
-            <TabsTrigger 
+            <TabsTrigger
               value="battery-test"
-              className="h-12 sm:h-14 text-sm sm:text-base font-medium transition-all duration-200 data-[state=active]:bg-red-500 data-[state=active]:text-white data-[state=active]:shadow-lg hover:bg-red-100 text-red-700 rounded-lg"
+              className="h-12 sm:h-14 text-sm sm:text-base font-medium text-slate-600 transition-all duration-200 hover:bg-slate-200/70 data-[state=active]:bg-gradient-to-br data-[state=active]:from-emerald-500 data-[state=active]:to-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-[0_8px_18px_-8px_rgba(5,150,105,0.7)] rounded-lg"
             >
               <div className="flex items-center gap-1 sm:gap-2">
                 <Battery className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -3674,7 +3694,7 @@ function App() {
                     <span className="text-purple-600 font-medium">💡 Grupları sürükleyerek sıralarını değiştirebilirsiniz</span>
                   </CardDescription>
                 </div>
-                <Button onClick={() => setShowCategoryGroupDialog(true)} className="bg-purple-600 hover:bg-purple-700">
+                <Button onClick={() => setShowCategoryGroupDialog(true)} className="bg-emerald-600 hover:bg-emerald-700">
                   <Plus className="w-4 h-4 mr-2" />
                   Grup Ekle
                 </Button>
@@ -3766,7 +3786,7 @@ function App() {
                     <Tags className="w-16 h-16 text-slate-300 mx-auto mb-4" />
                     <h3 className="text-lg font-medium text-slate-800 mb-2">Henüz kategori grubu yok</h3>
                     <p className="text-slate-600 mb-4">Kategorilerinizi gruplandırmak için "Grup Ekle" butonuna tıklayın</p>
-                    <Button onClick={() => setShowCategoryGroupDialog(true)} className="bg-purple-600 hover:bg-purple-700">
+                    <Button onClick={() => setShowCategoryGroupDialog(true)} className="bg-emerald-600 hover:bg-emerald-700">
                       <Plus className="w-4 h-4 mr-2" />
                       İlk Grubumu Oluştur
                     </Button>
@@ -3786,7 +3806,7 @@ function App() {
                     <h2 className="text-2xl font-bold text-slate-800">Paket Yönetimi</h2>
                     <p className="text-slate-600 mt-1">Hazır paketler oluşturun ve yönetin</p>
                   </div>
-                  <Button onClick={() => setShowPackageDialog(true)} className="bg-teal-600 hover:bg-teal-700">
+                  <Button onClick={() => setShowPackageDialog(true)} className="bg-emerald-600 hover:bg-emerald-700">
                     <Plus className="w-4 h-4 mr-2" />
                     Yeni Paket
                   </Button>
@@ -3886,7 +3906,7 @@ function App() {
                   <Package className="w-16 h-16 text-slate-300 mx-auto mb-4" />
                   <h3 className="text-lg font-medium text-slate-800 mb-2">Henüz paket yok</h3>
                   <p className="text-slate-600 mb-4">İlk paketinizi oluşturmak için "Yeni Paket" butonuna tıklayın</p>
-                  <Button onClick={() => setShowPackageDialog(true)} className="bg-teal-600 hover:bg-teal-700">
+                  <Button onClick={() => setShowPackageDialog(true)} className="bg-emerald-600 hover:bg-emerald-700">
                     <Plus className="w-4 h-4 mr-2" />
                     Yeni Paket Oluştur
                   </Button>
@@ -3912,7 +3932,7 @@ function App() {
                     </Button>
                     <Button
                       onClick={updatePackage}
-                      className="bg-teal-600 hover:bg-teal-700"
+                      className="bg-emerald-600 hover:bg-emerald-700"
                       disabled={!packageForm.name}
                     >
                       <Save className="w-4 h-4 mr-2" />
@@ -4259,7 +4279,7 @@ function App() {
                           </div>
                           <Button
                             onClick={addProductsToPackage}
-                            className="bg-teal-600 hover:bg-teal-700"
+                            className="bg-emerald-600 hover:bg-emerald-700"
                             disabled={packageSelectedProducts.size === 0}
                           >
                             <Save className="w-4 h-4 mr-2" />
@@ -4435,7 +4455,7 @@ function App() {
                                 e.stopPropagation(); // Header click'ini engellemek için
                                 addSuppliesToPackage();
                               }}
-                              className="bg-orange-600 hover:bg-orange-700"
+                              className="bg-emerald-600 hover:bg-emerald-700"
                               disabled={packageSelectedSupplies.size === 0}
                             >
                               <Save className="w-4 h-4 mr-2" />
@@ -4604,7 +4624,7 @@ function App() {
                                   setPackageLaborCost(0);
                                   toast.success(`₺${formatPrice(previousAmount)} işçilik maliyeti kaldırıldı!`);
                                 }}
-                                className="bg-green-600 hover:bg-green-700 px-2"
+                                className="bg-emerald-600 hover:bg-emerald-700 px-2"
                                 title="İşçilik tutarını temizle"
                               >
                                 <Check className="w-4 h-4" />
@@ -4850,7 +4870,7 @@ function App() {
                         <Button
                           size="sm"
                           onClick={() => setShowBulkPriceModal(true)}
-                          className="bg-orange-600 hover:bg-orange-700"
+                          className="bg-emerald-600 hover:bg-emerald-700"
                         >
                           <DollarSign className="w-4 h-4 mr-2" />
                           Toplu Fiyat
@@ -4858,7 +4878,7 @@ function App() {
                         <Button
                           size="sm"
                           onClick={() => setShowBulkCategoryModal(true)}
-                          className="bg-purple-600 hover:bg-purple-700"
+                          className="bg-emerald-600 hover:bg-emerald-700"
                         >
                           <Tags className="w-4 h-4 mr-2" />
                           Toplu Kategori
@@ -4891,7 +4911,7 @@ function App() {
                         </Button>
                         <Button 
                           onClick={() => setShowQuickQuoteDialog(true)}
-                          className="bg-blue-600 hover:bg-blue-700"
+                          className="bg-emerald-600 hover:bg-emerald-700"
                           size="sm"
                         >
                           <FileText className="w-4 h-4 mr-2" />
@@ -5510,7 +5530,7 @@ function App() {
                                           size="sm"
                                           variant={selectedProductsForBulk.has(product.id) ? "default" : "outline"}
                                           onClick={() => toggleProductSelectionForBulk(product.id)}
-                                          className={selectedProductsForBulk.has(product.id) ? "bg-blue-600 hover:bg-blue-700" : ""}
+                                          className={selectedProductsForBulk.has(product.id) ? "bg-emerald-600 hover:bg-emerald-700" : ""}
                                         >
                                           {selectedProductsForBulk.has(product.id) ? (
                                             <Check className="w-4 h-4" />
@@ -5527,7 +5547,7 @@ function App() {
                                                 size="sm" 
                                                 onClick={saveEditProduct}
                                                 disabled={loading}
-                                                className="bg-green-600 hover:bg-green-700"
+                                                className="bg-emerald-600 hover:bg-emerald-700"
                                               >
                                                 <Save className="w-4 h-4" />
                                               </Button>
@@ -5997,7 +6017,7 @@ function App() {
                                 <Button
                                   size="sm"
                                   onClick={() => setQuoteLaborCost(0)}
-                                  className="bg-green-600 hover:bg-green-700 px-2 py-1"
+                                  className="bg-emerald-600 hover:bg-emerald-700 px-2 py-1"
                                   title="Temizle"
                                 >
                                   <Check className="w-4 h-4" />
@@ -6094,7 +6114,7 @@ function App() {
                       <Button 
                         onClick={saveQuote}
                         disabled={selectedProducts.size === 0}
-                        className="bg-blue-600 hover:bg-blue-700 flex-1 min-w-[200px] h-12 text-base font-semibold shadow-md"
+                        className="bg-emerald-600 hover:bg-emerald-700 flex-1 min-w-[200px] h-12 text-base font-semibold shadow-md"
                       >
                         <Save className="w-5 h-5 mr-2" />
                         {loadedQuote && (loadedQuote.name === quoteName || quoteName === '') 
@@ -6577,7 +6597,7 @@ function App() {
                   <Button 
                     onClick={changeCurrency} 
                     disabled={changingCurrency || !newCurrency}
-                    className="bg-yellow-600 hover:bg-yellow-700"
+                    className="bg-emerald-600 hover:bg-emerald-700"
                   >
                     {changingCurrency ? (
                       <>
@@ -6962,7 +6982,7 @@ function App() {
             {selectedProductsForCategory.size > 0 && (
               <Button 
                 onClick={assignProductsToCategory}
-                className="bg-blue-600 hover:bg-blue-700"
+                className="bg-emerald-600 hover:bg-emerald-700"
               >
                 <Plus className="w-4 h-4 mr-2" />
                 {selectedProductsForCategory.size} Ürünü Kategoriye Ekle
@@ -7053,7 +7073,7 @@ function App() {
             <Button 
               onClick={createQuickQuote}
               disabled={!quickQuoteCustomerName.trim()}
-              className="bg-blue-600 hover:bg-blue-700"
+              className="bg-emerald-600 hover:bg-emerald-700"
             >
               <FileText className="w-4 h-4 mr-2" />
               Teklif Oluştur
@@ -7364,7 +7384,7 @@ function App() {
             <Button 
               onClick={editingCategoryGroup ? updateCategoryGroup : createCategoryGroup}
               disabled={!categoryGroupForm.name.trim()}
-              className="bg-purple-600 hover:bg-purple-700"
+              className="bg-emerald-600 hover:bg-emerald-700"
             >
               {editingCategoryGroup ? 'Güncelle' : 'Oluştur'}
             </Button>
@@ -7503,7 +7523,7 @@ function App() {
             <Button variant="outline" onClick={() => setShowBulkPriceModal(false)}>
               İptal
             </Button>
-            <Button onClick={bulkUpdatePrice} className="bg-orange-600 hover:bg-orange-700">
+            <Button onClick={bulkUpdatePrice} className="bg-emerald-600 hover:bg-emerald-700">
               Güncelle
             </Button>
           </DialogFooter>
@@ -7540,7 +7560,7 @@ function App() {
             <Button variant="outline" onClick={() => setShowBulkCategoryModal(false)}>
               İptal
             </Button>
-            <Button onClick={bulkUpdateCategory} className="bg-purple-600 hover:bg-purple-700">
+            <Button onClick={bulkUpdateCategory} className="bg-emerald-600 hover:bg-emerald-700">
               Ata
             </Button>
           </DialogFooter>
@@ -7575,7 +7595,7 @@ function App() {
               <Button 
                 onClick={scrapeWebsite} 
                 disabled={isScraping || !scrapeUrl.trim()}
-                className="bg-blue-600 hover:bg-blue-700"
+                className="bg-emerald-600 hover:bg-emerald-700"
               >
                 {isScraping ? (
                   <>
@@ -7762,7 +7782,7 @@ function App() {
             <Button 
               onClick={saveScratedProducts}
               disabled={!scrapeCompanyId || selectedScrapedProducts.size === 0}
-              className="bg-green-600 hover:bg-green-700"
+              className="bg-emerald-600 hover:bg-emerald-700"
             >
               <Save className="w-4 h-4 mr-2" />
               {selectedScrapedProducts.size} Ürünü Kaydet

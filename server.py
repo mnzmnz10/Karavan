@@ -1722,6 +1722,7 @@ async def update_exchange_rates():
         
         # Recalculate all products' TRY prices using the new rates
         updated_count = 0
+        recalculation_error = None
         try:
             # Fetch all products (only fields we need)
             products_cursor = db.products.find(
@@ -1784,14 +1785,40 @@ async def update_exchange_rates():
             
             logger.info(f"Recalculated TRY prices for {updated_count} products with new exchange rates")
         except Exception as e:
+            # Capture (do not silently swallow) the recalculation error so the
+            # caller can tell the difference between "rates didn't move" and
+            # "something actually broke". The request still returns 200 so the
+            # rate display keeps working.
+            recalculation_error = str(e)
             logger.error(f"Error recalculating product TRY prices: {e}")
-            # Do not fail the whole request if recalculation fails - rates were updated
-        
+
+        # Clear the in-memory response cache so any future cached product lists
+        # reflect the new prices. (The cache middleware is currently effectively a
+        # no-op, but this keeps correctness if/when it is repaired.)
+        invalidate_cache()
+
+        # Did these rates come from a live API fetch, or a stale/fallback set?
+        # get_exchange_rates() only sets last_update on a successful live fetch; on
+        # fallback (API down, quota exceeded, or a market holiday) it stays None.
+        # This lets the UI say "live rates applied" vs "market closed, used last
+        # known rates" instead of a misleading generic success message.
+        rates_are_live = currency_service.last_update is not None
+
+        if recalculation_error is not None:
+            message = f"Kurlar alındı ancak ürün fiyatları hesaplanırken hata oluştu: {recalculation_error}"
+        elif not rates_are_live:
+            message = (f"Canlı kur alınamadı (piyasa kapalı veya API erişilemez olabilir); "
+                       f"son bilinen kurlarla {updated_count} ürünün TL fiyatı korundu/hesaplandı")
+        else:
+            message = f"Döviz kurları güncellendi: {updated_count} ürünün TL fiyatı yeniden hesaplandı"
+
         return {
-            "success": True,
-            "message": f"Döviz kurları başarıyla güncellendi ve {updated_count} ürünün TL fiyatı yeniden hesaplandı",
+            "success": recalculation_error is None,
+            "rates_live": rates_are_live,
+            "message": message,
             "rates": {k: float(v) for k, v in rates.items()},
             "updated_products_count": updated_count,
+            "recalculation_error": recalculation_error,
             "updated_at": currency_service.last_update.isoformat() if currency_service.last_update else None
         }
     except Exception as e:
@@ -4861,6 +4888,8 @@ async def get_products(
                 product['list_price_try'] = float(product['list_price_try'])
             if 'discounted_price_try' in product and isinstance(product['discounted_price_try'], Decimal):
                 product['discounted_price_try'] = float(product['discounted_price_try'])
+            if '_id' in product:
+                product['_id'] = str(product['_id'])
             
             response_data.append(product)
         
@@ -5180,23 +5209,27 @@ async def change_upload_currency(upload_id: str, new_currency: str):
                 if new_discounted_price:
                     update_data["discounted_price"] = float(new_discounted_price)  # Same numeric value
                     update_data["discounted_price_try"] = float(new_discounted_price_try)  # Recalculated for TRY
-                    
-                    await db.products.update_one(
-                        {"id": product['id']},
-                        {"$set": update_data}
-                    )
-                    
-                    updated_count += 1
-                    
-                    # Track currency change (prices stay the same, only currency label changes)
-                    price_changes.append({
-                        "product_name": product['name'],
-                        "old_currency": old_currency,
-                        "new_currency": new_currency,
-                        "price_value": float(old_list_price),  # Same value in both currencies
-                        "change_type": "currency_label_only"
-                    })
-                    
+
+                # NOTE: the DB update must run for EVERY product, not only the ones that
+                # happen to have a discounted price. Previously these lines were nested
+                # under "if new_discounted_price:", so products without a discount were
+                # never written back - their currency/TL price silently stayed stale.
+                await db.products.update_one(
+                    {"id": product['id']},
+                    {"$set": update_data}
+                )
+
+                updated_count += 1
+
+                # Track currency change (prices stay the same, only currency label changes)
+                price_changes.append({
+                    "product_name": product['name'],
+                    "old_currency": old_currency,
+                    "new_currency": new_currency,
+                    "price_value": float(old_list_price),  # Same value in both currencies
+                    "change_type": "currency_label_only"
+                })
+
             except Exception as e:
                 logger.warning(f"Error updating product {product.get('name', 'Unknown')}: {e}")
                 continue
@@ -5211,7 +5244,11 @@ async def change_upload_currency(upload_id: str, new_currency: str):
                 }
             }
         )
-        
+
+        # Invalidate cached product lists so the updated currency/TL prices are served
+        # immediately instead of stale cached values.
+        invalidate_cache()
+
         return {
             "success": True,
             "message": f"{updated_count} ürünün para birimi {new_currency} olarak güncellendi (fiyat değerleri aynı kaldı)",
@@ -6530,16 +6567,164 @@ class MarketPriceRequest(BaseModel):
     brand: Optional[str] = ''
 
 @api_router.post("/market-price-search")
-async def market_price_search(request: MarketPriceRequest, current_user: str = Depends(get_current_user)):
-    """Gemini AI kullanarak ürünün internet fiyatlarını araştır"""
-    if not GEMINI_API_KEY:
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY tanımlı değil.")
+def _scrape_yahoo_prices(query: str):
+    import urllib.request
+    import urllib.parse
+    from bs4 import BeautifulSoup
+    import re
+    
+    url = f"https://search.yahoo.com/search?q={urllib.parse.quote_plus(query)}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+    }
+    
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=12) as r:
+            html = r.read().decode('utf-8')
+            
+        soup = BeautifulSoup(html, 'html.parser')
+        
+        # Select list items from Yahoo search results
+        results = soup.select('ol.searchCenterMiddle > li')
+        if not results:
+            # Fallback
+            results = soup.find_all('div', class_=re.compile(r'algo|dd\s+algo|res'))
+            
+        parsed_results = []
+        prices_found = []
+        
+        for res in results:
+            # Title tag is h3
+            title_el = res.select_one('h3')
+            title = title_el.get_text().strip() if title_el else ""
+            
+            # URL is inside first anchor tag
+            link_el = res.select_one('.compTitle a, a')
+            raw_url = link_el.get('href') if link_el else ""
+            
+            if not title or not raw_url:
+                continue
+                
+            # Decode Yahoo tracking URL
+            real_url = raw_url
+            if "r.search.yahoo.com" in raw_url:
+                match = re.search(r'RU=([^/&]+)', raw_url)
+                if match:
+                    real_url = urllib.parse.unquote(match.group(1))
+            
+            # Skip Yahoo internal searches
+            if any(domain in real_url.lower() for domain in ["images.search.yahoo.com", "video.search.yahoo.com", "search.yahoo.com/search"]):
+                continue
+                
+            # Snippet text - prioritize compText and avoid matching generic classes
+            snippet_el = res.select_one('.compText, p.fc-dustygray, .desc, .snippet')
+            snippet = snippet_el.get_text().strip() if snippet_el else res.get_text().strip()
+            
+            # Look for price patterns in Turkish format
+            combined_text = f"{title} {snippet}"
+            
+            # Match Turkish price formatting: e.g., 2.283,13 TL, 1.250 TL, 1250 TL, 1250.00 TL, 1250,00 TL, ₺1.250
+            price_matches = re.findall(r'([\d\.]+,\d{2}|[\d\.]+)(?:\s*|\s+)(?:TL|TRY|₺)', combined_text, re.IGNORECASE)
+            price_matches_alt = re.findall(r'(?:₺|TL|TRY)(?:\s*|\s+)([\d\.]+,\d{2}|[\d\.]+)', combined_text, re.IGNORECASE)
+            
+            all_candidates = price_matches + price_matches_alt
+            extracted_price = None
+            
+            for p_str in all_candidates:
+                p_clean = p_str.replace(" ", "")
+                # Normalize decimals and thousands
+                if "," in p_clean and "." in p_clean:
+                    p_clean = p_clean.replace(".", "").replace(",", ".")
+                elif "," in p_clean:
+                    if re.search(r',\d{2}$', p_clean):
+                        p_clean = p_clean.replace(",", ".")
+                    else:
+                        p_clean = p_clean.replace(",", "")
+                elif "." in p_clean:
+                    if len(p_clean.split(".")[-1]) == 3:
+                        p_clean = p_clean.replace(".", "")
+                
+                try:
+                    val = float(p_clean)
+                    if 10 < val < 1000000:
+                        extracted_price = val
+                        break
+                except ValueError:
+                    continue
+            
+            # Map domain to site name
+            site_name = "Diğer"
+            sites_mapping = {
+                "trendyol.com": "Trendyol",
+                "hepsiburada.com": "Hepsiburada",
+                "n11.com": "n11",
+                "amazon.com.tr": "Amazon",
+                "amazon.com": "Amazon",
+                "akakce.com": "Akakçe",
+                "cimri.com": "Cimri",
+                "pazarama.com": "Pazarama",
+                "teknosa.com": "Teknosa",
+                "vatanbilgisayar.com": "Vatan",
+                "mediamarkt.com.tr": "MediaMarkt"
+            }
+            
+            for domain, label in sites_mapping.items():
+                if domain in real_url.lower():
+                    site_name = label
+                    break
+                    
+            # Clean up title
+            title = re.sub(r'https?://\S+', '', title)
+            title = re.sub(r'\s+[\x07\x08]\s+', ' ', title)
+            title = title.split("›")[-1].strip()
+            if len(title) > 65:
+                title = title[:62] + "..."
+                
+            if extracted_price:
+                prices_found.append(extracted_price)
+                parsed_results.append({
+                    "site": site_name,
+                    "title": title,
+                    "price": extracted_price,
+                    "currency": "TRY",
+                    "url": real_url
+                })
+            
+        average_price = round(sum(prices_found) / len(prices_found), 2) if prices_found else None
+        
+        # Sort results: Akakçe/Cimri first, then Trendyol/Hepsiburada, and prioritize entries with prices
+        def sort_key(item):
+            priority = 0
+            if item["site"] in ["Akakçe", "Cimri"]: priority = 3
+            elif item["site"] in ["Trendyol", "Hepsiburada", "Amazon", "n11"]: priority = 2
+            elif item["site"] != "Diğer": priority = 1
+            has_price = 1 if item["price"] is not None else 0
+            return (has_price, priority)
+            
+        parsed_results.sort(key=sort_key, reverse=True)
+        
+        return {
+            "results": parsed_results[:12],
+            "average_price": average_price,
+            "currency": "TRY",
+            "note": "Arama sonuçları internet üzerinden canlı olarak listelendi." if parsed_results else "İnternet fiyatı bulunamadı."
+        }
+    except Exception as e:
+        logger.error(f"Yahoo price search scrape error: {e}", exc_info=True)
+        return {"results": [], "average_price": None, "currency": "TRY", "note": f"Arama hatası: {str(e)}"}
 
+@api_router.post("/market-price-search")
+async def market_price_search(request: MarketPriceRequest, current_user: str = Depends(get_current_user)):
+    """Gemini AI veya ücretsiz arama fall-back'i kullanarak ürünün internet fiyatlarını araştır"""
     query = request.product_name
     if request.brand:
         query = f"{request.brand} {query}"
 
-    prompt = f"""Türkiye'deki e-ticaret sitelerinde "{query}" ürününün güncel fiyatlarını araştır.
+    # 1. EĞER GEMINI_API_KEY tanımlıysa, Gemini AI kullanarak Google Search grounding ile ara
+    if GEMINI_API_KEY:
+        try:
+            prompt = f"""Türkiye'deki e-ticaret sitelerinde "{query}" ürününün güncel fiyatlarını araştır.
 
 Trendyol, Hepsiburada, n11, GittiGidiyor, Amazon Türkiye ve diğer Türk e-ticaret sitelerinde bu ürünü veya çok benzer bir ürünü ara.
 
@@ -6556,42 +6741,45 @@ SADECE aşağıdaki JSON formatında yanıt ver, başka hiçbir şey yazma:
 
 Fiyat bulamazsan boş results listesi döndür. URL bilinmiyorsa null yaz. Fiyatları sayısal olarak ver."""
 
-    try:
-        async with aiohttp.ClientSession() as session:
-            payload = {
-                "contents": [{"parts": [{"text": prompt}]}],
-                "tools": [{"google_search": {}}],
-                "generationConfig": {
-                    "temperature": 0.1,
-                    "maxOutputTokens": 1000,
+            async with aiohttp.ClientSession() as session:
+                payload = {
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "tools": [{"google_search": {}}],
+                    "generationConfig": {
+                        "temperature": 0.1,
+                        "maxOutputTokens": 1000,
+                    }
                 }
-            }
-            async with session.post(
-                GEMINI_ENDPOINT,
-                params={"key": GEMINI_API_KEY},
-                json=payload,
-                timeout=aiohttp.ClientTimeout(total=30)
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+                async with session.post(
+                    GEMINI_ENDPOINT,
+                    params={"key": GEMINI_API_KEY},
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=30)
+                ) as resp:
+                    resp.raise_for_status()
+                    data = await resp.json()
 
-        text = ""
-        for candidate in data.get("candidates", []):
-            for part in candidate.get("content", {}).get("parts", []):
-                if "text" in part:
-                    text += part["text"]
+            text = ""
+            for candidate in data.get("candidates", []):
+                for part in candidate.get("content", {}).get("parts", []):
+                    if "text" in part:
+                        text += part["text"]
 
-        # JSON çıkar
-        import re
-        json_match = re.search(r'\{[\s\S]*\}', text)
-        if not json_match:
-            return {"results": [], "average_price": None, "currency": "TRY", "note": "Fiyat bulunamadı."}
+            # JSON çıkar
+            import re
+            json_match = re.search(r'\{[\s\S]*\}', text)
+            if json_match:
+                return json.loads(json_match.group())
+        except Exception as e:
+            logger.error(f"Gemini price search failed, falling back to Yahoo scraping: {e}")
 
-        result = json.loads(json_match.group())
+    # 2. GEMINI_API_KEY tanımlı değilse veya Gemini AI araması hata verirse, Yahoo Scraping Fallback'ini kullan
+    try:
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(None, _scrape_yahoo_prices, query)
         return result
-
     except Exception as e:
-        logger.error(f"Market price search error: {e}")
+        logger.error(f"Market price search fallback error: {e}")
         raise HTTPException(status_code=500, detail=f"Arama hatası: {str(e)}")
 
 
