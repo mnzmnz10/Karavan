@@ -5596,18 +5596,13 @@ function App() {
               <div className="lg:col-span-3 space-y-6">
                 
                 {/* Visual Status Indicator */}
-                <div className="flex items-center justify-between bg-slate-100/50 border border-slate-200/50 rounded-2xl px-5 py-3 shadow-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 animate-pulse" />
-                    <span className="text-xs font-extrabold text-slate-700">Etkileşimli Kanvas Modu:</span>
-                    <span className="text-xs text-slate-500 font-bold">PDF üzerinde düzenlemek istediğiniz herhangi bir alana tıklayıp yazabilirsiniz.</span>
-                  </div>
-                  {loadedQuote && (
+                {loadedQuote && (
+                  <div className="flex items-center justify-end bg-slate-100/50 border border-slate-200/50 rounded-2xl px-5 py-2 shadow-xs">
                     <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] uppercase py-0.5 px-2 tracking-wider">
-                      Düzenleme Modu
+                      Düzenleme Modu: {loadedQuote.name}
                     </Badge>
-                  )}
-                </div>
+                  </div>
+                )}
 
                 {/* A4 Paper Canvas */}
                 <div className="w-full bg-white shadow-xl border border-slate-200 p-8 sm:p-12 rounded-2xl font-sans min-h-[1050px] flex flex-col justify-between relative overflow-hidden select-text">
@@ -5617,35 +5612,12 @@ function App() {
                   
                   <div>
                     {/* 1. Header Details */}
-                    <div className="flex flex-col sm:flex-row justify-between items-start gap-4 border-b pb-6 mb-8">
+                    <div className="flex justify-between items-center border-b pb-6 mb-8 gap-4">
                       <div>
-                        <div className="flex items-center gap-2.5 mb-2">
-                          <div className="w-9 h-9 bg-emerald-600 rounded-xl flex items-center justify-center shadow-sm">
-                            <FileText className="w-5 h-5 text-white" />
-                          </div>
-                          <span className="font-black text-lg text-slate-800 tracking-tight">KARAVAN ELEKTRİK</span>
-                        </div>
-                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Fiyat Teklif Formu</span>
+                        <h2 className="text-2xl font-black tracking-tight text-emerald-700 uppercase block">Fiyat Teklif Formu</h2>
                       </div>
-                      
-                      {/* Customer / Company Selector inside A4 sheet */}
-                      <div className="text-left sm:text-right space-y-1.5 min-w-[220px]">
-                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Teklif Sahibi / Müşteri</div>
-                        <Select 
-                          value={selectedQuoteCustomer || "none"} 
-                          onValueChange={(val) => setSelectedQuoteCustomer(val === "none" ? "" : val)}
-                        >
-                          <SelectTrigger className="w-full text-xs h-8 border-slate-200 hover:border-slate-300 font-bold bg-slate-50/50 rounded-lg">
-                            <SelectValue placeholder="Müşteri Seçilmedi" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">Seçilmedi (Genel Müşteri)</SelectItem>
-                            {companies.map((comp) => (
-                              <SelectItem key={comp.id} value={comp.id}>{comp.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <div className="text-[10px] text-slate-400 font-semibold">{new Date().toLocaleDateString('tr-TR')}</div>
+                      <div className="text-right text-xs font-bold text-slate-400">
+                        {new Date().toLocaleDateString('tr-TR')}
                       </div>
                     </div>
 
@@ -6122,12 +6094,13 @@ function App() {
                                       toast.error('Teklif yükleme başarısız oldu');
                                     }
                                   }}
-                                  className={`px-2 py-1 rounded transition-colors ${
+                                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] font-extrabold transition-all duration-150 ${
                                     isActiveEditingThis
-                                      ? 'text-emerald-600 bg-emerald-50'
-                                      : 'text-slate-600 hover:text-emerald-600 hover:bg-slate-50'
+                                      ? 'bg-emerald-600 border-emerald-600 text-white shadow-xs'
+                                      : 'bg-emerald-50/50 border-emerald-200/60 text-emerald-700 hover:bg-emerald-600 hover:text-white hover:border-emerald-600 hover:shadow-xs'
                                   }`}
                                 >
+                                  <Edit className="w-3.5 h-3.5" />
                                   {isActiveEditingThis ? 'Düzenleniyor' : 'Düzenle'}
                                 </button>
                                 
@@ -6144,8 +6117,9 @@ function App() {
                                     document.body.removeChild(link);
                                     toast.success('PDF indiriliyor...');
                                   }}
-                                  className="px-2 py-1 text-slate-600 hover:text-blue-600 hover:bg-slate-50 rounded transition-colors"
+                                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border bg-blue-50/50 border-blue-200/60 text-blue-700 hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all duration-150 text-[11px] font-extrabold hover:shadow-xs"
                                 >
+                                  <Download className="w-3.5 h-3.5" />
                                   PDF İndir
                                 </button>
 
@@ -6170,8 +6144,9 @@ function App() {
                                       }
                                     }
                                   }}
-                                  className="px-2 py-1 text-slate-400 hover:text-rose-600 hover:bg-slate-50 rounded transition-colors"
+                                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border bg-rose-50/50 border-rose-200/60 text-rose-600 hover:bg-rose-600 hover:text-white hover:border-rose-600 transition-all duration-150 text-[11px] font-extrabold hover:shadow-xs"
                                 >
+                                  <Trash2 className="w-3.5 h-3.5" />
                                   Sil
                                 </button>
                               </div>
