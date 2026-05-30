@@ -3357,7 +3357,7 @@ function App() {
 
             {/* 2. Right Main Work Area */}
             <div className="flex-1 overflow-y-auto p-8 bg-slate-50/30">
-              <div className="max-w-[1600px] mx-auto space-y-6">
+              <div className="w-full space-y-6">
 
           {/* Companies Tab */}
           <TabsContent value="companies" className="space-y-6">
@@ -5610,7 +5610,7 @@ function App() {
                 </div>
 
                 {/* A4 Paper Canvas */}
-                <div className="max-w-4xl mx-auto bg-white shadow-xl border border-slate-200 p-8 sm:p-12 rounded-2xl font-sans min-h-[1050px] flex flex-col justify-between relative overflow-hidden select-text">
+                <div className="w-full bg-white shadow-xl border border-slate-200 p-8 sm:p-12 rounded-2xl font-sans min-h-[1050px] flex flex-col justify-between relative overflow-hidden select-text">
                   
                   {/* Decorative Header Bar */}
                   <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-emerald-600 to-teal-600" />
