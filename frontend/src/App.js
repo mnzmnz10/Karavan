@@ -555,6 +555,7 @@ function App() {
   const [quotes, setQuotes] = useState([]);
   const [selectedQuote, setSelectedQuote] = useState(null);
   const [quoteSearchTerm, setQuoteSearchTerm] = useState('');
+  const [quoteProductSearch, setQuoteProductSearch] = useState('');
   const [filteredQuotes, setFilteredQuotes] = useState([]);
   
   // Toplu işlemler için state'ler
@@ -5589,465 +5590,475 @@ function App() {
             </TabsContent>
                            {/* Quotes Tab - Redesigned to be high-productivity and single-screen */}
           <TabsContent value="quotes" className="space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
               
-              {/* Left Column (col-span-2) - Active Quote Editor */}
-              <div className="lg:col-span-2 space-y-6">
-                <Card className="border border-slate-200/80 rounded-3xl shadow-sm bg-white">
-                  <CardHeader className="bg-slate-50/30 border-b pb-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-emerald-600 rounded-2xl flex items-center justify-center shadow-sm">
-                          <FileText className="w-5 h-5 text-white" />
-                        </div>
-                        <div>
-                          <CardTitle className="text-base font-bold text-slate-800">
-                            {loadedQuote ? (
-                              <span className="flex items-center gap-2">
-                                <span className="px-2 py-0.5 text-[10px] bg-emerald-600 text-white rounded-md font-bold uppercase tracking-wider">Düzenleme Modu</span>
-                                {loadedQuote.name}
-                              </span>
-                            ) : (
-                              <span className="flex items-center gap-2">
-                                <span className="px-2 py-0.5 text-[10px] bg-amber-500 text-white rounded-md font-bold uppercase tracking-wider">Yeni Teklif</span>
-                                Yeni Teklif Oluşturuluyor
-                              </span>
-                            )}
-                          </CardTitle>
-                          <CardDescription className="text-xs mt-1">
-                            Teklife ürün ekleyin, fiyat ve indirim ayarlarını yapın
-                          </CardDescription>
-                        </div>
-                      </div>
-                      
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setShowQuoteDiscountedPrices(!showQuoteDiscountedPrices)}
-                          className="h-8 px-2.5 border-slate-200 text-slate-600 hover:bg-slate-50 text-[11px] font-semibold rounded-lg flex items-center gap-1.5"
-                          title={showQuoteDiscountedPrices ? "Liste fiyatlarını göster" : "Tedarikçi indirimli fiyatlarını göster"}
-                        >
-                          {showQuoteDiscountedPrices ? (
-                            <>
-                              <EyeOff className="w-3.5 h-3.5 text-emerald-600" />
-                              <span>İndirimli Fiyatlar Açık</span>
-                            </>
-                          ) : (
-                            <>
-                              <Eye className="w-3.5 h-3.5 text-slate-400" />
-                              <span>İndirimli Fiyatları Göster</span>
-                            </>
-                          )}
-                        </Button>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  
-                  <CardContent className="p-5 space-y-6">
-                    {/* 1. Quick Add Product Search Bar */}
-                    <div className="relative">
-                      <input
-                        type="text"
-                        placeholder="Katalogdan ürün adı veya markası arayarak hızlıca ekleyin..."
-                        value={quickAddSearch}
-                        onChange={(e) => {
-                          setQuickAddSearch(e.target.value);
-                          setShowQuickAddDropdown(e.target.value.length > 0);
-                        }}
-                        onFocus={() => quickAddSearch.length > 0 && setShowQuickAddDropdown(true)}
-                        className="w-full px-4 py-2.5 pl-10 border border-slate-200 rounded-2xl text-xs bg-slate-50/50 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:bg-white transition-all"
-                      />
-                      <Search className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
-                      
-                      {/* Autocomplete Dropdown */}
-                      {showQuickAddDropdown && (
-                        <div className="absolute z-50 w-full mt-1.5 bg-white border border-slate-200 rounded-2xl shadow-xl max-h-72 overflow-y-auto divide-y divide-slate-100">
-                          {getQuickAddProducts().length > 0 ? (
-                            getQuickAddProducts().map(product => {
-                              const company = companies.find(c => c.id === product.company_id);
-                              return (
-                                <div
-                                  key={product.id}
-                                  className="flex items-center justify-between p-3 hover:bg-emerald-50/30 cursor-pointer transition-colors"
-                                  onClick={() => {
-                                    toggleProductSelection(product.id, 1);
-                                    setQuickAddSearch('');
-                                    setShowQuickAddDropdown(false);
-                                    toast.success(`"${product.name}" teklife eklendi`);
-                                  }}
-                                >
-                                  <div className="flex-1 pr-4 min-w-0">
-                                    <div className="text-xs font-bold text-slate-800 truncate">{product.name}</div>
-                                    <div className="flex items-center gap-2 mt-0.5">
-                                      {company && (
-                                        <span className="text-[9px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded uppercase">
-                                          {company.name}
-                                        </span>
-                                      )}
-                                      {product.brand && (
-                                        <span className="text-[9px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded uppercase">
-                                          {product.brand}
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                  <div className="text-xs font-black text-emerald-700 whitespace-nowrap">
-                                    ₺ {formatPrice(product.list_price_try || 0)}
-                                  </div>
-                                </div>
-                              );
-                            })
-                          ) : (
-                            <div className="p-4 text-xs text-slate-400 text-center italic">
-                              Aradığınız kriterde ürün bulunamadı
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* 2. Added Items List (Minimal Retail Cart Style) */}
-                    <div className="space-y-3">
-                      <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider flex items-center gap-1.5 px-1">
-                        <Package className="w-4 h-4 text-slate-500" />
-                        Teklif Ürünleri ({selectedProducts.size} Çeşit)
-                      </h4>
-                      
-                      {selectedProducts.size > 0 ? (
-                        <div className="divide-y divide-slate-100 border border-slate-200/80 rounded-2xl bg-white shadow-2xs overflow-hidden">
-                          {getSelectedProductsData().map((product) => {
-                            const company = companies.find(c => c.id === product.company_id);
-                            const itemQty = product.quantity || 1;
-                            const itemPrice = (showQuoteDiscountedPrices && product.discounted_price_try)
-                              ? (product.discounted_price_try || 0)
-                              : (product.list_price_try || 0);
-                            const itemTotal = itemPrice * itemQty;
-                            
-                            return (
-                              <div key={product.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 hover:bg-slate-50/30 transition-colors gap-3">
-                                <div className="flex-1 min-w-0 flex items-center gap-3">
-                                  {product.image_url && (
-                                    <img 
-                                      src={product.image_url} 
-                                      alt={product.name}
-                                      className="w-10 h-10 object-cover rounded-lg border border-slate-100 cursor-pointer hover:opacity-80 flex-shrink-0"
-                                      onError={(e) => {e.target.style.display = 'none'}}
-                                      onClick={() => openImagePreview(product.image_url, product.name)}
-                                    />
-                                  )}
-                                  <div className="min-w-0">
-                                    <div className="font-semibold text-slate-800 text-xs truncate" title={product.name}>
-                                      {product.name}
-                                    </div>
-                                    <div className="flex items-center gap-1.5 mt-0.5 text-[9px] text-slate-400">
-                                      {company && <span className="font-bold text-slate-500 uppercase">{company.name}</span>}
-                                      {product.brand && <span>• {product.brand}</span>}
-                                    </div>
-                                  </div>
-                                </div>
-                                
-                                <div className="flex items-center justify-between sm:justify-end gap-5 shrink-0">
-                                  {/* Quantity Controller */}
-                                  <div className="inline-flex items-center gap-1 bg-slate-50 border border-slate-200/60 p-0.5 rounded-xl">
-                                    <button
-                                      type="button"
-                                      onClick={() => toggleProductSelection(product.id, Math.max(1, itemQty - 1))}
-                                      className="p-1 text-slate-400 hover:text-red-600 transition-colors"
-                                    >
-                                      <MinusCircle className="w-3.5 h-3.5" />
-                                    </button>
-                                    <span className="w-6 text-center text-xs font-bold text-slate-800">{itemQty}</span>
-                                    <button
-                                      type="button"
-                                      onClick={() => toggleProductSelection(product.id, itemQty + 1)}
-                                      className="p-1 text-slate-400 hover:text-emerald-600 transition-colors"
-                                    >
-                                      <PlusCircle className="w-3.5 h-3.5" />
-                                    </button>
-                                  </div>
-                                  
-                                  {/* Item Total Price */}
-                                  <div className="text-right w-24">
-                                    <div className="font-bold text-slate-900 text-xs">
-                                      ₺ {formatPrice(itemTotal)}
-                                    </div>
-                                    <div className="text-[9px] text-slate-400">
-                                      ₺ {formatPrice(itemPrice)} × {itemQty}
-                                    </div>
-                                  </div>
-                                  
-                                  {/* Delete Row */}
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      toggleProductSelection(product.id, 0);
-                                      toast.success('Ürün tekliften çıkarıldı');
-                                    }}
-                                    className="text-slate-300 hover:text-rose-600 transition-colors p-1"
-                                    title="Tekliften Çıkar"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <div className="text-center py-10 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
-                          <Package className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                          <div className="text-xs font-bold text-slate-500">Teklifinizde ürün bulunmamaktadır</div>
-                          <p className="text-[10px] text-slate-400 mt-1 max-w-xs mx-auto">
-                            Yukarıdaki arama çubuğundan veya Ürünler sekmesindeki tablodan ürün seçerek teklife ekleme yapabilirsiniz.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* 3. Unified Quote Settings Panel (Clean Input Form) */}
-                    <div className="bg-slate-50/50 border border-slate-200/60 rounded-2xl p-4.5 space-y-4">
-                      <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider flex items-center gap-1.5">
-                        <Settings className="w-4 h-4 text-slate-500" />
-                        Teklif Ayarları
-                      </h4>
-                      
-                      <div className="space-y-3.5">
-                        {/* Quote Title */}
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Teklif Adı / Tanımı</label>
-                          <Input
-                            placeholder="Örn: Mehmet Bey Karavan Güneş Paneli Teklifi"
-                            value={quoteName}
-                            onChange={(e) => setQuoteName(e.target.value)}
-                            className="w-full border-slate-200 focus:border-emerald-500 focus:ring-emerald-500 rounded-xl text-xs bg-white h-9"
-                          />
-                        </div>
-
-                        {/* Inline Adjustments (Discount & Labor) */}
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-1.5">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                              <TrendingUp className="w-3.5 h-3.5 text-amber-500" />
-                              Teklif İskontosu (%)
-                            </label>
-                            <div className="relative">
-                              <Input
-                                type="number"
-                                min="0"
-                                max="100"
-                                placeholder="0"
-                                value={quoteDiscount || ''}
-                                onChange={(e) => setQuoteDiscount(Math.max(0, Math.min(100, parseFloat(e.target.value) || 0)))}
-                                className="w-full border-slate-200 focus:border-emerald-500 focus:ring-emerald-500 rounded-xl text-xs pr-7 font-bold text-amber-700 bg-white h-9"
-                              />
-                              <span className="absolute right-3 top-2.5 text-xs font-bold text-amber-600">%</span>
-                            </div>
-                          </div>
-
-                          <div className="space-y-1.5">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                              <Wrench className="w-3.5 h-3.5 text-cyan-500" />
-                              İşçilik Bedeli (₺)
-                            </label>
-                            <div className="relative">
-                              <Input
-                                type="number"
-                                min="0"
-                                placeholder="0"
-                                value={quoteLaborCost || ''}
-                                onChange={(e) => setQuoteLaborCost(Math.max(0, parseFloat(e.target.value) || 0))}
-                                className="w-full border-slate-200 focus:border-emerald-500 focus:ring-emerald-500 rounded-xl text-xs pl-7 font-bold text-cyan-700 bg-white h-9"
-                              />
-                              <span className="absolute left-3 top-2.5 text-xs font-bold text-cyan-600">₺</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Quote Notes */}
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Teklif Notları (Müşteriye İletilir)</label>
-                          <textarea
-                            className="flex min-h-[60px] w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 focus:outline-none text-slate-800 placeholder-slate-400"
-                            value={quoteNotes}
-                            onChange={(e) => setQuoteNotes(e.target.value)}
-                            placeholder="Ödeme koşulları, teslimat şartları veya diğer notlar..."
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Right Column (col-span-1) - Live Summary Ticket & Saved Quotes */}
-              <div className="lg:col-span-1 space-y-6">
+              {/* PDF Canvas Workspace (col-span-3) - A4 Styled Sheet */}
+              <div className="lg:col-span-3 space-y-6">
                 
-                {/* 1. Live Summary Receipt Box (Clean White & High Contrast) */}
-                <div className="bg-white border border-slate-200/80 rounded-3xl p-5 shadow-md space-y-4">
-                  <h4 className="font-extrabold text-slate-800 text-sm flex items-center gap-2 pb-2 border-b border-slate-100">
-                    <Calculator className="w-4 h-4 text-emerald-600" />
-                    Canlı Teklif Fişi
-                  </h4>
-                  
-                  <div className="space-y-2.5 text-xs">
-                    <div className="flex justify-between items-center text-slate-500">
-                      <span>Eklenen Çeşit / Adet</span>
-                      <span className="font-bold text-slate-700">
-                        {calculateQuoteTotals.productCount} çeşit ({calculateQuoteTotals.totalQuantity} adet)
-                      </span>
-                    </div>
-
-                    <div className="flex justify-between items-center text-slate-500">
-                      <span>Liste Toplamı</span>
-                      <span className="font-bold text-slate-700">
-                        ₺ {formatPrice(calculateQuoteTotals.totalListPrice)}
-                      </span>
-                    </div>
-                    
-                    {quoteDiscount > 0 && (
-                      <div className="flex justify-between items-center text-rose-600 font-medium">
-                        <span>Teklif İndirimi (%{quoteDiscount})</span>
-                        <span>
-                          - ₺ {formatPrice(calculateQuoteTotals.discountAmount)}
-                        </span>
-                      </div>
-                    )}
-                    
-                    {quoteLaborCost > 0 && (
-                      <div className="flex justify-between items-center text-cyan-600 font-medium">
-                        <span>İşçilik Maliyeti</span>
-                        <span>
-                          + ₺ {formatPrice(calculateQuoteTotals.laborCost)}
-                        </span>
-                      </div>
-                    )}
-                    
-                    <div className="border-t border-dashed border-slate-200 pt-3.5 space-y-1">
-                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Müşteri Net Tutar</div>
-                      <div className="flex items-baseline justify-between gap-2">
-                        <span className="text-2xl font-black text-slate-900 tracking-tight">
-                          ₺ {formatPrice(calculateQuoteTotals.totalNetPrice)}
-                        </span>
-                        {exchangeRates.EUR && (
-                          <span className="text-xs font-bold text-slate-500 whitespace-nowrap">
-                            € {formatPrice(calculateQuoteTotals.totalNetPrice / exchangeRates.EUR)} EUR
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    
-                    {/* Grand Action buttons */}
-                    <div className="space-y-2 pt-3">
-                      <Button 
-                        onClick={saveQuote}
-                        disabled={selectedProducts.size === 0}
-                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white h-10 text-xs font-extrabold shadow-sm rounded-xl flex items-center justify-center gap-2 transition-all active:scale-98"
-                      >
-                        <Save className="w-3.5 h-3.5" />
-                        {loadedQuote ? 'Değişiklikleri Güncelle' : 'Teklifi Kaydet'}
-                      </Button>
-
-                      <div className="grid grid-cols-2 gap-2">
-                        {/* PDF Download */}
-                        <Button 
-                          onClick={async () => {
-                            if (selectedProducts.size === 0) {
-                              toast.error('Önce teklife ürün ekleyin');
-                              return;
-                            }
-                            try {
-                              let quoteId = loadedQuote?.id;
-                              
-                              // Otomatik kaydet/güncelle
-                              const selectedProductData = getSelectedProductsData().map(p => ({
-                                id: p.id,
-                                quantity: p.quantity || 1
-                              }));
-                              
-                              const newQuoteData = {
-                                name: quoteName || `Teklif - ${new Date().toLocaleDateString('tr-TR')}`,
-                                discount_percentage: parseFloat(quoteDiscount) || 0,
-                                labor_cost: parseFloat(quoteLaborCost) || 0,
-                                products: selectedProductData,
-                                notes: quoteNotes.trim() || ''
-                              };
-                              
-                              if (loadedQuote && loadedQuote.id) {
-                                await fetch(`${API}/quotes/${loadedQuote.id}`, {
-                                  method: 'PUT',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify(newQuoteData)
-                                });
-                              } else {
-                                const createResponse = await fetch(`${API}/quotes`, {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify(newQuoteData)
-                                });
-                                const savedQuote = await createResponse.json();
-                                quoteId = savedQuote.id;
-                              }
-                              
-                              await fetchQuotes();
-                              
-                              // PDF'i hemen indir
-                              const pdfUrl = `${API}/quotes/${quoteId}/pdf`;
-                              const link = document.createElement('a');
-                              link.href = pdfUrl;
-                              link.download = `${loadedQuote?.name || quoteName || 'Teklif'}.pdf`;
-                              document.body.appendChild(link);
-                              link.click();
-                              document.body.removeChild(link);
-                              toast.success('PDF indiriliyor...');
-                            } catch (e) {
-                              toast.error('PDF indirme başarısız oldu');
-                            }
-                          }}
-                          disabled={selectedProducts.size === 0}
-                          className="bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 h-9.5 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-colors"
-                        >
-                          <Download className="w-3.5 h-3.5 text-slate-500" />
-                          PDF İndir
-                        </Button>
-                        
-                        {/* WhatsApp share */}
-                        <Button
-                          onClick={async () => {
-                            if (!loadedQuote?.id) {
-                              toast.error('Paylaşmak için lütfen önce teklifi kaydedin');
-                              return;
-                            }
-                            shareViaWhatsAppWithPDF(loadedQuote.name, loadedQuote.id);
-                          }}
-                          disabled={!loadedQuote}
-                          className="bg-green-50 hover:bg-green-100 text-green-700 border border-green-200 h-9.5 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-50 transition-colors"
-                          title={loadedQuote ? "WhatsApp ile Paylaş" : "Önce teklifi kaydetmelisiniz"}
-                        >
-                          <svg className="w-3.5 h-3.5 text-green-600" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893A11.821 11.821 0 0020.885 3.488"/>
-                          </svg>
-                          WhatsApp
-                        </Button>
-                      </div>
-
-                      {/* Clear/New start */}
-                      <Button 
-                        variant="ghost" 
-                        onClick={() => {
-                          clearSelection();
-                          toast.success('Yeni teklif hazırlama alanına geçildi');
-                        }}
-                        className="w-full text-slate-400 hover:text-slate-600 hover:bg-slate-50 h-8.5 text-[11px] rounded-xl flex items-center justify-center gap-1.5 border border-transparent transition-colors"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                        Temizle / Yeni Teklif
-                      </Button>
-                    </div>
+                {/* Visual Status Indicator */}
+                <div className="flex items-center justify-between bg-slate-100/50 border border-slate-200/50 rounded-2xl px-5 py-3 shadow-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 animate-pulse" />
+                    <span className="text-xs font-extrabold text-slate-700">Etkileşimli Kanvas Modu:</span>
+                    <span className="text-xs text-slate-500 font-bold">PDF üzerinde düzenlemek istediğiniz herhangi bir alana tıklayıp yazabilirsiniz.</span>
                   </div>
+                  {loadedQuote && (
+                    <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] uppercase py-0.5 px-2 tracking-wider">
+                      Düzenleme Modu
+                    </Badge>
+                  )}
                 </div>
 
-                {/* 2. Searchable Saved Quotes panel */}
+                {/* A4 Paper Canvas */}
+                <div className="max-w-4xl mx-auto bg-white shadow-xl border border-slate-200 p-8 sm:p-12 rounded-2xl font-sans min-h-[1050px] flex flex-col justify-between relative overflow-hidden select-text">
+                  
+                  {/* Decorative Header Bar */}
+                  <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-emerald-600 to-teal-600" />
+                  
+                  <div>
+                    {/* 1. Header Details */}
+                    <div className="flex flex-col sm:flex-row justify-between items-start gap-4 border-b pb-6 mb-8">
+                      <div>
+                        <div className="flex items-center gap-2.5 mb-2">
+                          <div className="w-9 h-9 bg-emerald-600 rounded-xl flex items-center justify-center shadow-sm">
+                            <FileText className="w-5 h-5 text-white" />
+                          </div>
+                          <span className="font-black text-lg text-slate-800 tracking-tight">KARAVAN ELEKTRİK</span>
+                        </div>
+                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Fiyat Teklif Formu</span>
+                      </div>
+                      
+                      {/* Customer / Company Selector inside A4 sheet */}
+                      <div className="text-left sm:text-right space-y-1.5 min-w-[220px]">
+                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Teklif Sahibi / Müşteri</div>
+                        <Select 
+                          value={selectedQuoteCustomer || "none"} 
+                          onValueChange={(val) => setSelectedQuoteCustomer(val === "none" ? "" : val)}
+                        >
+                          <SelectTrigger className="w-full text-xs h-8 border-slate-200 hover:border-slate-300 font-bold bg-slate-50/50 rounded-lg">
+                            <SelectValue placeholder="Müşteri Seçilmedi" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">Seçilmedi (Genel Müşteri)</SelectItem>
+                            {companies.map((comp) => (
+                              <SelectItem key={comp.id} value={comp.id}>{comp.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <div className="text-[10px] text-slate-400 font-semibold">{new Date().toLocaleDateString('tr-TR')}</div>
+                      </div>
+                    </div>
+
+                    {/* 2. Editable Title Field */}
+                    <div className="mb-6 space-y-1">
+                      <label className="text-[9px] font-extrabold text-emerald-700 uppercase tracking-wider block">Teklif Başlığı</label>
+                      <input
+                        type="text"
+                        value={quoteName}
+                        onChange={(e) => setQuoteName(e.target.value)}
+                        placeholder="Teklif Başlığı Girin (Örn: Mehmet Bey Karavan Güneş Paneli Teklifi)"
+                        className="w-full border-none bg-transparent hover:bg-slate-50 focus:bg-slate-50 focus:ring-1 focus:ring-emerald-500 rounded px-2.5 py-1.5 text-base font-black text-slate-800 focus:outline-none transition-all"
+                      />
+                    </div>
+
+                    {/* 3. Products Table */}
+                    <div className="border border-slate-200/80 rounded-xl overflow-hidden mb-8 bg-slate-50/20 shadow-xxs">
+                      <Table className="table-auto w-full text-left">
+                        <TableHeader>
+                          <TableRow className="bg-slate-50/80 hover:bg-slate-50/80 border-b border-slate-200">
+                            <TableHead className="w-12 text-center text-[10px] font-bold text-slate-500">Resim</TableHead>
+                            <TableHead className="w-56 text-[10px] font-bold text-slate-500">Ürün Bilgisi</TableHead>
+                            <TableHead className="w-24 text-[10px] font-bold text-slate-500">Marka</TableHead>
+                            <TableHead className="w-24 text-[10px] font-bold text-slate-500 text-center">Adet</TableHead>
+                            <TableHead className="w-28 text-[10px] font-bold text-slate-500 text-right">Birim Fiyat</TableHead>
+                            <TableHead className="w-28 text-[10px] font-bold text-slate-500 text-right">Tutar</TableHead>
+                            <TableHead className="w-10 text-center"></TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {getSelectedProductsData().length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={7} className="p-12 text-center text-slate-400/80 italic text-xs">
+                                Teklifinizde henüz ürün bulunmamaktadır. Alttaki arama satırından hızlıca ürün ekleyebilirsiniz.
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            getSelectedProductsData().map((product) => {
+                              return (
+                                <TableRow key={product.id} className="border-b border-slate-100 hover:bg-slate-50/30 transition-colors">
+                                  {/* Product Image */}
+                                  <TableCell className="p-2 text-center">
+                                    {product.image_url ? (
+                                      <img src={product.image_url} alt="" className="w-8 h-8 object-cover rounded border border-slate-100 shadow-xxs" />
+                                    ) : (
+                                      <div className="w-8 h-8 bg-slate-100 rounded border border-slate-100 flex items-center justify-center text-slate-300">
+                                        <Package className="w-4 h-4" />
+                                      </div>
+                                    )}
+                                  </TableCell>
+                                  
+                                  {/* Name / Desc */}
+                                  <TableCell className="p-2">
+                                    <div className="font-bold text-slate-800 text-xs truncate max-w-[200px]" title={product.name}>
+                                      {product.name}
+                                    </div>
+                                    {product.description && (
+                                      <div className="text-[10px] text-slate-400 truncate max-w-[200px]" title={product.description}>
+                                        {product.description}
+                                      </div>
+                                    )}
+                                  </TableCell>
+                                  
+                                  {/* Brand */}
+                                  <TableCell className="p-2 text-slate-600 text-xs font-semibold">
+                                    {product.brand || <span className="text-slate-300">-</span>}
+                                  </TableCell>
+                                  
+                                  {/* Quantity adjusters inside cell */}
+                                  <TableCell className="p-2">
+                                    <div className="flex items-center justify-center gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleProductSelection(product.id, Math.max(1, (selectedProducts.get(product.id) || 1) - 1))}
+                                        className="w-5 h-5 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-md flex items-center justify-center text-slate-600 hover:text-slate-800 transition-colors text-xs font-bold"
+                                      >
+                                        -
+                                      </button>
+                                      <span className="w-5 text-center text-xs font-extrabold text-slate-800">
+                                        {selectedProducts.get(product.id) || 1}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleProductSelection(product.id, (selectedProducts.get(product.id) || 1) + 1)}
+                                        className="w-5 h-5 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-md flex items-center justify-center text-slate-600 hover:text-slate-800 transition-colors text-xs font-bold"
+                                      >
+                                        +
+                                      </button>
+                                    </div>
+                                  </TableCell>
+                                  
+                                  {/* List Price */}
+                                  <TableCell className="p-2 text-right font-bold text-slate-700 text-xs">
+                                    ₺ {formatPrice(product.list_price_try || 0)}
+                                  </TableCell>
+                                  
+                                  {/* Line Total */}
+                                  <TableCell className="p-2 text-right font-black text-slate-900 text-xs">
+                                    ₺ {formatPrice((product.list_price_try || 0) * (selectedProducts.get(product.id) || 1))}
+                                  </TableCell>
+                                  
+                                  {/* Remove row */}
+                                  <TableCell className="p-2 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleProductSelection(product.id, 0)}
+                                      className="text-slate-400 hover:text-rose-600 p-1 hover:bg-rose-50 rounded-lg transition-colors"
+                                      title="Ürünü Çıkar"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })
+                          )}
+                          
+                          {/* Autocomplete Input Row (Styled as a blank row inside table) */}
+                          <TableRow className="bg-slate-50/40 hover:bg-slate-50/60 border-t border-slate-200">
+                            <TableCell className="p-2.5 text-center">
+                              <Search className="w-4 h-4 text-emerald-500 mx-auto" />
+                            </TableCell>
+                            <TableCell colSpan={6} className="p-1 relative">
+                              <input
+                                type="text"
+                                placeholder="Teklif sayfasına ürün eklemek için yazın..."
+                                value={quoteProductSearch}
+                                onChange={(e) => setQuoteProductSearch(e.target.value)}
+                                className="w-full border-none bg-transparent focus:ring-0 focus:outline-none text-xs font-bold text-emerald-800 placeholder-emerald-600/40 px-2.5 py-2"
+                              />
+                              
+                              {/* Inline Search Dropdown */}
+                              {quoteProductSearch && (
+                                <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-50 max-h-64 overflow-y-auto">
+                                  {products
+                                    .filter(p => 
+                                      p.name.toLowerCase().includes(quoteProductSearch.toLowerCase()) || 
+                                      (p.brand && p.brand.toLowerCase().includes(quoteProductSearch.toLowerCase()))
+                                    )
+                                    .slice(0, 8)
+                                    .map(p => (
+                                      <div
+                                        key={p.id}
+                                        onClick={() => {
+                                          toggleProductSelection(p.id, 1);
+                                          setQuoteProductSearch('');
+                                        }}
+                                        className="p-3 hover:bg-emerald-50/40 hover:text-emerald-950 cursor-pointer flex items-center justify-between text-xs transition-colors border-b border-slate-50"
+                                      >
+                                        <div className="flex items-center gap-2">
+                                          {p.image_url ? (
+                                            <img src={p.image_url} alt="" className="w-6.5 h-6.5 object-cover rounded" />
+                                          ) : (
+                                            <div className="w-6.5 h-6.5 bg-slate-100 rounded flex items-center justify-center text-slate-300">
+                                              <Package className="w-3.5 h-3.5" />
+                                            </div>
+                                          )}
+                                          <div>
+                                            <span className="font-bold text-slate-800">{p.name}</span>
+                                            {p.brand && <span className="text-[10px] text-slate-400 ml-1.5 uppercase font-black">{p.brand}</span>}
+                                          </div>
+                                        </div>
+                                        <span className="font-extrabold text-emerald-700">₺ {formatPrice(p.list_price_try || 0)}</span>
+                                      </div>
+                                    ))}
+                                  {products.filter(p => 
+                                    p.name.toLowerCase().includes(quoteProductSearch.toLowerCase()) || 
+                                    (p.brand && p.brand.toLowerCase().includes(quoteProductSearch.toLowerCase()))
+                                  ).length === 0 && (
+                                    <div className="p-3 text-slate-400 italic text-center text-xs">Aramayla eşleşen ürün bulunamadı</div>
+                                  )}
+                                </div>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        </TableBody>
+                      </Table>
+                    </div>
+                    
+                    {/* 4. Bottom Calculations Grid and Notes */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start pt-6 border-t border-slate-200">
+                      
+                      {/* Left: Interactive Notes */}
+                      <div className="space-y-1.5">
+                        <label className="text-[9px] font-extrabold text-emerald-700 uppercase tracking-wider block">Teklif Notları (Sayfa Altı Açıklamalar)</label>
+                        <textarea
+                          value={quoteNotes}
+                          onChange={(e) => setQuoteNotes(e.target.value)}
+                          placeholder="Örn: Ödeme koşulları, nakliye, teslim süresi ve montaj detayları bu alana yazılır."
+                          className="w-full min-h-[100px] border-none bg-transparent hover:bg-slate-50 focus:bg-slate-50 focus:ring-1 focus:ring-emerald-500 rounded-lg p-2 text-xs text-slate-700 focus:outline-none transition-all leading-relaxed"
+                        />
+                      </div>
+
+                      {/* Right: Calculations Grid */}
+                      <div className="bg-slate-50/50 rounded-2xl p-4.5 space-y-3 border border-slate-100 max-w-sm ml-auto w-full text-xs">
+                        <div className="flex justify-between items-center text-slate-500">
+                          <span>Liste Toplamı</span>
+                          <span className="font-extrabold text-slate-800">₺ {formatPrice(calculateQuoteTotals.totalListPrice)}</span>
+                        </div>
+
+                        {/* Inline Edit Discount */}
+                        <div className="flex justify-between items-center text-rose-600 font-medium">
+                          <span>Uygulanan İndirim (%)</span>
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="number"
+                              min="0"
+                              max="100"
+                              value={quoteDiscount || 0}
+                              onChange={(e) => setQuoteDiscount(Math.max(0, Math.min(100, parseFloat(e.target.value) || 0)))}
+                              className="w-12 h-6 border border-slate-200 focus:border-rose-500 focus:ring-1 focus:ring-rose-500 rounded-md text-center text-xs font-bold text-rose-700 focus:outline-none bg-white"
+                            />
+                            <span className="font-extrabold">- ₺ {formatPrice(calculateQuoteTotals.discountAmount)}</span>
+                          </div>
+                        </div>
+
+                        {/* Inline Edit Labor */}
+                        <div className="flex justify-between items-center text-cyan-600 font-medium">
+                          <span>İşçilik Maliyeti (₺)</span>
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="number"
+                              min="0"
+                              value={quoteLaborCost || 0}
+                              onChange={(e) => setQuoteLaborCost(Math.max(0, parseFloat(e.target.value) || 0))}
+                              className="w-20 h-6 border border-slate-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 rounded-md text-center text-xs font-bold text-cyan-700 focus:outline-none bg-white"
+                            />
+                            <span className="font-extrabold">+ ₺ {formatPrice(calculateQuoteTotals.laborCost)}</span>
+                          </div>
+                        </div>
+
+                        {/* Net Grand Total */}
+                        <div className="border-t border-slate-200 pt-3 mt-1.5 flex flex-col items-end">
+                          <div className="flex justify-between items-center w-full font-black text-slate-900 text-sm">
+                            <span>NET TOPLAM</span>
+                            <span className="text-emerald-700 text-base">₺ {formatPrice(calculateQuoteTotals.totalNetPrice)}</span>
+                          </div>
+                          
+                          {exchangeRates.EUR && (
+                            <span className="text-[10px] font-extrabold text-slate-400 mt-1">
+                              € {formatPrice(calculateQuoteTotals.totalNetPrice / exchangeRates.EUR)} EUR
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                    </div>
+                  </div>
+
+                  {/* PDF Footer Watermark */}
+                  <div className="text-center text-[9px] text-slate-300 border-t pt-4 mt-12 font-semibold tracking-widest uppercase">
+                    Karavan Elektrik Entegrasyon ve Dağıtım Sistemleri
+                  </div>
+
+                </div>
+              </div>
+
+              {/* Controls Panel & History (col-span-1) */}
+              <div className="lg:col-span-1 space-y-6">
+                
+                {/* 1. Interactive Adjustments Drawer (Sliders) */}
+                <Card className="border border-slate-200/80 rounded-3xl shadow-sm bg-white p-4.5 space-y-4">
+                  <h4 className="font-extrabold text-slate-800 text-xs uppercase tracking-wider flex items-center gap-1.5 pb-2 border-b border-slate-100">
+                    <Settings className="w-4 h-4 text-emerald-600" />
+                    Hassas Ayar Sürgüleri
+                  </h4>
+                  
+                  {/* Discount range slider */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-bold text-slate-500">İndirim Oranı:</span>
+                      <span className="font-black text-rose-600">% {quoteDiscount || 0}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="50"
+                      step="1"
+                      value={quoteDiscount || 0}
+                      onChange={(e) => setQuoteDiscount(parseInt(e.target.value))}
+                      className="w-full h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-rose-600"
+                    />
+                  </div>
+
+                  {/* Labor range slider */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-bold text-slate-500">İşçilik Bedeli:</span>
+                      <span className="font-black text-cyan-600">₺ {formatPrice(quoteLaborCost || 0)}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="50000"
+                      step="500"
+                      value={quoteLaborCost || 0}
+                      onChange={(e) => setQuoteLaborCost(parseInt(e.target.value))}
+                      className="w-full h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-cyan-600"
+                    />
+                  </div>
+                </Card>
+
+                {/* 2. Action Controls Panel */}
+                <Card className="border border-slate-200/80 rounded-3xl shadow-sm bg-white p-4.5 space-y-3.5">
+                  
+                  {/* Master Save Trigger */}
+                  <Button
+                    onClick={saveQuote}
+                    disabled={selectedProducts.size === 0}
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold py-5.5 rounded-2xl flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all active:scale-98"
+                  >
+                    <Save className="w-4.5 h-4.5" />
+                    {loadedQuote ? 'Değişiklikleri Güncelle' : 'Teklifi Kaydet'}
+                  </Button>
+                  
+                  <div className="grid grid-cols-2 gap-2">
+                    {/* PDF Generation and Download */}
+                    <Button
+                      variant="outline"
+                      disabled={selectedProducts.size === 0}
+                      onClick={async () => {
+                        if (selectedProducts.size === 0) {
+                          toast.error('Önce teklife ürün ekleyin');
+                          return;
+                        }
+                        try {
+                          let quoteId = loadedQuote?.id;
+                          
+                          // Auto save/update quote
+                          const selectedProductData = getSelectedProductsData().map(p => ({
+                            id: p.id,
+                            quantity: p.quantity || 1
+                          }));
+                          
+                          const newQuoteData = {
+                            name: quoteName || `Teklif - ${new Date().toLocaleDateString('tr-TR')}`,
+                            discount_percentage: parseFloat(quoteDiscount) || 0,
+                            labor_cost: parseFloat(quoteLaborCost) || 0,
+                            products: selectedProductData,
+                            notes: quoteNotes.trim() || ''
+                          };
+                          
+                          if (loadedQuote && loadedQuote.id) {
+                            await fetch(`${API}/quotes/${loadedQuote.id}`, {
+                              method: 'PUT',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify(newQuoteData)
+                            });
+                          } else {
+                            const createResponse = await fetch(`${API}/quotes`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify(newQuoteData)
+                            });
+                            const savedQuote = await createResponse.json();
+                            quoteId = savedQuote.id;
+                          }
+                          
+                          await fetchQuotes();
+                          
+                          // Download PDF
+                          const pdfUrl = `${API}/quotes/${quoteId}/pdf`;
+                          const link = document.createElement('a');
+                          link.href = pdfUrl;
+                          link.download = `${loadedQuote?.name || quoteName || 'Teklif'}.pdf`;
+                          document.body.appendChild(link);
+                          link.click();
+                          document.body.removeChild(link);
+                          toast.success('PDF indiriliyor...');
+                        } catch (e) {
+                          toast.error('PDF indirme başarısız oldu');
+                        }
+                      }}
+                      className="border-slate-200 hover:bg-slate-50 text-slate-700 font-bold py-4 rounded-xl flex items-center justify-center gap-1.5 transition-colors text-xs"
+                    >
+                      <Download className="w-4 h-4 text-blue-500" />
+                      PDF İndir
+                    </Button>
+
+                    {/* WhatsApp integration */}
+                    <Button
+                      variant="outline"
+                      disabled={!loadedQuote}
+                      onClick={async () => {
+                        if (!loadedQuote?.id) {
+                          toast.error('Paylaşmak için lütfen önce teklifi kaydedin');
+                          return;
+                        }
+                        shareViaWhatsAppWithPDF(loadedQuote.name, loadedQuote.id);
+                      }}
+                      className="border-slate-200 hover:bg-slate-50 text-slate-700 font-bold py-4 rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-50 transition-colors text-xs"
+                      title={loadedQuote ? "WhatsApp ile Paylaş" : "Önce teklifi kaydetmelisiniz"}
+                    >
+                      <Phone className="w-4 h-4 text-emerald-600" />
+                      WhatsApp
+                    </Button>
+                  </div>
+
+                  {/* Reset Canvas Sheet */}
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      clearSelection();
+                      toast.success('Yeni teklif hazırlama alanına geçildi');
+                    }}
+                    className="w-full text-slate-400 hover:text-slate-600 hover:bg-slate-50 font-bold py-2 rounded-xl text-xs flex items-center justify-center gap-1"
+                  >
+                    <X className="w-4 h-4" />
+                    Temizle / Yeni Teklif
+                  </Button>
+                </Card>
+
+                {/* 3. Searchable Saved Quotes panel */}
                 <Card className="border border-slate-200/80 rounded-3xl shadow-sm bg-white">
                   <CardHeader className="bg-slate-50/30 border-b pb-3">
                     <div className="flex justify-between items-center">
@@ -6058,11 +6069,12 @@ function App() {
                     </div>
                   </CardHeader>
                   <CardContent className="p-4 space-y-3.5">
-                    {/* Search quote input */}
+                    
+                    {/* Search query input */}
                     <div className="relative">
                       <input
                         type="text"
-                        placeholder="Kayıtlı tekliflerde arama yapın..."
+                        placeholder="Kayıtlı tekliflerde arama..."
                         value={quoteSearchTerm}
                         onChange={(e) => handleQuoteSearch(e.target.value)}
                         className="w-full px-3.5 py-2 pl-9 border border-slate-200 rounded-xl text-xs bg-slate-50/50 text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
@@ -6080,7 +6092,7 @@ function App() {
                         "{quoteSearchTerm}" araması için sonuç bulunamadı
                       </div>
                     ) : (
-                      <div className="space-y-2.5 max-h-[480px] overflow-y-auto pr-1 no-scrollbar">
+                      <div className="space-y-2.5 max-h-[300px] overflow-y-auto pr-1 no-scrollbar">
                         {filteredQuotes.map((quote) => {
                           const isActiveEditingThis = loadedQuote?.id === quote.id;
                           return (
@@ -6093,7 +6105,7 @@ function App() {
                               }`}
                             >
                               <div className="flex justify-between items-start gap-2">
-                                <div className="min-w-0">
+                                <div className="min-w-0 flex-1">
                                   <h5 className="font-bold text-slate-800 text-xs truncate leading-tight" title={quote.name}>
                                     {quote.name}
                                   </h5>
@@ -6158,7 +6170,7 @@ function App() {
                                       : 'text-slate-600 hover:text-emerald-600 hover:bg-slate-50'
                                   }`}
                                 >
-                                  {isActiveEditingThis ? 'Aktif Düzenlemede' : 'Düzenle'}
+                                  {isActiveEditingThis ? 'Düzenleniyor' : 'Düzenle'}
                                 </button>
                                 
                                 {/* PDF */}
@@ -6187,13 +6199,13 @@ function App() {
                                       try {
                                         const response = await fetch(`${API}/quotes/${quote.id}`, { method: 'DELETE' });
                                         if (response.ok) {
+                                          toast.success('Teklif silindi');
                                           await fetchQuotes();
-                                          if (isActiveEditingThis) {
+                                          if (loadedQuote?.id === quote.id) {
                                             clearSelection();
                                           }
-                                          toast.success('Teklif silindi');
                                         } else {
-                                          throw new Error();
+                                          toast.error('Teklif silinemedi');
                                         }
                                       } catch (e) {
                                         toast.error('Teklif silinemedi');
@@ -6205,7 +6217,6 @@ function App() {
                                   Sil
                                 </button>
                               </div>
-
                             </div>
                           );
                         })}
