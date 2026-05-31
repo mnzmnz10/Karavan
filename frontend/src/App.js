@@ -5717,16 +5717,18 @@ function App() {
                             <TableHead className="w-16 text-center text-xs font-black text-slate-700 border-r border-slate-200/80">Resim</TableHead>
                             <TableHead className="text-xs font-black text-slate-700 border-r border-slate-200/80">Ürün Bilgisi</TableHead>
                             <TableHead className="w-28 text-xs font-black text-slate-700 border-r border-slate-200/80">Marka</TableHead>
-                            <TableHead className="w-28 text-xs font-black text-slate-700 text-center border-r border-slate-200/80">Adet</TableHead>
+                            <TableHead className="w-24 text-xs font-black text-slate-700 text-center border-r border-slate-200/80">Adet</TableHead>
                             <TableHead className="w-32 text-xs font-black text-slate-700 text-right border-r border-slate-200/80">Birim Fiyat</TableHead>
+                            <TableHead className="w-32 text-xs font-black text-slate-700 text-right border-r border-slate-200/80">Birim Fiyat (TL)</TableHead>
                             <TableHead className="w-32 text-xs font-black text-slate-700 text-right border-r border-slate-200/80">Tutar</TableHead>
+                            <TableHead className="w-32 text-xs font-black text-slate-700 text-right border-r border-slate-200/80">Tutar (TL)</TableHead>
                             <TableHead className="w-12 text-center"></TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {getSelectedProductsData().length === 0 ? (
                             <TableRow>
-                              <TableCell colSpan={7} className="p-12 text-center text-slate-400/80 italic text-xs bg-white rounded-b-xl">
+                              <TableCell colSpan={9} className="p-12 text-center text-slate-400/80 italic text-xs bg-white rounded-b-xl">
                                 Teklifinizde henüz ürün bulunmamaktadır. Alttaki arama satırından hızlıca ürün ekleyebilirsiniz.
                               </TableCell>
                             </TableRow>
@@ -5734,6 +5736,18 @@ function App() {
                             getSelectedProductsData().map((product) => {
                               const customPrice = selectedProductsCustomPrices.get(product.id);
                               const currentUnitPrice = customPrice !== undefined && customPrice !== null ? customPrice : (product.list_price || 0);
+                              
+                              // Calculate TL values
+                              let unitPriceTRY = currentUnitPrice;
+                              if (product.currency === 'USD') {
+                                unitPriceTRY = currentUnitPrice * (exchangeRates.USD || 34.0);
+                              } else if (product.currency === 'EUR') {
+                                unitPriceTRY = currentUnitPrice * (exchangeRates.EUR || 37.0);
+                              }
+                              
+                              const quantity = selectedProducts.get(product.id) || 1;
+                              const lineTotalTRY = unitPriceTRY * quantity;
+
                               return (
                                 <TableRow key={product.id} className="border-b border-slate-200/80 bg-white hover:bg-slate-50/60 transition-colors">
                                   {/* Product Image */}
@@ -5833,20 +5847,46 @@ function App() {
                                       )}
                                     </div>
                                   </TableCell>
+
+                                  {/* Unit Price TL */}
+                                  <TableCell className="p-3.5 text-right text-sm border-r border-slate-200/40">
+                                    <div className="flex flex-col items-end">
+                                      <div className="font-extrabold text-slate-800">
+                                        ₺ {formatPrice(unitPriceTRY)}
+                                      </div>
+                                      {product.currency !== 'TRY' && (
+                                        <div className="text-[9px] text-slate-400 font-bold select-none mt-0.5">
+                                          (1 {product.currency} = ₺{formatPrice(exchangeRates[product.currency] || 0)})
+                                        </div>
+                                      )}
+                                    </div>
+                                  </TableCell>
                                   
                                   {/* Line Total */}
                                   <TableCell className="p-3.5 text-right text-sm border-r border-slate-200/40">
                                     <div className="flex flex-col items-end">
                                       <div className={`font-black ${customPrice !== undefined && customPrice !== null ? 'text-purple-700' : 'text-slate-900'}`}>
-                                        {getCurrencySymbol(product.currency)} {formatPrice(currentUnitPrice * (selectedProducts.get(product.id) || 1))}
+                                        {getCurrencySymbol(product.currency)} {formatPrice(currentUnitPrice * quantity)}
                                       </div>
                                       {customPrice !== undefined && customPrice !== null && (
                                         <span className="text-[9px] text-purple-500 font-bold mt-0.5 select-none">(Özel Toplam)</span>
                                       )}
                                       {showQuoteDiscountedPrices && (
                                         <div className="text-[10px] text-purple-500 font-bold mt-1">
-                                          Geliş: {getCurrencySymbol(product.currency)} {formatPrice((parseFloat(product.discounted_price) || parseFloat(product.list_price) || 0) * (selectedProducts.get(product.id) || 1))}
+                                          Geliş: {getCurrencySymbol(product.currency)} {formatPrice((parseFloat(product.discounted_price) || parseFloat(product.list_price) || 0) * quantity)}
                                         </div>
+                                      )}
+                                    </div>
+                                  </TableCell>
+
+                                  {/* Line Total TL */}
+                                  <TableCell className="p-3.5 text-right text-sm border-r border-slate-200/40">
+                                    <div className="flex flex-col items-end">
+                                      <div className="font-black text-slate-900">
+                                        ₺ {formatPrice(lineTotalTRY)}
+                                      </div>
+                                      {customPrice !== undefined && customPrice !== null && (
+                                        <span className="text-[9px] text-purple-500 font-bold mt-0.5 select-none">(Özel Toplam TL)</span>
                                       )}
                                     </div>
                                   </TableCell>
@@ -5872,7 +5912,7 @@ function App() {
                             <TableCell className="p-3.5 text-center border-r border-slate-200/40">
                               <Search className="w-4.5 h-4.5 text-emerald-500 mx-auto" />
                             </TableCell>
-                            <TableCell colSpan={6} className="p-2.5 relative">
+                            <TableCell colSpan={8} className="p-2.5 relative">
                               <input
                                 ref={quoteSearchInputRef}
                                 type="text"
