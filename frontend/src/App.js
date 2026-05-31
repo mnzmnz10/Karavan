@@ -5652,12 +5652,12 @@ function App() {
               <div className="lg:col-span-3 space-y-6">
 
                 {/* A4 Paper Canvas */}
-                <div className="w-full bg-white shadow-xl border border-slate-200 p-8 sm:p-12 rounded-2xl font-sans min-h-[1050px] flex flex-col justify-between relative overflow-hidden select-text">
+                <div className="w-full bg-white shadow-xl border border-slate-200 p-8 sm:p-12 pb-0 sm:pb-0 rounded-2xl font-sans min-h-[1050px] flex flex-col justify-between relative overflow-hidden select-text">
                   
                   {/* Decorative Header Bar */}
                   <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-emerald-600 to-teal-600" />
                   
-                  <div>
+                  <div className="flex-1">
                     {/* 1. Header Details */}
                     <div className="relative border-b pb-6 mb-8">
                       {/* Premium Quote Header */}
@@ -5943,18 +5943,20 @@ function App() {
                         </TableBody>
                       </Table>
                     </div>
-                    
-                    {/* 4. Bottom Calculations Grid and Notes */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start pt-6 border-t border-slate-200">
+                  </div>
+                  
+                  {/* 4. Bottom Calculations Grid and Notes (Visual Split Layer in soft slate tint) */}
+                  <div className="-mx-8 sm:-mx-12 px-8 sm:px-12 pt-8 pb-6 bg-slate-50/70 border-t border-slate-200/80 rounded-b-2xl select-text">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start mb-6">
                       
                       {/* Left: Interactive Notes */}
-                      <div className="space-y-1.5">
-                        <label className="text-[9px] font-extrabold text-emerald-700 uppercase tracking-wider block">Teklif Notları (Sayfa Altı Açıklamalar)</label>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-emerald-800 uppercase tracking-widest block">Teklif Notları (Sayfa Altı Açıklamalar)</label>
                         <textarea
                           value={quoteNotes}
                           onChange={(e) => setQuoteNotes(e.target.value)}
                           placeholder="Örn: Ödeme koşulları, nakliye, teslim süresi ve montaj detayları bu alana yazılır."
-                          className="w-full min-h-[100px] border-none bg-transparent hover:bg-slate-50 focus:bg-slate-50 focus:ring-1 focus:ring-emerald-500 rounded-lg p-2 text-xs text-slate-700 focus:outline-none transition-all leading-relaxed"
+                          className="w-full min-h-[140px] border border-slate-200 bg-white hover:border-slate-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-3.5 text-xs text-slate-700 focus:outline-none transition-all leading-relaxed shadow-xxs"
                         />
                       </div>
 
@@ -6210,13 +6212,12 @@ function App() {
                       </div>
 
                     </div>
+                    
+                    {/* PDF Footer Watermark */}
+                    <div className="text-center text-[9px] text-slate-400 border-t border-slate-200/50 pt-4 mt-8 font-semibold tracking-widest uppercase select-none">
+                      Karavan Elektrik Entegrasyon ve Dağıtım Sistemleri
+                    </div>
                   </div>
-
-                  {/* PDF Footer Watermark */}
-                  <div className="text-center text-[9px] text-slate-300 border-t pt-4 mt-12 font-semibold tracking-widest uppercase">
-                    Karavan Elektrik Entegrasyon ve Dağıtım Sistemleri
-                  </div>
-
                 </div>
               </div>
 
