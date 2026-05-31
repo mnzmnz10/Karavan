@@ -6098,19 +6098,19 @@ function App() {
                         </div>
                         
                         {/* 2. Action Controls Panel (Moved below the calculations card) */}
-                        <div className="border border-emerald-100 rounded-2xl bg-gradient-to-b from-emerald-50/40 to-white/40 p-4 space-y-3 shadow-xxs select-none">
+                        <div className="border-2 border-emerald-100 rounded-3xl bg-gradient-to-b from-emerald-50/60 to-white/60 p-5.5 space-y-4 shadow-sm select-none">
                           
                           {/* Master Save Trigger */}
                           <Button
                             onClick={saveQuote}
                             disabled={selectedProducts.size === 0}
-                            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold py-5 rounded-xl flex items-center justify-center gap-2 shadow-xs hover:shadow-sm transition-all active:scale-98 text-xs"
+                            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-5 rounded-2xl flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all active:scale-98 text-sm"
                           >
-                            <Save className="w-4 h-4" />
+                            <Save className="w-5 h-5" />
                             {loadedQuote ? 'Değişiklikleri Güncelle' : 'Teklifi Kaydet'}
                           </Button>
                           
-                          <div className="grid grid-cols-2 gap-2">
+                          <div className="grid grid-cols-2 gap-2.5">
                             {/* PDF Generation and Download */}
                             <Button
                               variant="outline"
@@ -6169,9 +6169,9 @@ function App() {
                                   toast.error('PDF indirme başarısız oldu');
                                 }
                               }}
-                              className="border-slate-200 hover:bg-slate-50 text-slate-700 font-bold py-3.5 rounded-xl flex items-center justify-center gap-1.5 transition-colors text-[11px] bg-white shadow-xxs"
+                              className="border-slate-200 hover:bg-slate-50 text-slate-700 font-extrabold py-4.5 rounded-xl flex items-center justify-center gap-2 transition-colors text-xs bg-white shadow-xxs"
                             >
-                              <Download className="w-3.5 h-3.5 text-blue-500" />
+                              <Download className="w-4.5 h-4.5 text-blue-500" />
                               PDF İndir
                             </Button>
 
@@ -6186,10 +6186,10 @@ function App() {
                                 }
                                 shareViaWhatsAppWithPDF(loadedQuote.name, loadedQuote.id);
                               }}
-                              className="border-slate-200 hover:bg-slate-50 text-slate-700 font-bold py-3.5 rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-50 transition-colors text-[11px] bg-white shadow-xxs"
+                              className="border-slate-200 hover:bg-slate-50 text-slate-700 font-extrabold py-4.5 rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 transition-colors text-xs bg-white shadow-xxs"
                               title={loadedQuote ? "WhatsApp ile Paylaş" : "Önce teklifi kaydetmelisiniz"}
                             >
-                              <Phone className="w-3.5 h-3.5 text-emerald-600" />
+                              <Phone className="w-4.5 h-4.5 text-emerald-600" />
                               WhatsApp
                             </Button>
                           </div>
@@ -6201,9 +6201,9 @@ function App() {
                               clearSelection();
                               toast.success('Yeni teklif hazırlama alanına geçildi');
                             }}
-                            className="w-full text-slate-400 hover:text-slate-600 hover:bg-slate-50 font-bold py-2 rounded-xl text-[10px] flex items-center justify-center gap-1"
+                            className="w-full text-slate-400 hover:text-slate-600 hover:bg-slate-100/50 font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-colors"
                           >
-                            <X className="w-3.5 h-3.5" />
+                            <X className="w-4 h-4" />
                             Temizle / Yeni Teklif
                           </Button>
                         </div>
