@@ -5710,23 +5710,23 @@ function App() {
                     </div>
 
                     {/* 3. Products Table */}
-                    <div className="border border-slate-200/80 rounded-xl mb-8 bg-slate-50/20 shadow-xxs overflow-visible">
+                    <div className="border border-slate-200 rounded-xl mb-8 bg-slate-50/45 shadow-sm overflow-visible">
                       <Table className="table-auto w-full text-left">
                         <TableHeader>
-                          <TableRow className="bg-slate-50/80 hover:bg-slate-50/80 border-b border-slate-200">
-                            <TableHead className="w-16 text-center text-xs font-black text-slate-600">Resim</TableHead>
-                            <TableHead className="text-xs font-black text-slate-600">Ürün Bilgisi</TableHead>
-                            <TableHead className="w-28 text-xs font-black text-slate-600">Marka</TableHead>
-                            <TableHead className="w-28 text-xs font-black text-slate-600 text-center">Adet</TableHead>
-                            <TableHead className="w-32 text-xs font-black text-slate-600 text-right">Birim Fiyat</TableHead>
-                            <TableHead className="w-32 text-xs font-black text-slate-600 text-right">Tutar</TableHead>
+                          <TableRow className="bg-slate-100/70 hover:bg-slate-100/70 border-b border-slate-200">
+                            <TableHead className="w-16 text-center text-xs font-black text-slate-700 border-r border-slate-200/80">Resim</TableHead>
+                            <TableHead className="text-xs font-black text-slate-700 border-r border-slate-200/80">Ürün Bilgisi</TableHead>
+                            <TableHead className="w-28 text-xs font-black text-slate-700 border-r border-slate-200/80">Marka</TableHead>
+                            <TableHead className="w-28 text-xs font-black text-slate-700 text-center border-r border-slate-200/80">Adet</TableHead>
+                            <TableHead className="w-32 text-xs font-black text-slate-700 text-right border-r border-slate-200/80">Birim Fiyat</TableHead>
+                            <TableHead className="w-32 text-xs font-black text-slate-700 text-right border-r border-slate-200/80">Tutar</TableHead>
                             <TableHead className="w-12 text-center"></TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {getSelectedProductsData().length === 0 ? (
                             <TableRow>
-                              <TableCell colSpan={7} className="p-12 text-center text-slate-400/80 italic text-xs">
+                              <TableCell colSpan={7} className="p-12 text-center text-slate-400/80 italic text-xs bg-white rounded-b-xl">
                                 Teklifinizde henüz ürün bulunmamaktadır. Alttaki arama satırından hızlıca ürün ekleyebilirsiniz.
                               </TableCell>
                             </TableRow>
@@ -5735,9 +5735,9 @@ function App() {
                               const customPrice = selectedProductsCustomPrices.get(product.id);
                               const currentUnitPrice = customPrice !== undefined && customPrice !== null ? customPrice : (product.list_price || 0);
                               return (
-                                <TableRow key={product.id} className="border-b border-slate-100 hover:bg-slate-50/30 transition-colors">
+                                <TableRow key={product.id} className="border-b border-slate-200/80 bg-white hover:bg-slate-50/60 transition-colors">
                                   {/* Product Image */}
-                                  <TableCell className="p-3.5 text-center select-none">
+                                  <TableCell className="p-3.5 text-center select-none border-r border-slate-200/40">
                                     {product.image_url ? (
                                       <img 
                                         src={product.image_url} 
@@ -5754,7 +5754,7 @@ function App() {
                                   </TableCell>
                                   
                                   {/* Name / Desc */}
-                                  <TableCell className="p-3.5">
+                                  <TableCell className="p-3.5 border-r border-slate-200/40">
                                     <div className="font-bold text-slate-800 text-sm" title={product.name}>
                                       {product.name}
                                     </div>
@@ -5766,12 +5766,12 @@ function App() {
                                   </TableCell>
                                   
                                   {/* Brand */}
-                                  <TableCell className="p-3.5 text-slate-600 text-sm font-semibold">
+                                  <TableCell className="p-3.5 text-slate-600 text-sm font-semibold border-r border-slate-200/40">
                                     {product.brand || <span className="text-slate-300">-</span>}
                                   </TableCell>
                                   
                                   {/* Quantity adjusters inside cell */}
-                                  <TableCell className="p-3.5">
+                                  <TableCell className="p-3.5 border-r border-slate-200/40">
                                     <div className="flex items-center justify-center gap-2">
                                       <button
                                         type="button"
@@ -5794,7 +5794,7 @@ function App() {
                                   </TableCell>
                                   
                                   {/* Unit Price (Editable in product base currency) */}
-                                  <TableCell className="p-3.5 text-right text-sm">
+                                  <TableCell className="p-3.5 text-right text-sm border-r border-slate-200/40">
                                     <div className="flex flex-col items-end">
                                       <div className="flex items-center justify-end gap-1 font-bold text-slate-700">
                                         <span className="text-slate-400 text-xs font-black select-none">{getCurrencySymbol(product.currency)}</span>
@@ -5835,7 +5835,7 @@ function App() {
                                   </TableCell>
                                   
                                   {/* Line Total */}
-                                  <TableCell className="p-3.5 text-right text-sm">
+                                  <TableCell className="p-3.5 text-right text-sm border-r border-slate-200/40">
                                     <div className="flex flex-col items-end">
                                       <div className={`font-black ${customPrice !== undefined && customPrice !== null ? 'text-purple-700' : 'text-slate-900'}`}>
                                         {getCurrencySymbol(product.currency)} {formatPrice(currentUnitPrice * (selectedProducts.get(product.id) || 1))}
@@ -5868,8 +5868,8 @@ function App() {
                           )}
                           
                           {/* Autocomplete Input Row (Styled as a blank row inside table) */}
-                          <TableRow className="bg-slate-50/40 hover:bg-slate-50/60 border-t border-slate-200">
-                            <TableCell className="p-3.5 text-center">
+                          <TableRow className="bg-slate-50/45 hover:bg-slate-50/65 border-t border-slate-200 rounded-b-xl">
+                            <TableCell className="p-3.5 text-center border-r border-slate-200/40">
                               <Search className="w-4.5 h-4.5 text-emerald-500 mx-auto" />
                             </TableCell>
                             <TableCell colSpan={6} className="p-2.5 relative">
