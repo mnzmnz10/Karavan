@@ -10,7 +10,7 @@ import { Badge } from './components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from './components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select';
-import { Trash2, Upload, RefreshCw, Plus, TrendingUp, Building2, Package, DollarSign, Edit, Save, X, FileText, Check, Archive, Download, Wrench, Eye, EyeOff, AlertTriangle, Tags, Copy, Pin, StickyNote, Users, Star, Search, Phone, Mail, MapPin, Calculator, Battery, Loader2, ScanSearch, LogOut, PlusCircle, MinusCircle, History, Settings } from 'lucide-react';
+import { Trash2, Upload, RefreshCw, Plus, TrendingUp, Building2, Package, DollarSign, Edit, Save, X, FileText, Check, Archive, Download, Wrench, Eye, EyeOff, AlertTriangle, Tags, Copy, Pin, StickyNote, Users, Star, Search, Phone, Mail, MapPin, Calculator, Battery, Loader2, ScanSearch, LogOut, PlusCircle, MinusCircle, History, Settings, ChevronUp, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { Toaster } from './components/ui/sonner';
 import LazyImage from './components/LazyImage';
@@ -2175,6 +2175,30 @@ function App() {
       };
     }).filter(Boolean);
   }, [selectedProducts, selectedProductsData, selectedProductsCustomPrices]);
+
+  const moveProductOrder = (productId, direction) => {
+    const keys = Array.from(selectedProducts.keys());
+    const index = keys.indexOf(productId);
+    if (index === -1) return;
+    
+    if (direction === 'up' && index > 0) {
+      const temp = keys[index];
+      keys[index] = keys[index - 1];
+      keys[index - 1] = temp;
+    } else if (direction === 'down' && index < keys.length - 1) {
+      const temp = keys[index];
+      keys[index] = keys[index + 1];
+      keys[index + 1] = temp;
+    } else {
+      return;
+    }
+    
+    const newSelected = new Map();
+    keys.forEach(key => {
+      newSelected.set(key, selectedProducts.get(key));
+    });
+    setSelectedProducts(newSelected);
+  };
 
   // Function to group products by category groups
   const getProductsByGroups = (selectedProducts) => {
@@ -5114,6 +5138,50 @@ function App() {
                     )}
                   </div>
                 </div>
+
+                {/* E. Kategoriler Arası Hızlı Atlama Barı (Kategori Karouseli) */}
+                <div className="mb-6 select-none bg-slate-50/50 rounded-2xl p-3 border border-slate-100/80">
+                  <div className="text-[10px] font-black text-emerald-800 uppercase tracking-widest mb-2 pl-1.5 flex items-center gap-1.5">
+                    <Tags className="w-3.5 h-3.5 text-emerald-600" />
+                    Kategoriler Arası Hızlı Geçiş
+                  </div>
+                  <div className="flex gap-2 overflow-x-auto pb-1.5 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent">
+                    {categories
+                      .sort((a, b) => {
+                        if (a.sort_order !== b.sort_order) {
+                          return a.sort_order - b.sort_order;
+                        }
+                        return a.name.localeCompare(b.name);
+                      })
+                      .map((category) => {
+                        const productCount = products.filter(p => p.category_id === category.id).length;
+                        if (productCount === 0) return null;
+                        
+                        return (
+                          <button
+                            key={category.id}
+                            onClick={() => {
+                              const el = document.getElementById(`category-${category.id}`);
+                              if (el) {
+                                el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                              }
+                            }}
+                            className="flex items-center gap-2 px-3.5 py-2 bg-white hover:bg-emerald-50/40 border border-slate-200/80 hover:border-emerald-200/80 rounded-xl transition-all shadow-xxs cursor-pointer flex-shrink-0 text-xs font-bold text-slate-700 hover:text-emerald-900 group"
+                          >
+                            <span 
+                              className="w-2.5 h-2.5 rounded-full shadow-xxs transition-transform group-hover:scale-110" 
+                              style={{ backgroundColor: category.color }}
+                            />
+                            <span>{category.name}</span>
+                            <span className="text-[10px] font-extrabold bg-slate-100 group-hover:bg-emerald-100/50 text-slate-500 group-hover:text-emerald-700 px-1.5 py-0.5 rounded-md border border-slate-200/40">
+                              {productCount}
+                            </span>
+                          </button>
+                        );
+                      })}
+                  </div>
+                </div>
+
                 <div className="space-y-8">
                   {(() => {
                     // Group products by category
@@ -5193,7 +5261,7 @@ function App() {
                       const hiddenCount = categoryProducts.length - visibleProducts.length;
 
                       return (
-                        <div key={categoryId} className="space-y-4">
+                        <div key={categoryId} id={`category-${categoryId}`} className="space-y-4">
                           {/* Category Header */}
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b-2" style={{borderColor: categoryColor}}>
                             <div className="flex items-center gap-3">
@@ -5911,16 +5979,34 @@ function App() {
                                     </div>
                                   </TableCell>
                                   
-                                  {/* Remove row */}
+                                  {/* Remove row & Reorder */}
                                   <TableCell className="p-3.5 text-center">
-                                    <button
-                                      type="button"
-                                      onClick={() => toggleProductSelection(product.id, 0)}
-                                      className="text-slate-400 hover:text-rose-600 p-1.5 hover:bg-rose-50 rounded-lg transition-colors"
-                                      title="Ürünü Çıkar"
-                                    >
-                                      <X className="w-4 h-4" />
-                                    </button>
+                                    <div className="flex items-center justify-center gap-1 select-none">
+                                      <button
+                                        type="button"
+                                        onClick={() => moveProductOrder(product.id, 'up')}
+                                        className="text-slate-400 hover:text-emerald-600 p-1 hover:bg-slate-100 rounded transition-colors"
+                                        title="Yukarı Taşı"
+                                      >
+                                        <ChevronUp className="w-4 h-4" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => moveProductOrder(product.id, 'down')}
+                                        className="text-slate-400 hover:text-emerald-600 p-1 hover:bg-slate-100 rounded transition-colors"
+                                        title="Aşağı Taşı"
+                                      >
+                                        <ChevronDown className="w-4 h-4" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleProductSelection(product.id, 0)}
+                                        className="text-slate-400 hover:text-rose-600 p-1.5 hover:bg-rose-50 rounded-lg transition-colors ml-1"
+                                        title="Ürünü Çıkar"
+                                      >
+                                        <X className="w-4 h-4" />
+                                      </button>
+                                    </div>
                                   </TableCell>
                                 </TableRow>
                               );
