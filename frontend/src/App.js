@@ -3300,42 +3300,6 @@ function App() {
                   </div>
                 </div>
 
-                {/* Unified Currency Rates Panel (Always Static & Visible at Top) */}
-                <div className="bg-slate-50/80 border border-slate-100 p-3.5 rounded-2xl space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider px-1">Döviz Kurları</p>
-                    {loading && <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-600" />}
-                  </div>
-                  
-                  <div className="grid grid-cols-2 gap-2">
-                    {/* USD / TRY Card */}
-                    <div className="flex flex-col bg-amber-50/80 border border-amber-200/60 p-2 rounded-xl text-amber-900 shadow-2xs">
-                      <span className="text-[9px] uppercase font-bold text-amber-600 tracking-wider">USD/TRY</span>
-                      <span className="font-extrabold text-sm tracking-tight mt-0.5">
-                        {exchangeRates.USD ? formatExchangeRate(exchangeRates.USD) : '---'}
-                      </span>
-                    </div>
-                    
-                    {/* EUR / TRY Card */}
-                    <div className="flex flex-col bg-emerald-50/80 border border-emerald-200/60 p-2 rounded-xl text-emerald-900 shadow-2xs">
-                      <span className="text-[9px] uppercase font-bold text-emerald-600 tracking-wider">EUR/TRY</span>
-                      <span className="font-extrabold text-sm tracking-tight mt-0.5">
-                        {exchangeRates.EUR ? formatExchangeRate(exchangeRates.EUR) : '---'}
-                      </span>
-                    </div>
-                  </div>
-                  
-                  {/* Kurları Güncelle Button */}
-                  <Button 
-                    onClick={refreshPrices} 
-                    disabled={loading}
-                    className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white h-9 px-4 text-xs font-extrabold shadow-2xs rounded-xl flex items-center justify-center gap-1.5 border border-emerald-500/10 active:scale-95 transition-all duration-200"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-                    Kurları Güncelle
-                  </Button>
-                </div>
-
                 {/* Navigation Tab List (Vertical) */}
                 <div className="space-y-2">
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2">Menü</p>
@@ -3420,6 +3384,38 @@ function App() {
             {/* 2. Right Main Work Area */}
             <div className="flex-1 overflow-y-auto p-8 bg-slate-50/30">
               <div className="w-full space-y-6">
+                {/* Currency Rates Bar */}
+                <div className="flex justify-end">
+                  <div className="flex flex-wrap items-center justify-end gap-2.5 bg-white/85 border border-slate-200/80 px-4 py-3 rounded-2xl shadow-sm backdrop-blur-md">
+                    <div className="flex items-center gap-2 px-1">
+                      <span className="text-xs font-extrabold text-slate-400 uppercase tracking-wider whitespace-nowrap">Döviz Kurları</span>
+                      {loading && <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-600" />}
+                    </div>
+
+                    <div className="flex items-center gap-3 bg-amber-50/80 border border-amber-200/60 px-4 py-2 rounded-xl text-amber-900 shadow-2xs">
+                      <span className="text-xs uppercase font-bold text-amber-600 tracking-wider">USD/TRY</span>
+                      <span className="font-extrabold text-lg tracking-tight">
+                        {exchangeRates.USD ? formatExchangeRate(exchangeRates.USD) : '---'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-3 bg-emerald-50/80 border border-emerald-200/60 px-4 py-2 rounded-xl text-emerald-900 shadow-2xs">
+                      <span className="text-xs uppercase font-bold text-emerald-600 tracking-wider">EUR/TRY</span>
+                      <span className="font-extrabold text-lg tracking-tight">
+                        {exchangeRates.EUR ? formatExchangeRate(exchangeRates.EUR) : '---'}
+                      </span>
+                    </div>
+
+                    <Button
+                      onClick={refreshPrices}
+                      disabled={loading}
+                      className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white h-8 px-3 text-xs font-extrabold shadow-2xs rounded-xl flex items-center justify-center gap-1.5 border border-emerald-500/10 active:scale-95 transition-all duration-200"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                      Kurları Güncelle
+                    </Button>
+                  </div>
+                </div>
 
           {/* Companies Tab */}
           <TabsContent value="companies" className="space-y-6">
@@ -5663,38 +5659,47 @@ function App() {
                   
                   <div>
                     {/* 1. Header Details */}
-                    <div className="flex justify-between items-center border-b pb-6 mb-8 gap-4">
+                    <div className="relative border-b pb-6 mb-8">
                       {/* Premium Quote Header */}
-                        <div className="relative overflow-hidden rounded-xl px-6 py-4 select-none flex-1" style={{background: 'linear-gradient(135deg, #064e3b 0%, #065f46 40%, #0d9488 100%)'}}>
-                          {/* Geometric circles decoration */}
-                          <div style={{position:'absolute', top:'-20px', right:'-20px', width:'100px', height:'100px', borderRadius:'50%', background:'rgba(255,255,255,0.05)'}} />
-                          <div style={{position:'absolute', bottom:'-30px', right:'60px', width:'80px', height:'80px', borderRadius:'50%', background:'rgba(255,255,255,0.04)'}} />
-                          <div style={{position:'absolute', top:'10px', right:'80px', width:'40px', height:'40px', borderRadius:'50%', background:'rgba(255,255,255,0.06)'}} />
-                          {/* Left accent bar */}
-                          <div style={{position:'absolute', left:0, top:0, bottom:0, width:'4px', background:'linear-gradient(180deg, #34d399, #06b6d4)'}} />
-                          <h2 style={{fontSize:'22px', fontWeight:900, color:'white', letterSpacing:'-0.5px', lineHeight:1.1, textTransform:'uppercase', margin:0}}>Fiyat Teklif Formu</h2>
+                      <div className="relative overflow-hidden rounded-2xl border border-emerald-100 bg-gradient-to-r from-emerald-950 via-emerald-800 to-teal-600 px-6 py-5 pr-56 shadow-lg shadow-emerald-950/10 select-none">
+                        <div className="absolute right-[-70px] top-[-70px] h-44 w-44 rounded-full border border-white/10 bg-white/5" />
+                        <div className="absolute right-20 bottom-[-56px] h-32 w-32 rounded-full bg-cyan-200/10" />
+                        <div className="absolute right-36 top-5 h-12 w-12 rounded-full bg-white/10" />
+                        <div className="absolute inset-y-0 left-0 w-1.5 bg-gradient-to-b from-emerald-300 to-cyan-300" />
+
+                        <div className="relative z-10 flex items-center gap-4">
+                          <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/15 bg-white/10 shadow-inner">
+                            <FileText className="h-6 w-6 text-emerald-100" />
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-emerald-100/75">Çorlu Karavan</p>
+                            <h2 className="m-0 text-2xl font-black uppercase tracking-tight text-white">Fiyat Teklif Formu</h2>
+                          </div>
                         </div>
-                      <div className="flex items-center gap-3 text-right text-xs font-bold text-slate-400 select-none">
-                        <button
-                          type="button"
-                          onClick={() => setShowQuoteDiscountedPrices(!showQuoteDiscountedPrices)}
-                          className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors flex items-center justify-center text-slate-500 hover:text-slate-700"
-                          title="Maliyet/Geliş fiyatlarını göster/gizle"
-                        >
-                          {showQuoteDiscountedPrices ? (
-                            <EyeOff className="w-3.5 h-3.5 text-rose-500" />
-                          ) : (
-                            <Eye className="w-3.5 h-3.5 text-emerald-500" />
-                          )}
-                        </button>
-                        <span>•</span>
-                        <div>{new Date().toLocaleDateString('tr-TR')}</div>
+                      </div>
+
+                      <div className="absolute right-4 top-6 z-20 flex items-center rounded-2xl border border-white/15 bg-white/10 px-4 py-2 text-right text-xs font-bold text-emerald-50 shadow-inner backdrop-blur-sm select-none">
+                        <div className="whitespace-nowrap text-sm text-emerald-50">{new Date().toLocaleDateString('tr-TR')}</div>
                       </div>
                     </div>
 
                     {/* 2. Editable Title Field */}
                     <div className="mb-6 space-y-1">
-                      <label className="text-[9px] font-extrabold text-emerald-700 uppercase tracking-wider block">Teklif Başlığı</label>
+                      <div className="flex items-center justify-between gap-3">
+                        <label className="text-[9px] font-extrabold text-emerald-700 uppercase tracking-wider block">Teklif Başlığı</label>
+                        <button
+                          type="button"
+                          onClick={() => setShowQuoteDiscountedPrices(!showQuoteDiscountedPrices)}
+                          className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-700"
+                          title="Maliyet/Geliş fiyatlarını göster/gizle"
+                        >
+                          {showQuoteDiscountedPrices ? (
+                            <EyeOff className="w-4 h-4 text-rose-500" />
+                          ) : (
+                            <Eye className="w-4 h-4 text-emerald-600" />
+                          )}
+                        </button>
+                      </div>
                       <input
                         type="text"
                         value={quoteName}
@@ -5954,7 +5959,7 @@ function App() {
                       </div>
 
                       {/* Right: Calculations Grid */}
-                      <div className="bg-slate-50/50 rounded-2xl p-[18px] space-y-3 border border-slate-100 max-w-sm ml-auto w-full text-xs">
+                      <div className="bg-slate-50/50 rounded-2xl p-6 space-y-4 border border-slate-100 max-w-md ml-auto w-full text-sm">
                         
                         {/* Dövizli Detaylar (Sadece ilgili para biriminde ürün varsa gösterilir) */}
                         {calculateQuoteTotals.totalUSD > 0 && (
@@ -5963,7 +5968,7 @@ function App() {
                               <span>USD Ürün Toplamı</span>
                               <span className="font-extrabold text-blue-600">$ {formatPrice(calculateQuoteTotals.totalUSD)}</span>
                             </div>
-                            <div className="text-[10px] text-slate-400 text-right font-bold">
+                            <div className="text-xs text-slate-400 text-right font-bold">
                               Karşılığı: ₺ {formatPrice(calculateQuoteTotals.usdInTry)} (1 USD = ₺{exchangeRates.USD || '34.00'})
                             </div>
                           </div>
@@ -5975,7 +5980,7 @@ function App() {
                               <span>EUR Ürün Toplamı</span>
                               <span className="font-extrabold text-indigo-600">€ {formatPrice(calculateQuoteTotals.totalEUR)}</span>
                             </div>
-                            <div className="text-[10px] text-slate-400 text-right font-bold space-y-0.5">
+                            <div className="text-xs text-slate-400 text-right font-bold space-y-1">
                               <div>Karşılığı: ₺ {formatPrice(calculateQuoteTotals.eurInTry)} (1 EUR = ₺{exchangeRates.EUR || '37.00'})</div>
                               <div>Dolar Karşılığı: $ {formatPrice(calculateQuoteTotals.eurInUsd)} (1 EUR = $ {((parseFloat(exchangeRates.EUR) || 37.0) / (parseFloat(exchangeRates.USD) || 34.0)).toFixed(4)})</div>
                             </div>
@@ -6004,7 +6009,7 @@ function App() {
                               max="100"
                               value={quoteDiscount || 0}
                               onChange={(e) => setQuoteDiscount(Math.max(0, Math.min(100, parseFloat(e.target.value) || 0)))}
-                              className="w-12 h-6 border border-slate-200 focus:border-rose-500 focus:ring-1 focus:ring-rose-500 rounded-md text-center text-xs font-bold text-rose-700 focus:outline-none bg-white"
+                              className="w-14 h-7 border border-slate-200 focus:border-rose-500 focus:ring-1 focus:ring-rose-500 rounded-md text-center text-sm font-bold text-rose-700 focus:outline-none bg-white"
                             />
                             <span className="font-extrabold">- ₺ {formatPrice(calculateQuoteTotals.discountAmount)}</span>
                           </div>
@@ -6019,7 +6024,7 @@ function App() {
                               min="0"
                               value={quoteLaborCost || 0}
                               onChange={(e) => setQuoteLaborCost(Math.max(0, parseFloat(e.target.value) || 0))}
-                              className="w-20 h-6 border border-slate-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 rounded-md text-center text-xs font-bold text-cyan-700 focus:outline-none bg-white"
+                              className="w-24 h-7 border border-slate-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 rounded-md text-center text-sm font-bold text-cyan-700 focus:outline-none bg-white"
                             />
                             <span className="font-extrabold">+ ₺ {formatPrice(calculateQuoteTotals.laborCost)}</span>
                           </div>
@@ -6027,18 +6032,18 @@ function App() {
 
                         {/* Net Grand Total */}
                         <div className="border-t border-slate-200 pt-3 mt-1.5 flex flex-col items-end">
-                          <div className="flex justify-between items-center w-full font-black text-slate-900 text-sm">
+                          <div className="flex justify-between items-center w-full font-black text-slate-900 text-base">
                             <span>NET TOPLAM</span>
-                            <span className="text-emerald-700 text-base">₺ {formatPrice(calculateQuoteTotals.totalNetPrice)}</span>
+                            <span className="text-emerald-700 text-xl">₺ {formatPrice(calculateQuoteTotals.totalNetPrice)}</span>
                           </div>
                           
                           {calculateQuoteTotals.totalNetPrice > 0 && exchangeRates.EUR && (
-                            <span className="text-[10px] font-extrabold text-slate-400 mt-1">
+                            <span className="text-xs font-extrabold text-slate-400 mt-1">
                               € {formatPrice(calculateQuoteTotals.totalNetPrice / exchangeRates.EUR)} EUR
                             </span>
                           )}
                           {calculateQuoteTotals.totalNetPrice > 0 && exchangeRates.USD && (
-                            <span className="text-[10px] font-extrabold text-slate-400 mt-0.5">
+                            <span className="text-xs font-extrabold text-slate-400 mt-0.5">
                               $ {formatPrice(calculateQuoteTotals.totalNetPrice / exchangeRates.USD)} USD
                             </span>
                           )}
@@ -6046,8 +6051,8 @@ function App() {
 
                         {/* Maliyet Gözü Kartı (Sadece göz ikonu aktifse satıcıya maliyetleri gösterir) */}
                         {showQuoteDiscountedPrices && (
-                          <div className="mt-4 pt-3 border-t border-dashed border-purple-200 bg-purple-50/40 rounded-xl p-3 text-[11px] space-y-2 text-purple-950 font-medium">
-                            <div className="font-bold text-purple-800 uppercase tracking-wider text-[9px] mb-1 select-none">BANA GELİŞ MALİYETLERİ (GİZLİ)</div>
+                          <div className="mt-5 pt-4 border-t border-dashed border-purple-200 bg-purple-50/40 rounded-xl p-4 text-sm space-y-2.5 text-purple-950 font-medium">
+                            <div className="font-bold text-purple-800 uppercase tracking-wider text-xs mb-1 select-none">BANA GELİŞ MALİYETLERİ (GİZLİ)</div>
                             
                             {calculateQuoteTotals.totalUSDDiscounted > 0 && (
                               <div className="flex justify-between">
@@ -6078,12 +6083,12 @@ function App() {
                               <span>+ ₺ {formatPrice(calculateQuoteTotals.laborCost)}</span>
                             </div>
                             
-                            <div className="flex justify-between text-purple-700 font-extrabold border-t border-purple-200/60 pt-2 text-xs">
+                            <div className="flex justify-between text-purple-700 font-extrabold border-t border-purple-200/60 pt-2 text-sm">
                               <span>NET GELİŞ TOPLAMI:</span>
                               <span>₺ {formatPrice(calculateQuoteTotals.totalNetPriceDiscounted)}</span>
                             </div>
                             
-                            <div className="flex justify-between text-emerald-800 font-black border-t border-purple-200/60 pt-1.5 text-xs select-none">
+                            <div className="flex justify-between text-emerald-800 font-black border-t border-purple-200/60 pt-1.5 text-sm select-none">
                               <span>BRÜT KAZANÇ (KÂR):</span>
                               <span>₺ {formatPrice(calculateQuoteTotals.totalNetPrice - calculateQuoteTotals.totalNetPriceDiscounted)}</span>
                             </div>
