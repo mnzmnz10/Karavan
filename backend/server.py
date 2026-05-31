@@ -327,6 +327,7 @@ class Category(BaseModel):
     name: str
     description: Optional[str] = None
     color: Optional[str] = None
+    image_url: Optional[str] = None  # Kategori küçük resmi
     sort_order: int = 0  # Kategori sıralama numarası
     is_deletable: bool = True
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -335,7 +336,8 @@ class CategoryCreate(BaseModel):
     name: str
     description: Optional[str] = None
     color: Optional[str] = None
-    sort_order: Optional[int] = 0  # Yeni kategori için varsayılan sıra
+    image_url: Optional[str] = None  # Kategori küçük resmi
+    sort_order: Optional[int] = None  # Yeni kategori için varsayılan sıra
 
 class CategoryGroup(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -2249,14 +2251,17 @@ async def create_quote(quote: QuoteCreate):
             # Özel fiyat kontrolü
             custom_price = product_custom_prices.get(product["id"])
             currency = product.get("currency", "TRY")
+            rate = float(exchange_rates.get(currency, 1)) if currency != 'TRY' else 1.0
+            
             if custom_price is not None:
                 custom_price = float(custom_price)
-                rate = float(exchange_rates.get(currency, 1)) if currency != 'TRY' else 1.0
                 list_price_try = custom_price * rate
                 discounted_price_try = custom_price * rate
             else:
-                list_price_try = float(product.get("list_price_try", 0))
-                discounted_price_try = float(product.get("discounted_price_try", 0)) if product.get("discounted_price_try") else list_price_try
+                list_price = float(product.get("list_price", 0))
+                list_price_try = list_price * rate
+                discounted_price = float(product.get("discounted_price", 0)) if product.get("discounted_price") else list_price
+                discounted_price_try = discounted_price * rate
             
             # Calculate totals with quantity - SADECE LİSTE FİYATI KULLAN
             total_list_price += list_price_try * quantity
@@ -2419,14 +2424,17 @@ async def update_quote(quote_id: str, quote_update: Dict[str, Any]):
                     # Özel fiyat kontrolü
                     custom_price = product_data.get("custom_price")
                     currency = product.get("currency", "TRY")
+                    rate = float(exchange_rates.get(currency, 1)) if currency != 'TRY' else 1.0
+                    
                     if custom_price is not None:
                         custom_price = float(custom_price)
-                        rate = float(exchange_rates.get(currency, 1)) if currency != 'TRY' else 1.0
                         list_price_try = custom_price * rate
                         discounted_price_try = custom_price * rate
                     else:
-                        list_price_try = float(product.get("list_price_try", 0))
-                        discounted_price_try = float(product.get("discounted_price_try", 0)) if product.get("discounted_price_try") else list_price_try
+                        list_price = float(product.get("list_price", 0))
+                        list_price_try = list_price * rate
+                        discounted_price = float(product.get("discounted_price", 0)) if product.get("discounted_price") else list_price
+                        discounted_price_try = discounted_price * rate
                     
                     # Calculate totals with quantity - SADECE LİSTE FİYATI KULLAN
                     total_list_price += list_price_try * quantity
@@ -2682,14 +2690,24 @@ class PDFQuoteGenerator:
         
         # Üst header bölümü
         story.append(self._create_modern_header())
-        story.append(Spacer(1, 25))
+        story.append(Spacer(1, 10))
+        
+        # Antetli yatay çizgi
+        hr = Table([['']], colWidths=[16*cm], rowHeights=[2])
+        hr.setStyle(TableStyle([
+            ('LINEBELOW', (0,0), (-1,-1), 1.5, colors.HexColor('#2F4B68')),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 0),
+            ('TOPPADDING', (0,0), (-1,-1), 0),
+        ]))
+        story.append(hr)
+        story.append(Spacer(1, 20))
         
         # Teklif başlığı
         quote_name = quote_data.get('name', 'Fiyat Teklifi')
         story.append(Paragraph(f"<b>{quote_name}</b>", self.title_style))
         story.append(Spacer(1, 15))
         
-        # Teklif bilgileri satırı (Tarih, Geçerlilik vs.)
+        # Teklif bilgileri satırı (Tarih, Geçerlilik vs. içeren kart)
         story.append(self._create_quote_info_section(quote_data))
         story.append(Spacer(1, 25))
         
@@ -2701,33 +2719,46 @@ class PDFQuoteGenerator:
         story.append(self._create_modern_products_table(quote_data['products']))
         story.append(Spacer(1, 25))
         
-        # Teklif notları (varsa)
+        # Teklif notları (varsa - sol kenar vurgulu callout kutusu içinde)
         quote_notes = quote_data.get('notes', '').strip() if quote_data.get('notes') else ''
         if quote_notes:
-            # Küçük notlar başlığı
-            notes_header_style = ParagraphStyle(
-                'NotesHeader',
+            # Not başlık ve metin stilleri
+            note_title_style = ParagraphStyle(
+                'NoteTitle',
                 parent=self.styles['Normal'],
-                fontSize=9,
-                fontName=self.get_font_name(is_bold=True),  # bold -> is_bold
-                spaceAfter=6,
-                leftIndent=20
+                fontSize=9.5,
+                fontName=self.get_font_name(is_bold=True),
+                textColor=colors.HexColor('#2F4B68'),
+                spaceAfter=4
             )
-            story.append(Paragraph("<b>Notlar</b>", notes_header_style))
-            story.append(Spacer(1, 5))  # 10'dan 5'e küçültüldü
-            
-            # Notları paragraf olarak ekle (küçük font)
-            notes_style = ParagraphStyle(
-                'QuoteNotes',
+            note_text_style = ParagraphStyle(
+                'NoteText',
                 parent=self.styles['Normal'],
-                fontSize=8,  # 10'dan 8'e küçültüldü
-                leading=11,  # 14'ten 11'e küçültüldü
-                spaceAfter=8,  # 12'den 8'e küçültüldü
-                leftIndent=20,
+                fontSize=8.5,
+                leading=11.5,
+                textColor=colors.HexColor('#2D3748'),
                 fontName=self.get_font_name()
             )
-            story.append(Paragraph(quote_notes, notes_style))
-            story.append(Spacer(1, 15))  # 25'ten 15'e küçültüldü
+            
+            note_content = [
+                Paragraph("<b>Notlar ve Özel Koşullar:</b>", note_title_style),
+                Spacer(1, 2),
+                Paragraph(quote_notes, note_text_style)
+            ]
+            
+            # Callout tablosu
+            notes_callout = Table([[note_content]], colWidths=[16*cm])
+            notes_callout.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F8FAFC')),
+                ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#E2E8F0')),
+                ('LINEBEFORE', (0, 0), (0, -1), 3.5, colors.HexColor('#2F4B68')), # Sol kalın dikey çizgi
+                ('TOPPADDING', (0, 0), (-1, -1), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+                ('LEFTPADDING', (0, 0), (-1, -1), 14),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 14),
+            ]))
+            story.append(notes_callout)
+            story.append(Spacer(1, 20))
         
         # Toplam hesaplama bölümü
         story.extend(self._create_modern_totals_section(quote_data))
@@ -2798,39 +2829,74 @@ class PDFQuoteGenerator:
         return Paragraph(header_text, self.company_style)
     
     def _create_quote_info_section(self, quote_data: Dict):
-        """Teklif bilgileri bölümü (başlangıç tarihi ve 7 gün sonrası bitiş tarihi)"""
+        """Teklif ve müşteri bilgilerini içeren premium kart görünümü"""
         try:
             created_date = datetime.fromisoformat(quote_data['created_at'].replace('Z', '+00:00'))
             start_date_str = created_date.strftime('%d.%m.%Y')
-            
-            # Bitiş tarihi her zaman 7 gün sonra
             end_date = created_date + timedelta(days=7)
             end_date_str = end_date.strftime('%d.%m.%Y')
         except:
             today = datetime.now()
             start_date_str = today.strftime('%d.%m.%Y')
             end_date_str = (today + timedelta(days=7)).strftime('%d.%m.%Y')
+            
+        customer_name = quote_data.get('customer_name')
+        if not customer_name:
+            customer_name = "Bireysel Müşteri"
+            
+        # Bilgi başlığı ve değer stilleri
+        info_label_style = ParagraphStyle(
+            'InfoLabel',
+            parent=self.normal_style,
+            fontName=self.get_font_name(is_bold=True),
+            fontSize=8.5,
+            textColor=colors.HexColor('#4A5568'),
+            spaceAfter=0
+        )
+        info_val_style = ParagraphStyle(
+            'InfoValue',
+            parent=self.normal_style,
+            fontName=self.get_font_name(),
+            fontSize=9,
+            textColor=colors.HexColor('#2D3748'),
+            spaceAfter=0
+        )
+        info_val_bold_style = ParagraphStyle(
+            'InfoValueBold',
+            parent=self.normal_style,
+            fontName=self.get_font_name(is_bold=True),
+            fontSize=9,
+            textColor=colors.HexColor('#2F4B68'),
+            spaceAfter=0
+        )
         
-        # Bilgi tablosu oluştur
+        # 2 Satırlı, 4 Sütunlu Izgara
         info_data = [
             [
-                Paragraph("<b>Başlangıç Tarihi:</b>", self.normal_style),
-                Paragraph(start_date_str, self.normal_style),
-                Paragraph("<b>Bitiş Tarihi:</b>", self.normal_style),
-                Paragraph(end_date_str, self.normal_style)
+                Paragraph("<b>Müşteri Adı:</b>", info_label_style),
+                Paragraph(customer_name, info_val_bold_style),
+                Paragraph("<b>Teklif Tarihi:</b>", info_label_style),
+                Paragraph(start_date_str, info_val_style)
+            ],
+            [
+                Paragraph("<b>Teklif Başlığı:</b>", info_label_style),
+                Paragraph(quote_data.get('name', 'Fiyat Teklifi'), info_val_style),
+                Paragraph("<b>Geçerlilik Tarihi:</b>", info_label_style),
+                Paragraph(end_date_str, info_val_style)
             ]
         ]
         
-        info_table = Table(info_data, colWidths=[4*cm, 3*cm, 4*cm, 3*cm])
+        # Toplam genişlik: 16cm
+        info_table = Table(info_data, colWidths=[3.0*cm, 5.0*cm, 4.0*cm, 4.0*cm])
         info_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f7fafc')),
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F8FAFC')),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (-1, -1), self.get_font_name()),
-            ('FONTSIZE', (0, 0), (-1, -1), 10),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e2e8f0')),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('TOPPADDING', (0, 0), (-1, -1), 8),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#E2E8F0')),
+            ('TOPPADDING', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+            ('LEFTPADDING', (0, 0), (-1, -1), 12),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 12),
         ]))
         
         return info_table
@@ -2858,143 +2924,266 @@ class PDFQuoteGenerator:
         return date_paragraph
     
     def _create_modern_products_table(self, products: List[Dict]):
-        """Modern tasarımda ürün tablosu oluştur - Yeni renk şeması ile"""
+        """Modern tasarımda ürün tablosu oluştur - Sadece yatay çizgilerle minimalist tasarım"""
         primary_color = colors.HexColor('#25c7eb')
         secondary_color = colors.HexColor('#1ba3cc')
-        table_header_color = colors.HexColor('#A6C9EC')  # YENİ TABLO BAŞLIK RENGİ
-        accent_color = colors.HexColor('#f0f9ff')
+        new_primary_color = colors.HexColor('#2F4B68')  # Kurumsal Koyu Mavi
+        accent_color = colors.HexColor('#F8FAFC')       # Çok Fesah Açık Gri
         
-        # Tablo başlıkları (Marka sütunu kaldırıldı)
+        # Local styles for column alignment and typography
+        header_left = ParagraphStyle('HLeft', parent=self.data_style, fontName=self.get_font_name(is_bold=True), textColor=colors.white, fontSize=9)
+        header_center = ParagraphStyle('HCenter', parent=self.data_style, fontName=self.get_font_name(is_bold=True), textColor=colors.white, alignment=TA_CENTER, fontSize=9)
+        header_right = ParagraphStyle('HRight', parent=self.data_style, fontName=self.get_font_name(is_bold=True), textColor=colors.white, alignment=TA_RIGHT, fontSize=9)
+        
+        cell_left = ParagraphStyle('CLeft', parent=self.data_style, fontName=self.get_font_name(), fontSize=8.5, leading=11)
+        cell_center = ParagraphStyle('CCenter', parent=self.data_style, fontName=self.get_font_name(), alignment=TA_CENTER, fontSize=8.5)
+        cell_right = ParagraphStyle('CRight', parent=self.data_style, fontName=self.get_font_name(), alignment=TA_RIGHT, fontSize=8.5)
+        cell_right_bold = ParagraphStyle('CRightBold', parent=self.data_style, fontName=self.get_font_name(is_bold=True), alignment=TA_RIGHT, fontSize=8.5)
+        cell_right_bold_blue = ParagraphStyle('CRightBoldBlue', parent=self.data_style, fontName=self.get_font_name(is_bold=True), textColor=secondary_color, alignment=TA_RIGHT, fontSize=8.5)
+        
+        # Tablo başlıkları (Genişletilmiş sütunlar, Miktar sığacak şekilde 1.6*cm)
         headers = [
-            Paragraph("<b>Ürün Adı</b>", self.data_style),
-            Paragraph("<b>Miktar</b>", self.data_style),
-            Paragraph("<b>Birim Fiyat</b>", self.data_style),
-            Paragraph("<b>Toplam Fiyat</b>", self.data_style)
+            Paragraph("<b>Ürün Bilgisi</b>", header_left),
+            Paragraph("<b>Miktar</b>", header_center),
+            Paragraph("<b>Birim Fiyat</b>", header_right),
+            Paragraph("<b>Birim Fiyat (TL)</b>", header_right),
+            Paragraph("<b>Tutar</b>", header_right),
+            Paragraph("<b>Tutar (TL)</b>", header_right)
         ]
         
         data = [headers]
         
-        # Ürün satırları (Marka sütunu kaldırıldı)
+        # Ürün satırları
         for product in products:
             quantity = product.get('quantity', 1)
-            # PDF için özel fiyat varsa onu kullan, yoksa liste fiyatını kullan
-            # İndirimli fiyat gösterme durumu PDF'i etkilemez
-            if product.get('has_custom_price') and product.get('custom_price'):
-                unit_price = product.get('custom_price', 0)
-            else:
-                unit_price = product.get('list_price_try', 0)
-            total_price = unit_price * quantity
+            currency = product.get('currency', 'TRY')
             
+            # Currency symbol helper
+            symbol = '$' if currency == 'USD' else ('€' if currency == 'EUR' else '₺')
+            
+            # Original currency unit price
+            custom_price = product.get('custom_price')
+            if custom_price is not None:
+                unit_price_orig = float(custom_price)
+            else:
+                unit_price_orig = float(product.get('list_price', 0))
+            
+            total_price_orig = unit_price_orig * quantity
+            
+            # TL unit price (from precalculated/saved list_price_try)
+            unit_price_try = float(product.get('list_price_try', 0))
+            total_price_try = unit_price_try * quantity
+            
+            # Name and Description
+            name_text = product.get('name', '')
+            desc_text = product.get('description', '')
+            if desc_text:
+                full_product_info = f"<b>{name_text}</b><br/><font size='7' color='#718096'>{desc_text}</font>"
+            else:
+                full_product_info = f"<b>{name_text}</b>"
+                
             row = [
-                Paragraph(product.get('name', ''), self.data_style),
-                Paragraph(str(quantity), self.data_style),
-                Paragraph(f"₺ {self._format_price_modern(unit_price)}", self.data_style),
-                Paragraph(f"<b>₺ {self._format_price_modern(total_price)}</b>", self.data_style)
+                Paragraph(full_product_info, cell_left),
+                Paragraph(str(quantity), cell_center),
+                Paragraph(f"{symbol} {self._format_price_modern(unit_price_orig)}", cell_right),
+                Paragraph(f"₺ {self._format_price_modern(unit_price_try)}", cell_right),
+                Paragraph(f"{symbol} {self._format_price_modern(total_price_orig)}", cell_right_bold),
+                Paragraph(f"<b>₺ {self._format_price_modern(total_price_try)}</b>", cell_right_bold_blue)
             ]
             data.append(row)
         
-        # Tablo oluştur (4 sütun)
-        table = Table(data, colWidths=[8*cm, 2*cm, 3*cm, 3*cm])
+        # Tablo genişlikleri (A4 kullanılabilir alan: 16cm = 160mm, Miktar 1.6cm ile tek satırda sığdırıldı)
+        table = Table(data, colWidths=[5.0*cm, 1.6*cm, 2.3*cm, 2.3*cm, 2.4*cm, 2.4*cm])
         table.setStyle(TableStyle([
-            # Başlık stili - YENİ RENK (#A6C9EC)
-            ('BACKGROUND', (0, 0), (-1, 0), table_header_color),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            # Başlık stili - Premium koyu renk ve mükemmel kontrast
+            ('BACKGROUND', (0, 0), (-1, 0), new_primary_color),
             ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), self.get_font_name(is_bold=True)),
-            ('FONTSIZE', (0, 0), (-1, 0), 10),
-            ('TOPPADDING', (0, 0), (-1, 0), 12),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            
-            # Veri satırları - Alternatif renklendirme (4 sütun)
-            ('BACKGROUND', (0, 1), (-1, -1), accent_color),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, accent_color]),
-            ('ALIGN', (1, 1), (1, -1), 'CENTER'),  # Miktar ortala
-            ('ALIGN', (2, 1), (-1, -1), 'RIGHT'),  # Fiyatları sağa hizala
-            ('FONTNAME', (0, 1), (-1, -1), self.get_font_name()),
-            ('FONTSIZE', (0, 1), (-1, -1), 9),
-            ('TOPPADDING', (0, 1), (-1, -1), 8),
-            ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
-            
-            # Çerçeve
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e0')),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, 0), (-1, 0), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
             
-            # Son sütun vurgusu (toplam fiyatlar için)
-            ('FONTNAME', (3, 1), (3, -1), self.get_font_name(is_bold=True)),
-            ('TEXTCOLOR', (3, 1), (3, -1), secondary_color),
+            # Veri satırları renklendirme (Zebra desenli ferah görünüm)
+            ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, accent_color]),
+            ('TOPPADDING', (0, 1), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 10),
+            
+            # Yatay bölücü çizgiler (Dikey çizgiler minimalist etki için tamamen kaldırıldı)
+            ('LINEBELOW', (0, 0), (-1, 0), 1.5, new_primary_color),       # Başlık altı kalın çizgi
+            ('LINEBELOW', (0, 1), (-1, -1), 0.5, colors.HexColor('#E2E8F0')), # Satır araları ince bölücüler
+            
+            # İç dolgular
+            ('LEFTPADDING', (0, 0), (-1, -1), 8),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 8),
         ]))
         
         return table
     
     def _create_modern_totals_section(self, quote_data: Dict):
-        """Modern toplam hesaplama bölümü - İşçilik maliyeti ile"""
-        primary_color = colors.HexColor('#25c7eb')
-        secondary_color = colors.HexColor('#1ba3cc')
+        """Modern toplam hesaplama bölümü - Sağ tarafta tablo düzeninde"""
         new_primary_color = colors.HexColor('#2F4B68')
+        secondary_color = colors.HexColor('#1ba3cc')
         
-        totals_content = []
+        # Styles for totals table
+        label_style = ParagraphStyle(
+            'TotalLabel',
+            parent=self.normal_style,
+            fontName=self.get_font_name(),
+            fontSize=9.5,
+            alignment=TA_LEFT,
+            leading=12
+        )
+        value_style = ParagraphStyle(
+            'TotalValue',
+            parent=self.normal_style,
+            fontName=self.get_font_name(),
+            fontSize=9.5,
+            alignment=TA_RIGHT,
+            leading=12
+        )
         
-        # Ara toplam
-        subtotal_text = f"Ara Toplam: <b>₺ {self._format_price_modern(quote_data.get('total_discounted_price', 0))}</b>"
-        totals_content.append(Paragraph(subtotal_text, self.normal_style))
+        label_bold_style = ParagraphStyle(
+            'TotalLabelBold',
+            parent=self.normal_style,
+            fontName=self.get_font_name(is_bold=True),
+            fontSize=11,
+            alignment=TA_LEFT,
+            textColor=new_primary_color,
+            leading=14
+        )
+        value_bold_style = ParagraphStyle(
+            'TotalValueBold',
+            parent=self.normal_style,
+            fontName=self.get_font_name(is_bold=True),
+            fontSize=11,
+            alignment=TA_RIGHT,
+            textColor=new_primary_color,
+            leading=14
+        )
         
-        # İndirim (eğer varsa)  
+        label_muted_style = ParagraphStyle(
+            'TotalLabelMuted',
+            parent=self.normal_style,
+            fontName=self.get_font_name(),
+            fontSize=8,
+            alignment=TA_LEFT,
+            textColor=colors.HexColor('#718096'),
+            leading=10
+        )
+        value_muted_style = ParagraphStyle(
+            'TotalValueMuted',
+            parent=self.normal_style,
+            fontName=self.get_font_name(),
+            fontSize=8,
+            alignment=TA_RIGHT,
+            textColor=colors.HexColor('#718096'),
+            leading=10
+        )
+        
+        table_data = []
+        
+        # 1. Genel Liste Toplamı
+        total_list_price = quote_data.get('total_list_price', 0)
+        table_data.append([
+            Paragraph("Genel Liste Toplamı:", label_style),
+            Paragraph(f"₺ {self._format_price_modern(total_list_price)}", value_style)
+        ])
+        
+        # 2. Uygulanan İndirim
         discount_percentage = quote_data.get('discount_percentage', 0)
         if discount_percentage > 0:
-            # Doğru indirim hesaplaması: liste fiyatının yüzdesi
-            total_list_price = quote_data.get('total_list_price', 0)
             discount_amount = total_list_price * (discount_percentage / 100)
-            discount_text = f"İndirim (%{discount_percentage}): <font color='#dc2626'>-₺ {self._format_price_modern(discount_amount)}</font>"
-            totals_content.append(Paragraph(discount_text, self.normal_style))
-            totals_content.append(Spacer(1, 4))
-        
-        # İşçilik maliyeti (eğer varsa)
+            table_data.append([
+                Paragraph(f"Uygulanan İndirim (%{discount_percentage}):", label_style),
+                Paragraph(f"<font color='#dc2626'>-₺ {self._format_price_modern(discount_amount)}</font>", value_style)
+            ])
+            
+        # 3. İşçilik Maliyeti
         labor_cost = quote_data.get('labor_cost', 0)
         if labor_cost > 0:
-            labor_text = f"İşçilik: <font color='#059669'>+₺ {self._format_price_modern(labor_cost)}</font>"
-            totals_content.append(Paragraph(labor_text, self.normal_style))
-            totals_content.append(Spacer(1, 8))
-        
-        # Net toplam - küçültülmüş ve yeni renk (#2F4B68)
-        net_total = quote_data.get('total_net_price', 0)
-        net_total_color = colors.HexColor('#2F4B68')  # YENİ RENK
-        net_total_text = f"<font size='14' color='{net_total_color}'><b>NET TOPLAM: ₺ {self._format_price_modern(net_total)}</b></font>"
-        totals_content.append(Paragraph(net_total_text, self.price_style))
-        
-        # Euro karşılığı - Güncel kurdan hesaplanmış
-        try:
-            # Use cached exchange rates (no async needed)
-            eur_rate = float(currency_service.rates_cache.get('EUR', 48.5)) if currency_service.rates_cache else 48.5
-            net_total_eur = net_total / eur_rate
+            table_data.append([
+                Paragraph("İşçilik Maliyeti:", label_style),
+                Paragraph(f"<font color='#059669'>+₺ {self._format_price_modern(labor_cost)}</font>", value_style)
+            ])
             
-            euro_text = f"<font size='10' color='#666666'><i>(€ {self._format_price_modern(net_total_eur)} EUR)</i></font>"
-            totals_content.append(Paragraph(euro_text, self.price_style))
+        # 4. Net Toplam
+        net_total = quote_data.get('total_net_price', 0)
+        table_data.append([
+            Paragraph("<b>NET TOPLAM:</b>", label_bold_style),
+            Paragraph(f"<b>₺ {self._format_price_modern(net_total)}</b>", value_bold_style)
+        ])
+        
+        # 5. Euro and USD equivalents
+        try:
+            eur_rate = float(currency_service.rates_cache.get('EUR', 37.0)) if currency_service.rates_cache else 37.0
+            usd_rate = float(currency_service.rates_cache.get('USD', 34.0)) if currency_service.rates_cache else 34.0
+            
+            net_total_eur = net_total / eur_rate
+            net_total_usd = net_total / usd_rate
+            
+            table_data.append([
+                Paragraph("<i>Euro Karşılığı (EUR):</i>", label_muted_style),
+                Paragraph(f"<i>€ {self._format_price_modern(net_total_eur)}</i>", value_muted_style)
+            ])
+            table_data.append([
+                Paragraph("<i>Dolar Karşılığı (USD):</i>", label_muted_style),
+                Paragraph(f"<i>$ {self._format_price_modern(net_total_usd)}</i>", value_muted_style)
+            ])
         except Exception as e:
-            logger.warning(f"Could not calculate EUR equivalent: {e}")
+            logger.warning(f"Could not calculate currencies equivalent: {e}")
+            
+        # Create totals table (Width: 9cm total, hAlign='RIGHT')
+        totals_table = Table(table_data, colWidths=[5.5*cm, 3.5*cm], hAlign='RIGHT')
+        totals_table.setStyle(TableStyle([
+            ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ('TOPPADDING', (0, 0), (-1, -1), 4),
+            ('LEFTPADDING', (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+            ('LINEABOVE', (0, -3 if len(table_data) > 4 else -1), (1, -3 if len(table_data) > 4 else -1), 0.5, colors.HexColor('#cbd5e0')),
+        ]))
         
-        totals_content.append(Spacer(1, 4))
-        
-        return totals_content
+        return [totals_table]
     
     def _create_modern_footer(self):
-        """Güncellenmiş footer mesajı - Yeni renk ile"""
-        footer_content = []
+        """Güncellenmiş footer mesajı - Sol vurgulu modern callout kutusu içinde"""
+        # Not başlık ve metin stilleri
+        note_title_style = ParagraphStyle(
+            'FooterNotesHeader',
+            parent=self.styles['Normal'],
+            fontSize=9.5,
+            fontName=self.get_font_name(is_bold=True),
+            textColor=colors.HexColor('#2F4B68'),
+            spaceAfter=6
+        )
         
-        # Önemli notlar başlığı - YENİ RENK (#2F4B68)
-        footer_content.append(Paragraph("<b><font color='#2F4B68'>ÖNEMLİ NOTLAR:</font></b>", self.subtitle_style))
-        footer_content.append(Spacer(1, 8))
-        
-        # Güncellenmiş notlar listesi
         notes = [
-            "• Yukarıdaki fiyatlandırmanın, 1 hafta geçerli olduğunu lütfen göz önünde bulundurunuz.",
-            "• Ürün özellikleri ve fiyatları değişiklik gösterebilir.",
-            "• Servisimiz dışında yapılan işlemlerde montaj ve nakliye masrafları ayrıca hesaplanacaktır."
+            "• Yukarıdaki fiyatlandırmanın, teklif tarihinden itibaren <b>7 gün geçerli</b> olduğunu lütfen göz önünde bulundurunuz.",
+            "• Ürün özellikleri ve fiyatları piyasa koşullarına bağlı olarak değişiklik gösterebilir.",
+            "• Karavan elektrik montaj/servisimiz dışındaki işlemlerde montaj ve nakliye masrafları ayrıca hesaplanacaktır."
         ]
         
         notes_text = "<br/>".join(notes)
-        footer_content.append(Paragraph(notes_text, self.footer_style))
         
-        return footer_content
+        callout_content = [
+            Paragraph("<b>ÖNEMLİ NOTLAR VE ŞARTLAR</b>", note_title_style),
+            Paragraph(notes_text, self.footer_style)
+        ]
+        
+        # Callout tablosu
+        footer_callout = Table([[callout_content]], colWidths=[16*cm])
+        footer_callout.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F8FAFC')),
+            ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#E2E8F0')),
+            ('LINEBEFORE', (0, 0), (0, -1), 3.5, colors.HexColor('#2F4B68')), # Sol kalın dikey çizgi
+            ('TOPPADDING', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+            ('LEFTPADDING', (0, 0), (-1, -1), 14),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 14),
+        ]))
+        
+        return [footer_callout]
     
     def _format_price_modern(self, price):
         """Modern Türkçe fiyat formatla - küsüratsız"""
@@ -3676,10 +3865,13 @@ async def create_category(category: CategoryCreate):
             "name": category.name,
             "description": category.description,
             "color": category.color or "#3B82F6",  # Default blue color
+            "image_url": category.image_url,
+            "sort_order": category.sort_order or 0,
             "created_at": datetime.now(timezone.utc)
         }
         
         result = await db.categories.insert_one(category_dict)
+        invalidate_cache("categories")
         return Category(**category_dict)
         
     except Exception as e:
@@ -3710,6 +3902,8 @@ async def update_category(category_id: str, update_data: CategoryCreate):
             update_dict["color"] = update_data.color
         if update_data.sort_order is not None:
             update_dict["sort_order"] = update_data.sort_order
+        if update_data.image_url is not None:
+            update_dict["image_url"] = update_data.image_url
         
         if update_dict:
             result = await db.categories.update_one(
@@ -3717,9 +3911,10 @@ async def update_category(category_id: str, update_data: CategoryCreate):
                 {"$set": update_dict}
             )
             
-            if result.modified_count == 0:
+            if result.matched_count == 0:
                 raise HTTPException(status_code=404, detail="Kategori bulunamadı")
         
+        invalidate_cache("categories")
         # Get updated category
         updated_category = await db.categories.find_one({"id": category_id})
         return {
@@ -3749,6 +3944,7 @@ async def reorder_categories(category_orders: List[Dict[str, Any]]):
                     {"$set": {"sort_order": sort_order}}
                 )
         
+        invalidate_cache("categories")
         # Return updated categories sorted by new order
         categories = await db.categories.find().sort([("sort_order", 1), ("name", 1)]).to_list(None)
         return {
@@ -3786,6 +3982,7 @@ async def delete_category(category_id: str):
         if result.deleted_count == 0:
             raise HTTPException(status_code=404, detail="Kategori bulunamadı")
         
+        invalidate_cache("categories")
         return {"success": True, "message": "Kategori başarıyla silindi"}
     except HTTPException:
         raise

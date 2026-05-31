@@ -10,7 +10,7 @@ import { Badge } from './components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from './components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select';
-import { Trash2, Upload, RefreshCw, Plus, TrendingUp, Building2, Package, DollarSign, Edit, Save, X, FileText, Check, Archive, Download, Wrench, Eye, EyeOff, AlertTriangle, Tags, Copy, Pin, StickyNote, Users, Star, Search, Phone, Mail, MapPin, Calculator, Battery, Loader2, ScanSearch, LogOut, PlusCircle, MinusCircle, History, Settings, ChevronUp, ChevronDown } from 'lucide-react';
+import { Trash2, Upload, RefreshCw, Plus, TrendingUp, Building2, Package, DollarSign, Edit, Save, X, FileText, Check, Archive, Download, Wrench, Eye, EyeOff, AlertTriangle, Tags, Copy, Pin, StickyNote, Users, Star, Search, Phone, Mail, MapPin, Calculator, Battery, Loader2, ScanSearch, LogOut, PlusCircle, MinusCircle, History, Settings, ChevronUp, ChevronDown, GripVertical } from 'lucide-react';
 import { toast } from 'sonner';
 import { Toaster } from './components/ui/sonner';
 import LazyImage from './components/LazyImage';
@@ -506,6 +506,20 @@ function App() {
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newCategoryDescription, setNewCategoryDescription] = useState('');
   const [newCategoryColor, setNewCategoryColor] = useState('#3B82F6');
+  const [newCategoryImageUrl, setNewCategoryImageUrl] = useState('');
+  
+  // Inline category creation states
+  const [showInlineCategoryForm, setShowInlineCategoryForm] = useState(false);
+  const [inlineCategoryName, setInlineCategoryName] = useState('');
+  const [inlineCategoryColor, setInlineCategoryColor] = useState('#10B981');
+  const [isSavingInlineCategory, setIsSavingInlineCategory] = useState(false);
+  const [editingCategory, setEditingCategory] = useState(null);
+  const [editCategoryForm, setEditCategoryForm] = useState({
+    name: '',
+    description: '',
+    color: '',
+    image_url: ''
+  });
   const [showAddProductDialog, setShowAddProductDialog] = useState(false);
   const [selectedProducts, setSelectedProducts] = useState(new Map()); // Map<productId, quantity>
   const [selectedProductsData, setSelectedProductsData] = useState(new Map()); // Map<productId, productData>
@@ -545,6 +559,146 @@ function App() {
   
   // Kategori dialog için ayrı arama ve ürün listesi
   const [categoryDialogSearchQuery, setCategoryDialogSearchQuery] = useState('');
+  
+  // Scroll to Top state and effect
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  
+  useEffect(() => {
+    const handleScroll = () => {
+      if (window.scrollY > 300) {
+        setShowScrollTop(true);
+      } else {
+        setShowScrollTop(false);
+      }
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const scrollToTop = () => {
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    });
+  };
+  
+  // Ref to track if quote draft is initialized/restored from localStorage
+  const quoteDraftLoadedRef = useRef(false);
+
+  // 1. Auto-Restore Quote Draft on Mount
+  useEffect(() => {
+    try {
+      const savedDraft = localStorage.getItem('karavan_quote_draft');
+      if (savedDraft) {
+        const draft = JSON.parse(savedDraft);
+        console.log('📦 Bulunan teklif taslağı geri yükleniyor...', draft);
+        
+        if (draft.quoteName) setQuoteName(draft.quoteName);
+        if (draft.quoteDiscount !== undefined) setQuoteDiscount(draft.quoteDiscount);
+        if (draft.quoteLaborCost !== undefined) setQuoteLaborCost(draft.quoteLaborCost);
+        if (draft.quoteNotes) setQuoteNotes(draft.quoteNotes);
+        if (draft.selectedQuoteCustomer) setSelectedQuoteCustomer(draft.selectedQuoteCustomer);
+        
+        if (draft.selectedProducts) {
+          setSelectedProducts(new Map(draft.selectedProducts));
+        }
+        if (draft.selectedProductsData) {
+          setSelectedProductsData(new Map(draft.selectedProductsData));
+        }
+        if (draft.selectedProductsCustomPrices) {
+          setSelectedProductsCustomPrices(new Map(draft.selectedProductsCustomPrices));
+        }
+        
+        // Wait a small timeout to show after other mounts
+        setTimeout(() => {
+          toast.success('Yarım kalan teklif taslağınız otomatik olarak geri yüklendi.');
+        }, 100);
+      }
+    } catch (err) {
+      console.error('Teklif taslağı geri yükleme hatası:', err);
+    } finally {
+      quoteDraftLoadedRef.current = true;
+    }
+  }, []);
+
+  // 2. Auto-Save Quote Draft on state changes
+  useEffect(() => {
+    // Only save if the initial loading phase is done to avoid blank state overwriting saved draft
+    if (!quoteDraftLoadedRef.current) return;
+    
+    try {
+      if (selectedProducts.size === 0) {
+        // If empty, clean local draft
+        localStorage.removeItem('karavan_quote_draft');
+        return;
+      }
+      
+      const draft = {
+        quoteName,
+        quoteDiscount,
+        quoteLaborCost,
+        quoteNotes,
+        selectedQuoteCustomer,
+        selectedProducts: Array.from(selectedProducts.entries()),
+        selectedProductsData: Array.from(selectedProductsData.entries()),
+        selectedProductsCustomPrices: Array.from(selectedProductsCustomPrices.entries())
+      };
+      
+      localStorage.setItem('karavan_quote_draft', JSON.stringify(draft));
+      console.log('💾 Teklif taslağı otomatik kaydedildi.');
+    } catch (err) {
+      console.error('Teklif taslağı otomatik kaydetme hatası:', err);
+    }
+  }, [
+    quoteName,
+    quoteDiscount,
+    quoteLaborCost,
+    quoteNotes,
+    selectedQuoteCustomer,
+    selectedProducts,
+    selectedProductsData,
+    selectedProductsCustomPrices
+  ]);
+  
+  // Product drag and drop reordering states and handlers
+  const [draggedProductId, setDraggedProductId] = useState(null);
+
+  const handleProductDragStart = (e, productId) => {
+    setDraggedProductId(productId);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleProductDragOver = (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleProductDragEnd = (e) => {
+    setDraggedProductId(null);
+  };
+
+  const handleProductDrop = (e, targetProductId) => {
+    e.preventDefault();
+    if (!draggedProductId || draggedProductId === targetProductId) return;
+
+    const keys = Array.from(selectedProducts.keys());
+    const draggedIndex = keys.indexOf(draggedProductId);
+    const targetIndex = keys.indexOf(targetProductId);
+    
+    if (draggedIndex === -1 || targetIndex === -1) return;
+
+    // Reorder keys array
+    const [draggedItem] = keys.splice(draggedIndex, 1);
+    keys.splice(targetIndex, 0, draggedItem);
+
+    // Update Map
+    const newSelected = new Map();
+    keys.forEach(key => {
+      newSelected.set(key, selectedProducts.get(key));
+    });
+    setSelectedProducts(newSelected);
+    toast.success('Ürün sırası güncellendi');
+  };
   const [allProductsForCategory, setAllProductsForCategory] = useState([]);
   const [loadingCategoryProducts, setLoadingCategoryProducts] = useState(false);
   
@@ -587,6 +741,17 @@ function App() {
   const [showImagePreview, setShowImagePreview] = useState(false);
   const [previewImageUrl, setPreviewImageUrl] = useState('');
   const [previewImageTitle, setPreviewImageTitle] = useState('');
+  
+  // Product Detail states and handler
+  const [detailProduct, setDetailProduct] = useState(null);
+  const [showProductDetail, setShowProductDetail] = useState(false);
+
+  const openProductDetails = (product) => {
+    if (product) {
+      setDetailProduct(product);
+      setShowProductDetail(true);
+    }
+  };
   const [newCurrency, setNewCurrency] = useState('USD');
   const [changingCurrency, setChangingCurrency] = useState(false);
 
@@ -1466,11 +1631,13 @@ function App() {
       await axios.post(`${API}/categories`, {
         name: newCategoryName,
         description: newCategoryDescription,
-        color: newCategoryColor
+        color: newCategoryColor,
+        image_url: newCategoryImageUrl || null
       });
       
       setNewCategoryName('');
       setNewCategoryDescription('');
+      setNewCategoryImageUrl('');
       
       // PERFORMANCE: Invalidate cache before reload
       CacheManager.remove('categories');
@@ -1487,6 +1654,33 @@ function App() {
     } catch (error) {
       console.error('Error creating category:', error);
       toast.error('Kategori oluşturulamadı');
+    }
+  };
+
+  const startEditCategory = (category) => {
+    setEditingCategory(category);
+    setEditCategoryForm({
+      name: category.name || '',
+      description: category.description || '',
+      color: category.color || '#3B82F6',
+      image_url: category.image_url || ''
+    });
+  };
+
+  const updateCategory = async () => {
+    if (!editCategoryForm.name.trim()) {
+      toast.error('Kategori adı gerekli');
+      return;
+    }
+    try {
+      await axios.patch(`${API}/categories/${editingCategory.id}`, editCategoryForm);
+      setEditingCategory(null);
+      CacheManager.remove('categories');
+      await loadCategories();
+      toast.success('Kategori başarıyla güncellendi');
+    } catch (error) {
+      console.error('Error updating category:', error);
+      toast.error('Kategori güncellenemedi');
     }
   };
 
@@ -1663,6 +1857,43 @@ function App() {
     }
   }, [categoryDialogSearchQuery, showCategoryProductDialog]);
 
+  const saveInlineCategory = async () => {
+    if (!inlineCategoryName.trim()) {
+      toast.error('Kategori adı boş olamaz');
+      return;
+    }
+    
+    setIsSavingInlineCategory(true);
+    try {
+      const response = await axios.post(`${API}/categories`, {
+        name: inlineCategoryName.trim(),
+        description: 'Hızlı eklenen kategori',
+        color: inlineCategoryColor,
+        sort_order: categories.length + 1
+      });
+      
+      const newCategory = response.data;
+      
+      // Update categories state
+      setCategories(prev => [...prev, newCategory]);
+      
+      // Set the category on the new product form
+      setNewProductForm(prev => ({ ...prev, category_id: newCategory.id }));
+      
+      toast.success(`"${newCategory.name}" kategorisi başarıyla eklendi!`);
+      
+      // Clear and close
+      setInlineCategoryName('');
+      setInlineCategoryColor('#10B981');
+      setShowInlineCategoryForm(false);
+    } catch (error) {
+      console.error('Hızlı kategori ekleme hatası:', error);
+      toast.error(error.response?.data?.detail || 'Kategori eklenemedi');
+    } finally {
+      setIsSavingInlineCategory(false);
+    }
+  };
+
   const toggleProductSelection = (productId, quantity = 1) => {
     console.log('🔄 toggleProductSelection çağrıldı:', { productId, quantity });
     console.log('📊 Mevcut selectedProducts:', Array.from(selectedProducts.entries()));
@@ -1676,6 +1907,8 @@ function App() {
       product = allProductsForCategory.find(p => p.id === productId);
     }
     
+    let isNewProductAdded = false;
+
     if (newSelected.has(productId)) {
       if (quantity === 0) {
         console.log('❌ Ürün siliniyor:', productId);
@@ -1693,13 +1926,38 @@ function App() {
         console.log('➕ Yeni ürün ekleniyor:', productId);
         newSelected.set(productId, quantity);
         newSelectedData.set(productId, product);
+        isNewProductAdded = true;
       }
     }
     
-    console.log('📊 Yeni selectedProducts:', Array.from(newSelected.entries()));
-    console.log('📊 Seçili ürün sayısı:', newSelected.size);
+    let finalSelected = newSelected;
     
-    setSelectedProducts(newSelected);
+    if (isNewProductAdded) {
+      // Default sort by price descending when a new product is added
+      const entries = Array.from(newSelected.entries());
+      entries.sort(([idA], [idB]) => {
+        const prodA = newSelectedData.get(idA);
+        const prodB = newSelectedData.get(idB);
+        if (!prodA) return 1;
+        if (!prodB) return -1;
+        
+        const getPriceInTRY = (p) => {
+          const price = p.list_price || 0;
+          if (p.currency === 'USD') return price * (exchangeRates.USD || 34.0);
+          if (p.currency === 'EUR') return price * (exchangeRates.EUR || 37.0);
+          return price;
+        };
+        
+        return getPriceInTRY(prodB) - getPriceInTRY(prodA);
+      });
+      
+      finalSelected = new Map(entries);
+    }
+    
+    console.log('📊 Yeni selectedProducts:', Array.from(finalSelected.entries()));
+    console.log('📊 Seçili ürün sayısı:', finalSelected.size);
+    
+    setSelectedProducts(finalSelected);
     setSelectedProductsData(newSelectedData);
   };
 
@@ -1831,6 +2089,7 @@ function App() {
   };
 
   const clearSelection = () => {
+    localStorage.removeItem('karavan_quote_draft');
     setSelectedProducts(new Map());
     setSelectedProductsData(new Map());
     setSelectedProductsCustomPrices(new Map());
@@ -1893,6 +2152,7 @@ function App() {
         setLoadedQuote(updatedQuote);
         
         await fetchQuotes();
+        localStorage.removeItem('karavan_quote_draft');
         toast.success(`"${loadedQuote.name}" teklifi güncellendi!`);
         
       } else {
@@ -1922,6 +2182,7 @@ function App() {
         setLoadedQuote(savedQuote); // Kaydedilen teklifi yüklenmiş olarak işaretle
         
         await fetchQuotes();
+        localStorage.removeItem('karavan_quote_draft');
         toast.success('Teklif başarıyla kaydedildi!');
       }
       
@@ -3106,98 +3367,7 @@ function App() {
     return isAndroid || isIOS || isMobileWidth || isTouchDevice;
   };
 
-  // WhatsApp share with PDF download - improved for mobile and no message content
-  const shareViaWhatsAppWithPDF = async (quoteName, quoteId) => {
-    try {
-      // 1. PDF'i otomatik indir
-      const pdfUrl = `${API}/quotes/${quoteId}/pdf`;
-      const link = document.createElement('a');
-      link.href = pdfUrl;
-      link.download = `${quoteName}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
 
-      // 2. WhatsApp URL'ini oluştur - MESAJ İÇERİĞİ YOK
-      const isMobile = isMobileDevice();
-      const userAgent = navigator.userAgent.toLowerCase();
-      const isAndroid = userAgent.includes('android');
-      
-      let whatsappUrl;
-      
-      if (isMobile) {
-        if (isAndroid) {
-          // Android için intent URL de deneyelim
-          whatsappUrl = 'whatsapp://send';
-        } else {
-          // iOS için
-          whatsappUrl = 'whatsapp://send';
-        }
-        toast.success('PDF indirildi! WhatsApp uygulaması açılıyor...');
-      } else {
-        // Desktop: WhatsApp Web - boş konuşma
-        whatsappUrl = 'https://web.whatsapp.com/send';
-        toast.success('PDF indirildi! WhatsApp Web açılıyor...');
-      }
-
-      // 3. WhatsApp'ı aç - sadece yeni sekme, fallback yok
-      setTimeout(() => {
-        if (isMobile && isAndroid) {
-          // Android için özel işlem
-          try {
-            // Önce WhatsApp app protokolünü dene
-            const androidLink = document.createElement('a');
-            androidLink.href = 'whatsapp://send';
-            androidLink.target = '_blank';
-            androidLink.rel = 'noopener noreferrer';
-            document.body.appendChild(androidLink);
-            androidLink.click();
-            document.body.removeChild(androidLink);
-            
-            // Eğer bu çalışmazsa intent kullan
-            setTimeout(() => {
-              try {
-                window.open('intent://send/#Intent;scheme=whatsapp;package=com.whatsapp;end', '_blank');
-              } catch (e) {
-                // Son çare: Google Play Store
-                window.open('https://play.google.com/store/apps/details?id=com.whatsapp', '_blank');
-                toast.error('WhatsApp uygulaması bulunamadı. Play Store\'dan yükleyebilirsiniz.');
-              }
-            }, 1000);
-            
-          } catch (error) {
-            console.error('Android WhatsApp açma hatası:', error);
-            window.open('https://play.google.com/store/apps/details?id=com.whatsapp', '_blank');
-          }
-        } else {
-          // iOS ve Desktop için standart yöntem
-          const newWindow = window.open(whatsappUrl, '_blank', 'noopener,noreferrer,width=800,height=600');
-          
-          // Popup block kontrolü
-          setTimeout(() => {
-            if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
-              // Yeni sekme açmaya çalış - mevcut sekmeyi değiştirme
-              try {
-                const link = document.createElement('a');
-                link.href = whatsappUrl;
-                link.target = '_blank';
-                link.rel = 'noopener noreferrer';
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-              } catch (e) {
-                toast.error('WhatsApp açılamadı. Lütfen popup blocker\'ı devre dışı bırakın.');
-              }
-            }
-          }, 100);
-        }
-      }, 1500);
-
-    } catch (error) {
-      console.error('WhatsApp PDF paylaşım hatası:', error);
-      toast.error('PDF indirme veya WhatsApp paylaşımı başarısız oldu');
-    }
-  };
 
   const getCurrencySymbol = (currency) => {
     const symbols = {
@@ -3547,7 +3717,7 @@ function App() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4 mb-6">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <Input
                       placeholder="Kategori adı"
                       value={newCategoryName}
@@ -3557,6 +3727,11 @@ function App() {
                       placeholder="Açıklama (opsiyonel)"
                       value={newCategoryDescription}
                       onChange={(e) => setNewCategoryDescription(e.target.value)}
+                    />
+                    <Input
+                      placeholder="Küçük Resim URL (opsiyonel)"
+                      value={newCategoryImageUrl}
+                      onChange={(e) => setNewCategoryImageUrl(e.target.value)}
                     />
                     <div className="flex gap-2">
                       <Input
@@ -3615,10 +3790,18 @@ function App() {
                             <svg className="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
                               <path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z" />
                             </svg>
-                            <div 
-                              className="w-4 h-4 rounded-full" 
-                              style={{backgroundColor: category.color}}
-                            ></div>
+                            {category.image_url ? (
+                              <img 
+                                src={category.image_url} 
+                                alt={category.name}
+                                className="w-5 h-5 rounded-md object-cover border border-slate-100 flex-shrink-0"
+                              />
+                            ) : (
+                              <div 
+                                className="w-4 h-4 rounded-full" 
+                                style={{backgroundColor: category.color}}
+                              ></div>
+                            )}
                           </div>
                           {category.name}
                         </CardTitle>
@@ -3636,6 +3819,15 @@ function App() {
                           >
                             <Plus className="w-4 h-4 mr-1" />
                             Ürün Ekle
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => startEditCategory(category)}
+                            className="bg-amber-50 hover:bg-amber-100 text-amber-700"
+                          >
+                            <Edit className="w-4 h-4 mr-1" />
+                            Düzenle
                           </Button>
                           {/* Only show delete button if category is deletable */}
                           {category.is_deletable !== false && (
@@ -4952,12 +5144,21 @@ function App() {
                         </div>
 
                         <div>
-                          <Label htmlFor="product-category">Kategori (Opsiyonel)</Label>
+                          <div className="flex justify-between items-center mb-1.5">
+                            <Label htmlFor="product-category" className="text-slate-700">Kategori (Opsiyonel)</Label>
+                            <button
+                              type="button"
+                              onClick={() => setShowInlineCategoryForm(!showInlineCategoryForm)}
+                              className="text-xs font-black text-emerald-600 hover:text-emerald-700 flex items-center gap-1 cursor-pointer select-none transition-colors"
+                            >
+                              <Plus className="w-3.5 h-3.5" /> Hızlı Kategori Ekle
+                            </button>
+                          </div>
                           <Select 
                             value={newProductForm.category_id || "none"} 
                             onValueChange={(value) => setNewProductForm({...newProductForm, category_id: value === "none" ? "" : value})}
                           >
-                            <SelectTrigger>
+                            <SelectTrigger className="w-full">
                               <SelectValue placeholder="Kategori seçin" />
                             </SelectTrigger>
                             <SelectContent>
@@ -4982,6 +5183,75 @@ function App() {
                               ))}
                             </SelectContent>
                           </Select>
+
+                          {/* Expandable Inline Category Creation Form */}
+                          {showInlineCategoryForm && (
+                            <div className="mt-3 bg-emerald-50/40 border border-emerald-100 rounded-2xl p-3.5 space-y-3.5 animate-in slide-in-from-top-2 duration-200">
+                              <div className="text-xs font-bold text-emerald-800 uppercase tracking-wider flex items-center gap-1">
+                                <Tags className="w-3.5 h-3.5 text-emerald-600" />
+                                Hızlı Yeni Kategori Oluştur
+                              </div>
+                              <div className="space-y-2">
+                                <Label htmlFor="inline-category-name" className="text-slate-600 text-xs font-semibold">Kategori Adı</Label>
+                                <Input
+                                  id="inline-category-name"
+                                  placeholder="Kategori adını girin (Örn: Camlar)"
+                                  value={inlineCategoryName}
+                                  onChange={(e) => setInlineCategoryName(e.target.value)}
+                                  className="h-9 text-sm bg-white"
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label className="text-slate-600 text-xs font-semibold block mb-1">Kategori Rengi</Label>
+                                <div className="flex items-center gap-2.5">
+                                  {['#10B981', '#0D9488', '#3B82F6', '#8B5CF6', '#F43F5E', '#F59E0B', '#6B7280'].map((color) => (
+                                    <button
+                                      key={color}
+                                      type="button"
+                                      onClick={() => setInlineCategoryColor(color)}
+                                      className={`w-6.5 h-6.5 rounded-full cursor-pointer shadow-xxs transition-transform hover:scale-110 flex items-center justify-center border ${
+                                        inlineCategoryColor === color ? 'border-emerald-600 ring-2 ring-emerald-200 ring-offset-1 scale-105' : 'border-slate-200/50'
+                                      }`}
+                                      style={{ backgroundColor: color }}
+                                    >
+                                      {inlineCategoryColor === color && (
+                                        <Check className="w-3.5 h-3.5 text-white stroke-[3.5]" />
+                                      )}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                              <div className="flex gap-2 justify-end pt-1">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    setInlineCategoryName('');
+                                    setInlineCategoryColor('#10B981');
+                                    setShowInlineCategoryForm(false);
+                                  }}
+                                  className="h-8 text-xs font-semibold border-slate-200 bg-white"
+                                >
+                                  İptal
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  disabled={isSavingInlineCategory || !inlineCategoryName.trim()}
+                                  onClick={saveInlineCategory}
+                                  className="h-8 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5"
+                                >
+                                  {isSavingInlineCategory ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  ) : (
+                                    <Plus className="w-3.5 h-3.5" />
+                                  )}
+                                  Oluştur ve Seç
+                                </Button>
+                              </div>
+                            </div>
+                          )}
                         </div>
 
                         <div className="grid grid-cols-2 gap-4">
@@ -5140,12 +5410,12 @@ function App() {
                 </div>
 
                 {/* E. Kategoriler Arası Hızlı Atlama Barı (Kategori Karouseli) */}
-                <div className="mb-6 select-none bg-slate-50/50 rounded-2xl p-3 border border-slate-100/80">
-                  <div className="text-[10px] font-black text-emerald-800 uppercase tracking-widest mb-2 pl-1.5 flex items-center gap-1.5">
+                <div className="mb-6 select-none bg-slate-50/70 rounded-3xl p-4 border border-slate-100">
+                  <div className="text-[10px] font-black text-emerald-800 uppercase tracking-widest mb-3 pl-1.5 flex items-center gap-1.5">
                     <Tags className="w-3.5 h-3.5 text-emerald-600" />
                     Kategoriler Arası Hızlı Geçiş
                   </div>
-                  <div className="flex gap-2 overflow-x-auto pb-1.5 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent">
+                  <div className="flex flex-wrap gap-x-6 gap-y-5 py-2 justify-start">
                     {categories
                       .sort((a, b) => {
                         if (a.sort_order !== b.sort_order) {
@@ -5163,18 +5433,37 @@ function App() {
                             onClick={() => {
                               const el = document.getElementById(`category-${category.id}`);
                               if (el) {
-                                el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
                               }
                             }}
-                            className="flex items-center gap-2 px-3.5 py-2 bg-white hover:bg-emerald-50/40 border border-slate-200/80 hover:border-emerald-200/80 rounded-xl transition-all shadow-xxs cursor-pointer flex-shrink-0 text-xs font-bold text-slate-700 hover:text-emerald-900 group"
+                            className="flex flex-col items-center gap-2 group select-none cursor-pointer"
                           >
-                            <span 
-                              className="w-2.5 h-2.5 rounded-full shadow-xxs transition-transform group-hover:scale-110" 
-                              style={{ backgroundColor: category.color }}
-                            />
-                            <span>{category.name}</span>
-                            <span className="text-[10px] font-extrabold bg-slate-100 group-hover:bg-emerald-100/50 text-slate-500 group-hover:text-emerald-700 px-1.5 py-0.5 rounded-md border border-slate-200/40">
-                              {productCount}
+                            {/* The exact square image box wrapper */}
+                            <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-xl flex-shrink-0 transition-all group-hover:scale-105">
+                              {/* Product count badge absolutely positioned on the top-right corner of the image wrapper */}
+                              <span className="absolute -top-1.5 -right-1.5 text-[9px] sm:text-[10px] font-black bg-emerald-600 text-white px-1.5 py-0.5 rounded-full shadow-sm z-10 border border-white">
+                                {productCount}
+                              </span>
+                              
+                              {category.image_url ? (
+                                <img 
+                                  src={category.image_url} 
+                                  alt={category.name}
+                                  className="w-full h-full rounded-xl object-cover border border-slate-200/80 group-hover:border-emerald-400 group-hover:shadow-sm transition-all pointer-events-none"
+                                />
+                              ) : (
+                                <div 
+                                  className="w-full h-full rounded-xl flex items-center justify-center border border-slate-200/80 group-hover:border-emerald-400 text-white font-bold text-lg sm:text-xl transition-all" 
+                                  style={{ backgroundColor: category.color }}
+                                >
+                                  {category.name.charAt(0).toUpperCase()}
+                                </div>
+                              )}
+                            </div>
+                            
+                            {/* Category Name below the square wrapper */}
+                            <span className="text-[11px] sm:text-xs font-semibold text-slate-600 group-hover:text-emerald-950 max-w-[64px] sm:max-w-[80px] text-center transition-colors break-words leading-tight mt-1">
+                              {category.name}
                             </span>
                           </button>
                         );
@@ -5265,12 +5554,20 @@ function App() {
                           {/* Category Header */}
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b-2" style={{borderColor: categoryColor}}>
                             <div className="flex items-center gap-3">
-                              <div 
-                                className="w-5 h-5 rounded-lg flex items-center justify-center shadow-sm" 
-                                style={{backgroundColor: categoryColor}}
-                              >
-                                <Package className="w-3 h-3 text-white" />
-                              </div>
+                              {category && category.image_url ? (
+                                <img 
+                                  src={category.image_url} 
+                                  alt={categoryName}
+                                  className="w-7 h-7 rounded-lg object-cover border border-slate-100 shadow-sm flex-shrink-0 pointer-events-none"
+                                />
+                              ) : (
+                                <div 
+                                  className="w-5 h-5 rounded-lg flex items-center justify-center shadow-sm" 
+                                  style={{backgroundColor: categoryColor}}
+                                >
+                                  <Package className="w-3 h-3 text-white" />
+                                </div>
+                              )}
                               <h3 className="text-xl font-bold text-slate-800 tracking-tight">
                                 {categoryName}
                               </h3>
@@ -5551,8 +5848,8 @@ function App() {
                                               alt={product.name}
                                               className="w-11 h-11 object-cover rounded-lg border border-slate-100 shadow-xs cursor-pointer hover:scale-105 transition-transform duration-200"
                                               onError={(e) => {e.target.style.display = 'none'}}
-                                              onClick={() => openImagePreview(product.image_url, product.name)}
-                                              title="Büyük boyutta görüntülemek için tıklayın"
+                                              onClick={() => openProductDetails(product)}
+                                              title="Ürün detaylarını görüntülemek için tıklayın"
                                             />
                                           ) : (
                                             <div className="w-11 h-11 bg-slate-50 flex items-center justify-center rounded-lg border border-slate-100 text-slate-300">
@@ -5827,16 +6124,26 @@ function App() {
                               const lineTotalDiscountedTRY = discountedPriceTRY * quantity;
 
                               return (
-                                <TableRow key={product.id} className="border-b border-slate-200/80 bg-white hover:bg-slate-50/60 transition-colors">
+                                <TableRow 
+                                    key={product.id} 
+                                    draggable={true}
+                                    onDragStart={(e) => handleProductDragStart(e, product.id)}
+                                    onDragOver={handleProductDragOver}
+                                    onDragEnd={handleProductDragEnd}
+                                    onDrop={(e) => handleProductDrop(e, product.id)}
+                                    className={`border-b border-slate-200/80 bg-white hover:bg-slate-50/65 transition-all select-none cursor-move ${
+                                      draggedProductId === product.id ? 'opacity-40 scale-[0.98] bg-slate-50 border-emerald-300' : ''
+                                    }`}
+                                  >
                                   {/* Product Image */}
                                   <TableCell className="p-3.5 text-center select-none border-r border-slate-200/40">
                                     {product.image_url ? (
                                       <img 
                                         src={product.image_url} 
                                         alt="" 
-                                        onClick={() => openImagePreview(product.image_url, product.name)}
+                                        onClick={() => openProductDetails(product)}
                                         className="w-14 h-14 object-cover rounded-xl border border-slate-100 shadow-xxs cursor-pointer hover:scale-105 hover:opacity-90 transition-all duration-200" 
-                                        title="Görseli Büyüt"
+                                        title="Ürün detaylarını görüntülemek için tıklayın"
                                       />
                                     ) : (
                                       <div className="w-14 h-14 bg-slate-100 rounded-xl border border-slate-100 flex items-center justify-center text-slate-300">
@@ -5981,27 +6288,18 @@ function App() {
                                   
                                   {/* Remove row & Reorder */}
                                   <TableCell className="p-3.5 text-center">
-                                    <div className="flex items-center justify-center gap-1 select-none">
-                                      <button
-                                        type="button"
-                                        onClick={() => moveProductOrder(product.id, 'up')}
-                                        className="text-slate-400 hover:text-emerald-600 p-1 hover:bg-slate-100 rounded transition-colors"
-                                        title="Yukarı Taşı"
+                                    <div className="flex items-center justify-center gap-2.5 select-none">
+                                      {/* GripVertical icon indicating Draggable Row */}
+                                      <div 
+                                        className="text-slate-450 hover:text-emerald-650 cursor-grab active:cursor-grabbing p-1.5 hover:bg-slate-100/85 rounded-lg transition-colors"
+                                        title="Sürükleyip Bırakarak Sırayı Değiştirin"
                                       >
-                                        <ChevronUp className="w-4 h-4" />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => moveProductOrder(product.id, 'down')}
-                                        className="text-slate-400 hover:text-emerald-600 p-1 hover:bg-slate-100 rounded transition-colors"
-                                        title="Aşağı Taşı"
-                                      >
-                                        <ChevronDown className="w-4 h-4" />
-                                      </button>
+                                        <GripVertical className="w-4.5 h-4.5 stroke-[2.5]" />
+                                      </div>
                                       <button
                                         type="button"
                                         onClick={() => toggleProductSelection(product.id, 0)}
-                                        className="text-slate-400 hover:text-rose-600 p-1.5 hover:bg-rose-50 rounded-lg transition-colors ml-1"
+                                        className="text-slate-400 hover:text-rose-600 p-1.5 hover:bg-rose-50 rounded-lg transition-colors"
                                         title="Ürünü Çıkar"
                                       >
                                         <X className="w-4 h-4" />
@@ -6258,89 +6556,69 @@ function App() {
                             {loadedQuote ? 'Değişiklikleri Güncelle' : 'Teklifi Kaydet'}
                           </Button>
                           
-                          <div className="grid grid-cols-2 gap-2.5">
-                            {/* PDF Generation and Download */}
-                            <Button
-                              variant="outline"
-                              disabled={selectedProducts.size === 0}
-                              onClick={async () => {
-                                if (selectedProducts.size === 0) {
-                                  toast.error('Önce teklife ürün ekleyin');
-                                  return;
+                          {/* PDF Generation and Download */}
+                          <Button
+                            variant="outline"
+                            disabled={selectedProducts.size === 0}
+                            onClick={async () => {
+                              if (selectedProducts.size === 0) {
+                                toast.error('Önce teklife ürün ekleyin');
+                                return;
+                              }
+                              try {
+                                let quoteId = loadedQuote?.id;
+                                
+                                // Auto save/update quote
+                                const selectedProductData = getSelectedProductsData().map(p => ({
+                                  id: p.id,
+                                  quantity: p.quantity || 1,
+                                  custom_price: p.customPrice !== null && p.customPrice !== undefined ? parseFloat(p.customPrice) : null
+                                }));
+                                
+                                const newQuoteData = {
+                                  name: quoteName || `Teklif - ${new Date().toLocaleDateString('tr-TR')}`,
+                                  discount_percentage: parseFloat(quoteDiscount) || 0,
+                                  labor_cost: parseFloat(quoteLaborCost) || 0,
+                                  products: selectedProductData,
+                                  notes: quoteNotes.trim() || ''
+                                };
+                                
+                                if (loadedQuote && loadedQuote.id) {
+                                  await fetch(`${API}/quotes/${loadedQuote.id}`, {
+                                    method: 'PUT',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify(newQuoteData)
+                                  });
+                                } else {
+                                  const createResponse = await fetch(`${API}/quotes`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify(newQuoteData)
+                                  });
+                                  const savedQuote = await createResponse.json();
+                                  quoteId = savedQuote.id;
                                 }
-                                try {
-                                  let quoteId = loadedQuote?.id;
-                                  
-                                  // Auto save/update quote
-                                  const selectedProductData = getSelectedProductsData().map(p => ({
-                                    id: p.id,
-                                    quantity: p.quantity || 1,
-                                    custom_price: p.customPrice !== null && p.customPrice !== undefined ? parseFloat(p.customPrice) : null
-                                  }));
-                                  
-                                  const newQuoteData = {
-                                    name: quoteName || `Teklif - ${new Date().toLocaleDateString('tr-TR')}`,
-                                    discount_percentage: parseFloat(quoteDiscount) || 0,
-                                    labor_cost: parseFloat(quoteLaborCost) || 0,
-                                    products: selectedProductData,
-                                    notes: quoteNotes.trim() || ''
-                                  };
-                                  
-                                  if (loadedQuote && loadedQuote.id) {
-                                    await fetch(`${API}/quotes/${loadedQuote.id}`, {
-                                      method: 'PUT',
-                                      headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify(newQuoteData)
-                                    });
-                                  } else {
-                                    const createResponse = await fetch(`${API}/quotes`, {
-                                      method: 'POST',
-                                      headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify(newQuoteData)
-                                    });
-                                    const savedQuote = await createResponse.json();
-                                    quoteId = savedQuote.id;
-                                  }
-                                  
-                                  await fetchQuotes();
-                                  
-                                  // Download PDF
-                                  const pdfUrl = `${API}/quotes/${quoteId}/pdf`;
-                                  const link = document.createElement('a');
-                                  link.href = pdfUrl;
-                                  link.download = `${loadedQuote?.name || quoteName || 'Teklif'}.pdf`;
-                                  document.body.appendChild(link);
-                                  link.click();
-                                  document.body.removeChild(link);
-                                  toast.success('PDF indiriliyor...');
-                                } catch (e) {
-                                  toast.error('PDF indirme başarısız oldu');
-                                }
-                              }}
-                              className="border-slate-200 hover:bg-slate-50 text-slate-700 font-extrabold py-4.5 rounded-xl flex items-center justify-center gap-2 transition-colors text-xs bg-white shadow-xxs"
-                            >
-                              <Download className="w-4.5 h-4.5 text-blue-500" />
-                              PDF İndir
-                            </Button>
-
-                            {/* WhatsApp integration */}
-                            <Button
-                              variant="outline"
-                              disabled={!loadedQuote}
-                              onClick={async () => {
-                                if (!loadedQuote?.id) {
-                                  toast.error('Paylaşmak için lütfen önce teklifi kaydedin');
-                                  return;
-                                }
-                                shareViaWhatsAppWithPDF(loadedQuote.name, loadedQuote.id);
-                              }}
-                              className="border-slate-200 hover:bg-slate-50 text-slate-700 font-extrabold py-4.5 rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 transition-colors text-xs bg-white shadow-xxs"
-                              title={loadedQuote ? "WhatsApp ile Paylaş" : "Önce teklifi kaydetmelisiniz"}
-                            >
-                              <Phone className="w-4.5 h-4.5 text-emerald-600" />
-                              WhatsApp
-                            </Button>
-                          </div>
+                                
+                                await fetchQuotes();
+                                
+                                // Download PDF
+                                const pdfUrl = `${API}/quotes/${quoteId}/pdf`;
+                                const link = document.createElement('a');
+                                link.href = pdfUrl;
+                                link.download = `${loadedQuote?.name || quoteName || 'Teklif'}.pdf`;
+                                document.body.appendChild(link);
+                                link.click();
+                                document.body.removeChild(link);
+                                toast.success('PDF indiriliyor...');
+                              } catch (e) {
+                                toast.error('PDF indirme başarısız oldu');
+                              }
+                            }}
+                            className="w-full border-slate-200 hover:bg-slate-50 text-slate-700 font-extrabold py-4.5 rounded-xl flex items-center justify-center gap-2 transition-colors text-xs bg-white shadow-xxs"
+                          >
+                            <Download className="w-4.5 h-4.5 text-blue-500" />
+                            PDF İndir
+                          </Button>
 
                           {/* Reset Canvas Sheet */}
                           <Button
@@ -6359,10 +6637,7 @@ function App() {
 
                     </div>
                     
-                    {/* PDF Footer Watermark */}
-                    <div className="text-center text-[9px] text-slate-400 border-t border-slate-200/50 pt-4 mt-8 font-semibold tracking-widest uppercase select-none">
-                      Karavan Elektrik Entegrasyon ve Dağıtım Sistemleri
-                    </div>
+                    {/* PDF Footer Watermark Removed */}
                   </div>
                 </div>
               </div>
@@ -7206,6 +7481,126 @@ function App() {
         </DialogContent>
       </Dialog>
 
+      {/* Category Edit Dialog */}
+      <Dialog open={editingCategory !== null} onOpenChange={(open) => !open && setEditingCategory(null)}>
+        <DialogContent className="max-w-md bg-white border border-slate-100 shadow-xl rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold text-slate-800">Kategoriyi Düzenle</DialogTitle>
+            <DialogDescription className="text-slate-500">
+              Kategori adı, açıklaması, rengi ve küçük resmini güncelleyin.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-1">
+              <Label className="text-xs font-bold text-slate-600 uppercase tracking-wider">Kategori Adı</Label>
+              <Input
+                value={editCategoryForm.name}
+                onChange={(e) => setEditCategoryForm({...editCategoryForm, name: e.target.value})}
+                placeholder="Örn: Mobilya"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs font-bold text-slate-600 uppercase tracking-wider">Açıklama (Opsiyonel)</Label>
+              <Input
+                value={editCategoryForm.description}
+                onChange={(e) => setEditCategoryForm({...editCategoryForm, description: e.target.value})}
+                placeholder="Kategoriye ait kısa bir açıklama"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs font-bold text-slate-600 uppercase tracking-wider">Küçük Resim URL (Opsiyonel)</Label>
+              <Input
+                value={editCategoryForm.image_url}
+                onChange={(e) => setEditCategoryForm({...editCategoryForm, image_url: e.target.value})}
+                placeholder="https://example.com/image.png"
+              />
+            </div>
+            {editingCategory && (
+              <div className="space-y-1">
+                <Label className="text-xs font-bold text-slate-600 uppercase tracking-wider block mb-1.5">
+                  Kategori Ürünlerinin Görsellerinden Seç
+                </Label>
+                {(() => {
+                  const categoryProductsWithImages = products.filter(
+                    (p) => p.category_id === editingCategory.id && p.image_url
+                  );
+                  
+                  // Benzersiz resim URL'lerini filtrele
+                  const uniqueImages = Array.from(new Set(categoryProductsWithImages.map(p => p.image_url)))
+                    .map(url => categoryProductsWithImages.find(p => p.image_url === url));
+
+                  if (uniqueImages.length === 0) {
+                    return (
+                      <p className="text-xs text-slate-400 italic py-1">
+                        Bu kategoride görseli olan ürün bulunmamaktadır.
+                      </p>
+                    );
+                  }
+
+                  return (
+                    <div className="w-full max-w-[395px] overflow-x-auto py-2 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent">
+                      <div className="flex gap-2 min-w-max">
+                        {uniqueImages.map((prod) => (
+                          <button
+                            key={prod.id}
+                            type="button"
+                            onClick={() => setEditCategoryForm({ ...editCategoryForm, image_url: prod.image_url })}
+                            className={`relative w-12 h-12 rounded-lg border-2 overflow-hidden flex-shrink-0 transition-all ${
+                              editCategoryForm.image_url === prod.image_url 
+                                ? 'border-emerald-600 ring-2 ring-emerald-100 scale-95' 
+                                : 'border-slate-200 hover:border-slate-300'
+                            }`}
+                            title={prod.name}
+                          >
+                            <img 
+                              src={prod.image_url} 
+                              alt={prod.name} 
+                              className="w-full h-full object-cover pointer-events-none"
+                            />
+                            {editCategoryForm.image_url === prod.image_url && (
+                              <div className="absolute inset-0 bg-emerald-600/10 flex items-center justify-center">
+                                <div className="bg-emerald-600 text-white rounded-full p-0.5">
+                                  <Check className="w-3 h-3 stroke-[3]" />
+                                </div>
+                              </div>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+            <div className="space-y-1">
+              <Label className="text-xs font-bold text-slate-600 uppercase tracking-wider">Renk</Label>
+              <div className="flex gap-2">
+                <Input
+                  type="color"
+                  value={editCategoryForm.color}
+                  onChange={(e) => setEditCategoryForm({...editCategoryForm, color: e.target.value})}
+                  className="w-16 h-10 p-1"
+                />
+                <Input
+                  value={editCategoryForm.color}
+                  onChange={(e) => setEditCategoryForm({...editCategoryForm, color: e.target.value})}
+                  placeholder="#3B82F6"
+                  className="flex-1"
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setEditingCategory(null)}>
+              İptal
+            </Button>
+            <Button onClick={updateCategory} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold">
+              Güncelle
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Category Group Create/Edit Dialog */}
       <Dialog open={showCategoryGroupDialog} onOpenChange={setShowCategoryGroupDialog}>
         <DialogContent className="max-w-2xl">
@@ -7385,6 +7780,202 @@ function App() {
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Gelişmiş Ürün Detay Modalı */}
+      <Dialog open={showProductDetail} onOpenChange={setShowProductDetail}>
+        <DialogContent className="max-w-3xl max-h-[90vh] p-5 bg-white rounded-3xl border border-slate-100 shadow-2xl">
+          {detailProduct && (() => {
+            const product = detailProduct;
+            const category = categories.find(c => c.id === product.category_id);
+            const inQuote = selectedProducts.has(product.id);
+            const quoteQuantity = inQuote ? selectedProducts.get(product.id) : 0;
+            
+            // Calculate TRY Price
+            let priceTRY = product.list_price || 0;
+            if (product.currency === 'USD') {
+              priceTRY = priceTRY * (exchangeRates.USD || 34.0);
+            } else if (product.currency === 'EUR') {
+              priceTRY = priceTRY * (exchangeRates.EUR || 37.0);
+            }
+
+            // Calculate TRY Discounted Price if visible
+            let discPriceTRY = product.discounted_price || product.list_price || 0;
+            if (product.currency === 'USD') {
+              discPriceTRY = discPriceTRY * (exchangeRates.USD || 34.0);
+            } else if (product.currency === 'EUR') {
+              discPriceTRY = discPriceTRY * (exchangeRates.EUR || 37.0);
+            }
+            
+            return (
+              <>
+                <DialogHeader className="border-b border-slate-100 pb-3">
+                  <div className="flex items-center justify-between">
+                    <DialogTitle className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                      <span>🔍 Ürün Detayları</span>
+                    </DialogTitle>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={() => setShowProductDetail(false)}
+                      className="h-7 w-7 p-0 hover:bg-slate-100 rounded-full"
+                    >
+                      <X className="h-4.5 w-4.5 text-slate-500" />
+                    </Button>
+                  </div>
+                </DialogHeader>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-4 overflow-y-auto max-h-[65vh]">
+                  {/* Left Column - Large Image */}
+                  <div className="flex flex-col gap-3">
+                    <div className="relative aspect-square bg-slate-50 border border-slate-150 rounded-2xl overflow-hidden flex items-center justify-center group shadow-xxs">
+                      {product.image_url ? (
+                        <img 
+                          src={product.image_url} 
+                          alt={product.name}
+                          onClick={() => window.open(product.image_url, '_blank')}
+                          className="max-w-full max-h-full object-contain cursor-zoom-in group-hover:scale-[1.02] transition-transform duration-200"
+                        />
+                      ) : (
+                        <div className="text-slate-300 flex flex-col items-center gap-2 select-none">
+                          <Package className="w-16 h-16 stroke-[1.2]" />
+                          <span className="text-xs font-semibold text-slate-400">Ürün Görseli Yok</span>
+                        </div>
+                      )}
+                      
+                      {product.brand && (
+                        <span className="absolute top-3 left-3 bg-white/95 text-slate-700 text-[10px] font-black tracking-wider uppercase px-2 py-1 rounded-lg border border-slate-200/50 shadow-xxs">
+                          {product.brand}
+                        </span>
+                      )}
+                    </div>
+                    {product.image_url && (
+                      <div className="text-[10px] font-bold text-slate-400 text-center select-none">
+                        💡 Görseli yeni sekmede açmak için üzerine tıklayın
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Right Column - Product Meta and Actions */}
+                  <div className="flex flex-col justify-between h-full space-y-4">
+                    <div className="space-y-3.5 flex-1">
+                      {/* Category Badge & Name */}
+                      <div className="space-y-2">
+                        {category ? (
+                          <div 
+                            className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold border"
+                            style={{ 
+                              backgroundColor: `${category.color}15`, 
+                              borderColor: `${category.color}35`,
+                              color: category.color 
+                            }}
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: category.color }}></span>
+                            {category.name}
+                          </div>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 border border-slate-200 text-slate-500">
+                            Kategorisiz
+                          </span>
+                        )}
+                        
+                        <h2 className="text-lg font-black text-slate-800 leading-snug break-words">
+                          {product.name}
+                        </h2>
+                      </div>
+                      
+                      {/* Price Details Card */}
+                      <div className="bg-slate-50/75 border border-slate-200/60 rounded-2xl p-4 space-y-3">
+                        <div className="flex justify-between items-baseline border-b border-slate-200/40 pb-2">
+                          <span className="text-xs font-bold text-slate-500">Birim Satış Fiyatı:</span>
+                          <div className="text-right">
+                            <span className="text-lg font-black text-slate-900">
+                              {getCurrencySymbol(product.currency)} {formatPrice(product.list_price)}
+                            </span>
+                            <div className="text-[11px] font-bold text-emerald-650 mt-0.5">
+                              ₺ {formatPrice(priceTRY)}
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {/* Cost/Discounted Price if visible */}
+                        {(showDiscountedPrices || showQuoteDiscountedPrices) && (
+                          <div className="flex justify-between items-baseline pt-1">
+                            <span className="text-xs font-bold text-purple-600">Geliş Maliyeti (İskontolu):</span>
+                            <div className="text-right">
+                              <span className="text-sm font-extrabold text-purple-700">
+                                {getCurrencySymbol(product.currency)} {formatPrice(product.discounted_price || product.list_price)}
+                              </span>
+                              <div className="text-[10px] font-bold text-purple-500 mt-0.5">
+                                ₺ {formatPrice(discPriceTRY)}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Exchange Rates metadata info */}
+                        <div className="text-[9px] font-semibold text-slate-400 select-none pt-1">
+                          📊 Çevrim Oranı: 1 USD = ₺{formatExchangeRate(exchangeRates.USD)} | 1 EUR = ₺{formatExchangeRate(exchangeRates.EUR)}
+                        </div>
+                      </div>
+                      
+                      {/* Description */}
+                      <div className="space-y-1">
+                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider select-none">Açıklama</span>
+                        <p className="text-sm text-slate-500 leading-relaxed max-h-[140px] overflow-y-auto pr-1 break-words">
+                          {product.description || "Bu ürün için herhangi bir açıklama bulunmamaktadır."}
+                        </p>
+                      </div>
+                    </div>
+                    
+                    {/* Add to Quote controls inside the footer */}
+                    <div className="border-t border-slate-100 pt-4 mt-auto">
+                      {inQuote ? (
+                        <div className="bg-emerald-50/50 border border-emerald-100/60 rounded-2xl p-3 flex items-center justify-between">
+                          <span className="text-xs font-black text-emerald-700 flex items-center gap-1 select-none">
+                            <Check className="w-4 h-4 stroke-[3]" /> Teklifinizde Seçili
+                          </span>
+                          
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => toggleProductSelection(product.id, Math.max(0, quoteQuantity - 1))}
+                              className="w-8 h-8 bg-white hover:bg-emerald-50 border border-slate-200 rounded-xl flex items-center justify-center text-slate-700 hover:text-emerald-700 transition-colors shadow-xxs text-sm font-bold cursor-pointer"
+                            >
+                              -
+                            </button>
+                            <span className="w-8 text-center text-sm font-black text-slate-800 select-none">
+                              {quoteQuantity}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => toggleProductSelection(product.id, quoteQuantity + 1)}
+                              className="w-8 h-8 bg-white hover:bg-emerald-50 border border-slate-200 rounded-xl flex items-center justify-center text-slate-700 hover:text-emerald-700 transition-colors shadow-xxs text-sm font-bold cursor-pointer"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <Button
+                          type="button"
+                          onClick={() => {
+                            toggleProductSelection(product.id, 1);
+                            toast.success(`"${product.name}" teklife eklendi.`);
+                          }}
+                          className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-2xl flex items-center justify-center gap-2 transition-all shadow-sm hover:shadow"
+                        >
+                          <Plus className="w-5 h-5" />
+                          Teklife Ekle (1 Adet)
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
 
@@ -7714,6 +8305,17 @@ function App() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Scroll to Top Button */}
+      {showScrollTop && (
+        <button
+          onClick={scrollToTop}
+          className="fixed bottom-6 right-6 p-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 z-50 cursor-pointer group border border-emerald-500/20"
+          title="Yukarı Git"
+        >
+          <ChevronUp className="w-6 h-6 transition-transform group-hover:-translate-y-0.5" />
+        </button>
+      )}
 
       {/* Toast Notifications */}
       <Toaster />

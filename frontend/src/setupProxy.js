@@ -6,9 +6,9 @@ module.exports = function (app) {
   app.use(
     '/api',
     createProxyMiddleware({
-      target: 'https://corlukaravan.shop',
+      target: 'http://localhost:8001',
       changeOrigin: true,
-      secure: true,
+      secure: false,
       cookieDomainRewrite: '', // rewrite session cookie domain to localhost
     })
   );
