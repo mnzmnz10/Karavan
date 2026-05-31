@@ -5958,142 +5958,255 @@ function App() {
                         />
                       </div>
 
-                      {/* Right: Calculations Grid */}
-                      <div className="bg-slate-50/50 rounded-2xl p-6 space-y-4 border border-slate-100 max-w-md ml-auto w-full text-sm">
-                        
-                        {/* Dövizli Detaylar (Sadece ilgili para biriminde ürün varsa gösterilir) */}
-                        {calculateQuoteTotals.totalUSD > 0 && (
-                          <div className="border-b border-slate-100 pb-2 space-y-1">
-                            <div className="flex justify-between items-center text-slate-500 font-medium">
-                              <span>USD Ürün Toplamı</span>
-                              <span className="font-extrabold text-blue-600">$ {formatPrice(calculateQuoteTotals.totalUSD)}</span>
-                            </div>
-                            <div className="text-xs text-slate-400 text-right font-bold">
-                              Karşılığı: ₺ {formatPrice(calculateQuoteTotals.usdInTry)} (1 USD = ₺{exchangeRates.USD || '34.00'})
-                            </div>
-                          </div>
-                        )}
-
-                        {calculateQuoteTotals.totalEUR > 0 && (
-                          <div className="border-b border-slate-100 pb-2 space-y-1">
-                            <div className="flex justify-between items-center text-slate-500 font-medium">
-                              <span>EUR Ürün Toplamı</span>
-                              <span className="font-extrabold text-indigo-600">€ {formatPrice(calculateQuoteTotals.totalEUR)}</span>
-                            </div>
-                            <div className="text-xs text-slate-400 text-right font-bold space-y-1">
-                              <div>Karşılığı: ₺ {formatPrice(calculateQuoteTotals.eurInTry)} (1 EUR = ₺{exchangeRates.EUR || '37.00'})</div>
-                              <div>Dolar Karşılığı: $ {formatPrice(calculateQuoteTotals.eurInUsd)} (1 EUR = $ {((parseFloat(exchangeRates.EUR) || 37.0) / (parseFloat(exchangeRates.USD) || 34.0)).toFixed(4)})</div>
-                            </div>
-                          </div>
-                        )}
-
-                        {calculateQuoteTotals.totalTRY > 0 && (
-                          <div className="flex justify-between items-center text-slate-500 pb-1">
-                            <span>TRY Ürün Toplamı</span>
-                            <span className="font-extrabold text-slate-700">₺ {formatPrice(calculateQuoteTotals.totalTRY)}</span>
-                          </div>
-                        )}
-
-                        <div className="flex justify-between items-center text-slate-500 pt-1.5 border-t border-slate-200/60">
-                          <span className="font-bold">Genel Liste Toplamı</span>
-                          <span className="font-black text-slate-800">₺ {formatPrice(calculateQuoteTotals.totalListPrice)}</span>
-                        </div>
-
-                        {/* Inline Edit Discount */}
-                        <div className="flex justify-between items-center text-rose-600 font-medium">
-                          <span>Uygulanan İndirim (%)</span>
-                          <div className="flex items-center gap-1.5">
-                            <input
-                              type="number"
-                              min="0"
-                              max="100"
-                              value={quoteDiscount || 0}
-                              onChange={(e) => setQuoteDiscount(Math.max(0, Math.min(100, parseFloat(e.target.value) || 0)))}
-                              className="w-14 h-7 border border-slate-200 focus:border-rose-500 focus:ring-1 focus:ring-rose-500 rounded-md text-center text-sm font-bold text-rose-700 focus:outline-none bg-white"
-                            />
-                            <span className="font-extrabold">- ₺ {formatPrice(calculateQuoteTotals.discountAmount)}</span>
-                          </div>
-                        </div>
-
-                        {/* Inline Edit Labor */}
-                        <div className="flex justify-between items-center text-cyan-600 font-medium">
-                          <span>İşçilik Maliyeti (₺)</span>
-                          <div className="flex items-center gap-1.5">
-                            <input
-                              type="number"
-                              min="0"
-                              value={quoteLaborCost || 0}
-                              onChange={(e) => setQuoteLaborCost(Math.max(0, parseFloat(e.target.value) || 0))}
-                              className="w-24 h-7 border border-slate-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 rounded-md text-center text-sm font-bold text-cyan-700 focus:outline-none bg-white"
-                            />
-                            <span className="font-extrabold">+ ₺ {formatPrice(calculateQuoteTotals.laborCost)}</span>
-                          </div>
-                        </div>
-
-                        {/* Net Grand Total */}
-                        <div className="border-t border-slate-200 pt-3 mt-1.5 flex flex-col items-end">
-                          <div className="flex justify-between items-center w-full font-black text-slate-900 text-base">
-                            <span>NET TOPLAM</span>
-                            <span className="text-emerald-700 text-xl">₺ {formatPrice(calculateQuoteTotals.totalNetPrice)}</span>
-                          </div>
+                      {/* Right: Calculations Grid & Actions Panel */}
+                      <div className="flex flex-col gap-4 max-w-md ml-auto w-full">
+                        <div className="bg-slate-50/50 rounded-2xl p-6 space-y-4 border border-slate-100 w-full text-sm">
                           
-                          {calculateQuoteTotals.totalNetPrice > 0 && exchangeRates.EUR && (
-                            <span className="text-xs font-extrabold text-slate-400 mt-1">
-                              € {formatPrice(calculateQuoteTotals.totalNetPrice / exchangeRates.EUR)} EUR
-                            </span>
+                          {/* Dövizli Detaylar (Sadece ilgili para biriminde ürün varsa gösterilir) */}
+                          {calculateQuoteTotals.totalUSD > 0 && (
+                            <div className="border-b border-slate-100 pb-2 space-y-1">
+                              <div className="flex justify-between items-center text-slate-500 font-medium">
+                                <span>USD Ürün Toplamı</span>
+                                <span className="font-extrabold text-blue-600">$ {formatPrice(calculateQuoteTotals.totalUSD)}</span>
+                              </div>
+                              <div className="text-xs text-slate-400 text-right font-bold">
+                                Karşılığı: ₺ {formatPrice(calculateQuoteTotals.usdInTry)} (1 USD = ₺{exchangeRates.USD || '34.00'})
+                              </div>
+                            </div>
                           )}
-                          {calculateQuoteTotals.totalNetPrice > 0 && exchangeRates.USD && (
-                            <span className="text-xs font-extrabold text-slate-400 mt-0.5">
-                              $ {formatPrice(calculateQuoteTotals.totalNetPrice / exchangeRates.USD)} USD
-                            </span>
-                          )}
-                        </div>
 
-                        {/* Maliyet Gözü Kartı (Sadece göz ikonu aktifse satıcıya maliyetleri gösterir) */}
-                        {showQuoteDiscountedPrices && (
-                          <div className="mt-5 pt-4 border-t border-dashed border-purple-200 bg-purple-50/40 rounded-xl p-4 text-sm space-y-2.5 text-purple-950 font-medium">
-                            <div className="font-bold text-purple-800 uppercase tracking-wider text-xs mb-1 select-none">BANA GELİŞ MALİYETLERİ (GİZLİ)</div>
-                            
-                            {calculateQuoteTotals.totalUSDDiscounted > 0 && (
-                              <div className="flex justify-between">
-                                <span>USD Geliş Toplamı:</span>
-                                <span className="font-bold">$ {formatPrice(calculateQuoteTotals.totalUSDDiscounted)}</span>
+                          {calculateQuoteTotals.totalEUR > 0 && (
+                            <div className="border-b border-slate-100 pb-2 space-y-1">
+                              <div className="flex justify-between items-center text-slate-500 font-medium">
+                                <span>EUR Ürün Toplamı</span>
+                                <span className="font-extrabold text-indigo-600">€ {formatPrice(calculateQuoteTotals.totalEUR)}</span>
                               </div>
-                            )}
-                            
-                            {calculateQuoteTotals.totalEURDiscounted > 0 && (
-                              <div className="flex justify-between">
-                                <span>EUR Geliş Toplamı:</span>
-                                <span className="font-bold">€ {formatPrice(calculateQuoteTotals.totalEURDiscounted)}</span>
+                              <div className="text-xs text-slate-400 text-right font-bold space-y-1">
+                                <div>Karşılığı: ₺ {formatPrice(calculateQuoteTotals.eurInTry)} (1 EUR = ₺{exchangeRates.EUR || '37.00'})</div>
+                                <div>Dolar Karşılığı: $ {formatPrice(calculateQuoteTotals.eurInUsd)} (1 EUR = $ {((parseFloat(exchangeRates.EUR) || 37.0) / (parseFloat(exchangeRates.USD) || 34.0)).toFixed(4)})</div>
                               </div>
-                            )}
-                            
-                            <div className="flex justify-between">
-                              <span>Geliş Liste Toplamı:</span>
-                              <span className="font-bold">₺ {formatPrice(calculateQuoteTotals.totalListPriceDiscounted)}</span>
                             </div>
-                            
-                            <div className="flex justify-between text-rose-700">
-                              <span>İndirim Payı (-%):</span>
-                              <span>- ₺ {formatPrice(calculateQuoteTotals.discountAmountDiscounted)}</span>
+                          )}
+
+                          {calculateQuoteTotals.totalTRY > 0 && (
+                            <div className="flex justify-between items-center text-slate-500 pb-1">
+                              <span>TRY Ürün Toplamı</span>
+                              <span className="font-extrabold text-slate-700">₺ {formatPrice(calculateQuoteTotals.totalTRY)}</span>
                             </div>
-                            
-                            <div className="flex justify-between text-emerald-700">
-                              <span>İşçilik Payı (+):</span>
-                              <span>+ ₺ {formatPrice(calculateQuoteTotals.laborCost)}</span>
-                            </div>
-                            
-                            <div className="flex justify-between text-purple-700 font-extrabold border-t border-purple-200/60 pt-2 text-sm">
-                              <span>NET GELİŞ TOPLAMI:</span>
-                              <span>₺ {formatPrice(calculateQuoteTotals.totalNetPriceDiscounted)}</span>
-                            </div>
-                            
-                            <div className="flex justify-between text-emerald-800 font-black border-t border-purple-200/60 pt-1.5 text-sm select-none">
-                              <span>BRÜT KAZANÇ (KÂR):</span>
-                              <span>₺ {formatPrice(calculateQuoteTotals.totalNetPrice - calculateQuoteTotals.totalNetPriceDiscounted)}</span>
+                          )}
+
+                          <div className="flex justify-between items-center text-slate-500 pt-1.5 border-t border-slate-200/60">
+                            <span className="font-bold">Genel Liste Toplamı</span>
+                            <span className="font-black text-slate-800">₺ {formatPrice(calculateQuoteTotals.totalListPrice)}</span>
+                          </div>
+
+                          {/* Inline Edit Discount */}
+                          <div className="flex justify-between items-center text-rose-600 font-medium">
+                            <span>Uygulanan İndirim (%)</span>
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={quoteDiscount || 0}
+                                onChange={(e) => setQuoteDiscount(Math.max(0, Math.min(100, parseFloat(e.target.value) || 0)))}
+                                className="w-14 h-7 border border-slate-200 focus:border-rose-500 focus:ring-1 focus:ring-rose-500 rounded-md text-center text-sm font-bold text-rose-700 focus:outline-none bg-white"
+                              />
+                              <span className="font-extrabold">- ₺ {formatPrice(calculateQuoteTotals.discountAmount)}</span>
                             </div>
                           </div>
-                        )}
+
+                          {/* Inline Edit Labor */}
+                          <div className="flex justify-between items-center text-cyan-600 font-medium">
+                            <span>İşçilik Maliyeti (₺)</span>
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="number"
+                                min="0"
+                                value={quoteLaborCost || 0}
+                                onChange={(e) => setQuoteLaborCost(Math.max(0, parseFloat(e.target.value) || 0))}
+                                className="w-24 h-7 border border-slate-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 rounded-md text-center text-sm font-bold text-cyan-700 focus:outline-none bg-white"
+                              />
+                              <span className="font-extrabold">+ ₺ {formatPrice(calculateQuoteTotals.laborCost)}</span>
+                            </div>
+                          </div>
+
+                          {/* Net Grand Total */}
+                          <div className="border-t border-slate-200 pt-3 mt-1.5 flex flex-col items-end">
+                            <div className="flex justify-between items-center w-full font-black text-slate-900 text-base">
+                              <span>NET TOPLAM</span>
+                              <span className="text-emerald-700 text-xl">₺ {formatPrice(calculateQuoteTotals.totalNetPrice)}</span>
+                            </div>
+                            
+                            {calculateQuoteTotals.totalNetPrice > 0 && exchangeRates.EUR && (
+                              <span className="text-xs font-extrabold text-slate-400 mt-1">
+                                € {formatPrice(calculateQuoteTotals.totalNetPrice / exchangeRates.EUR)} EUR
+                              </span>
+                            )}
+                            {calculateQuoteTotals.totalNetPrice > 0 && exchangeRates.USD && (
+                              <span className="text-xs font-extrabold text-slate-400 mt-0.5">
+                                $ {formatPrice(calculateQuoteTotals.totalNetPrice / exchangeRates.USD)} USD
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Maliyet Gözü Kartı (Sadece göz ikonu aktifse satıcıya maliyetleri gösterir) */}
+                          {showQuoteDiscountedPrices && (
+                            <div className="mt-5 pt-4 border-t border-dashed border-purple-200 bg-purple-50/40 rounded-xl p-4 text-sm space-y-2.5 text-purple-950 font-medium">
+                              <div className="font-bold text-purple-800 uppercase tracking-wider text-xs mb-1 select-none">BANA GELİŞ MALİYETLERİ (GİZLİ)</div>
+                              
+                              {calculateQuoteTotals.totalUSDDiscounted > 0 && (
+                                <div className="flex justify-between">
+                                  <span>USD Geliş Toplamı:</span>
+                                  <span className="font-bold">$ {formatPrice(calculateQuoteTotals.totalUSDDiscounted)}</span>
+                                </div>
+                              )}
+                              
+                              {calculateQuoteTotals.totalEURDiscounted > 0 && (
+                                <div className="flex justify-between">
+                                  <span>EUR Geliş Toplamı:</span>
+                                  <span className="font-bold">€ {formatPrice(calculateQuoteTotals.totalEURDiscounted)}</span>
+                                </div>
+                              )}
+                              
+                              <div className="flex justify-between">
+                                <span>Geliş Liste Toplamı:</span>
+                                <span className="font-bold">₺ {formatPrice(calculateQuoteTotals.totalListPriceDiscounted)}</span>
+                              </div>
+                              
+                              <div className="flex justify-between text-rose-700">
+                                <span>İndirim Payı (-%):</span>
+                                <span>- ₺ {formatPrice(calculateQuoteTotals.discountAmountDiscounted)}</span>
+                              </div>
+                              
+                              <div className="flex justify-between text-emerald-700">
+                                <span>İşçilik Payı (+):</span>
+                                <span>+ ₺ {formatPrice(calculateQuoteTotals.laborCost)}</span>
+                              </div>
+                              
+                              <div className="flex justify-between text-purple-700 font-extrabold border-t border-purple-200/60 pt-2 text-sm">
+                                <span>NET GELİŞ TOPLAMI:</span>
+                                <span>₺ {formatPrice(calculateQuoteTotals.totalNetPriceDiscounted)}</span>
+                              </div>
+                              
+                              <div className="flex justify-between text-emerald-800 font-black border-t border-purple-200/60 pt-1.5 text-sm select-none">
+                                <span>BRÜT KAZANÇ (KÂR):</span>
+                                <span>₺ {formatPrice(calculateQuoteTotals.totalNetPrice - calculateQuoteTotals.totalNetPriceDiscounted)}</span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        
+                        {/* 2. Action Controls Panel (Moved below the calculations card) */}
+                        <div className="border border-emerald-100 rounded-2xl bg-gradient-to-b from-emerald-50/40 to-white/40 p-4 space-y-3 shadow-xxs select-none">
+                          
+                          {/* Master Save Trigger */}
+                          <Button
+                            onClick={saveQuote}
+                            disabled={selectedProducts.size === 0}
+                            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold py-5 rounded-xl flex items-center justify-center gap-2 shadow-xs hover:shadow-sm transition-all active:scale-98 text-xs"
+                          >
+                            <Save className="w-4 h-4" />
+                            {loadedQuote ? 'Değişiklikleri Güncelle' : 'Teklifi Kaydet'}
+                          </Button>
+                          
+                          <div className="grid grid-cols-2 gap-2">
+                            {/* PDF Generation and Download */}
+                            <Button
+                              variant="outline"
+                              disabled={selectedProducts.size === 0}
+                              onClick={async () => {
+                                if (selectedProducts.size === 0) {
+                                  toast.error('Önce teklife ürün ekleyin');
+                                  return;
+                                }
+                                try {
+                                  let quoteId = loadedQuote?.id;
+                                  
+                                  // Auto save/update quote
+                                  const selectedProductData = getSelectedProductsData().map(p => ({
+                                    id: p.id,
+                                    quantity: p.quantity || 1,
+                                    custom_price: p.customPrice !== null && p.customPrice !== undefined ? parseFloat(p.customPrice) : null
+                                  }));
+                                  
+                                  const newQuoteData = {
+                                    name: quoteName || `Teklif - ${new Date().toLocaleDateString('tr-TR')}`,
+                                    discount_percentage: parseFloat(quoteDiscount) || 0,
+                                    labor_cost: parseFloat(quoteLaborCost) || 0,
+                                    products: selectedProductData,
+                                    notes: quoteNotes.trim() || ''
+                                  };
+                                  
+                                  if (loadedQuote && loadedQuote.id) {
+                                    await fetch(`${API}/quotes/${loadedQuote.id}`, {
+                                      method: 'PUT',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify(newQuoteData)
+                                    });
+                                  } else {
+                                    const createResponse = await fetch(`${API}/quotes`, {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify(newQuoteData)
+                                    });
+                                    const savedQuote = await createResponse.json();
+                                    quoteId = savedQuote.id;
+                                  }
+                                  
+                                  await fetchQuotes();
+                                  
+                                  // Download PDF
+                                  const pdfUrl = `${API}/quotes/${quoteId}/pdf`;
+                                  const link = document.createElement('a');
+                                  link.href = pdfUrl;
+                                  link.download = `${loadedQuote?.name || quoteName || 'Teklif'}.pdf`;
+                                  document.body.appendChild(link);
+                                  link.click();
+                                  document.body.removeChild(link);
+                                  toast.success('PDF indiriliyor...');
+                                } catch (e) {
+                                  toast.error('PDF indirme başarısız oldu');
+                                }
+                              }}
+                              className="border-slate-200 hover:bg-slate-50 text-slate-700 font-bold py-3.5 rounded-xl flex items-center justify-center gap-1.5 transition-colors text-[11px] bg-white shadow-xxs"
+                            >
+                              <Download className="w-3.5 h-3.5 text-blue-500" />
+                              PDF İndir
+                            </Button>
+
+                            {/* WhatsApp integration */}
+                            <Button
+                              variant="outline"
+                              disabled={!loadedQuote}
+                              onClick={async () => {
+                                if (!loadedQuote?.id) {
+                                  toast.error('Paylaşmak için lütfen önce teklifi kaydedin');
+                                  return;
+                                }
+                                shareViaWhatsAppWithPDF(loadedQuote.name, loadedQuote.id);
+                              }}
+                              className="border-slate-200 hover:bg-slate-50 text-slate-700 font-bold py-3.5 rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-50 transition-colors text-[11px] bg-white shadow-xxs"
+                              title={loadedQuote ? "WhatsApp ile Paylaş" : "Önce teklifi kaydetmelisiniz"}
+                            >
+                              <Phone className="w-3.5 h-3.5 text-emerald-600" />
+                              WhatsApp
+                            </Button>
+                          </div>
+
+                          {/* Reset Canvas Sheet */}
+                          <Button
+                            variant="ghost"
+                            onClick={() => {
+                              clearSelection();
+                              toast.success('Yeni teklif hazırlama alanına geçildi');
+                            }}
+                            className="w-full text-slate-400 hover:text-slate-600 hover:bg-slate-50 font-bold py-2 rounded-xl text-[10px] flex items-center justify-center gap-1"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                            Temizle / Yeni Teklif
+                          </Button>
+                        </div>
                       </div>
 
                     </div>
@@ -6110,116 +6223,7 @@ function App() {
               {/* Controls Panel & History (col-span-1) */}
               <div className="lg:col-span-1 space-y-5">
 
-                {/* 2. Action Controls Panel */}
-                <Card className="border-2 border-emerald-200 rounded-3xl shadow-lg bg-gradient-to-b from-emerald-50/80 to-white p-5 space-y-3.5">
-                  
-                  {/* Master Save Trigger */}
-                  <Button
-                    onClick={saveQuote}
-                    disabled={selectedProducts.size === 0}
-                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold py-5.5 rounded-2xl flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all active:scale-98"
-                  >
-                    <Save className="w-4.5 h-4.5" />
-                    {loadedQuote ? 'Değişiklikleri Güncelle' : 'Teklifi Kaydet'}
-                  </Button>
-                  
-                  <div className="grid grid-cols-2 gap-2">
-                    {/* PDF Generation and Download */}
-                    <Button
-                      variant="outline"
-                      disabled={selectedProducts.size === 0}
-                      onClick={async () => {
-                        if (selectedProducts.size === 0) {
-                          toast.error('Önce teklife ürün ekleyin');
-                          return;
-                        }
-                        try {
-                          let quoteId = loadedQuote?.id;
-                          
-                          // Auto save/update quote
-                          const selectedProductData = getSelectedProductsData().map(p => ({
-                            id: p.id,
-                            quantity: p.quantity || 1,
-                            custom_price: p.customPrice !== null && p.customPrice !== undefined ? parseFloat(p.customPrice) : null
-                          }));
-                          
-                          const newQuoteData = {
-                            name: quoteName || `Teklif - ${new Date().toLocaleDateString('tr-TR')}`,
-                            discount_percentage: parseFloat(quoteDiscount) || 0,
-                            labor_cost: parseFloat(quoteLaborCost) || 0,
-                            products: selectedProductData,
-                            notes: quoteNotes.trim() || ''
-                          };
-                          
-                          if (loadedQuote && loadedQuote.id) {
-                            await fetch(`${API}/quotes/${loadedQuote.id}`, {
-                              method: 'PUT',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify(newQuoteData)
-                            });
-                          } else {
-                            const createResponse = await fetch(`${API}/quotes`, {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify(newQuoteData)
-                            });
-                            const savedQuote = await createResponse.json();
-                            quoteId = savedQuote.id;
-                          }
-                          
-                          await fetchQuotes();
-                          
-                          // Download PDF
-                          const pdfUrl = `${API}/quotes/${quoteId}/pdf`;
-                          const link = document.createElement('a');
-                          link.href = pdfUrl;
-                          link.download = `${loadedQuote?.name || quoteName || 'Teklif'}.pdf`;
-                          document.body.appendChild(link);
-                          link.click();
-                          document.body.removeChild(link);
-                          toast.success('PDF indiriliyor...');
-                        } catch (e) {
-                          toast.error('PDF indirme başarısız oldu');
-                        }
-                      }}
-                      className="border-slate-200 hover:bg-slate-50 text-slate-700 font-bold py-4 rounded-xl flex items-center justify-center gap-1.5 transition-colors text-xs"
-                    >
-                      <Download className="w-4 h-4 text-blue-500" />
-                      PDF İndir
-                    </Button>
-
-                    {/* WhatsApp integration */}
-                    <Button
-                      variant="outline"
-                      disabled={!loadedQuote}
-                      onClick={async () => {
-                        if (!loadedQuote?.id) {
-                          toast.error('Paylaşmak için lütfen önce teklifi kaydedin');
-                          return;
-                        }
-                        shareViaWhatsAppWithPDF(loadedQuote.name, loadedQuote.id);
-                      }}
-                      className="border-slate-200 hover:bg-slate-50 text-slate-700 font-bold py-4 rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-50 transition-colors text-xs"
-                      title={loadedQuote ? "WhatsApp ile Paylaş" : "Önce teklifi kaydetmelisiniz"}
-                    >
-                      <Phone className="w-4 h-4 text-emerald-600" />
-                      WhatsApp
-                    </Button>
-                  </div>
-
-                  {/* Reset Canvas Sheet */}
-                  <Button
-                    variant="ghost"
-                    onClick={() => {
-                      clearSelection();
-                      toast.success('Yeni teklif hazırlama alanına geçildi');
-                    }}
-                    className="w-full text-slate-400 hover:text-slate-600 hover:bg-slate-50 font-bold py-2 rounded-xl text-xs flex items-center justify-center gap-1"
-                  >
-                    <X className="w-4 h-4" />
-                    Temizle / Yeni Teklif
-                  </Button>
-                </Card>
+                {/* 2. Action Controls Panel (Moved to calculations card) */}
 
                 {/* 3. Searchable Saved Quotes panel */}
                 <Card className="border-2 border-slate-200 rounded-3xl shadow-lg bg-gradient-to-b from-slate-50 to-white">
