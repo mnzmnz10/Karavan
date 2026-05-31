@@ -5748,6 +5748,16 @@ function App() {
                               const quantity = selectedProducts.get(product.id) || 1;
                               const lineTotalTRY = unitPriceTRY * quantity;
 
+                              // Calculate Cost (Geliş) TL values
+                              const discountedPrice = parseFloat(product.discounted_price) || parseFloat(product.list_price) || 0;
+                              let discountedPriceTRY = discountedPrice;
+                              if (product.currency === 'USD') {
+                                discountedPriceTRY = discountedPrice * (exchangeRates.USD || 34.0);
+                              } else if (product.currency === 'EUR') {
+                                discountedPriceTRY = discountedPrice * (exchangeRates.EUR || 37.0);
+                              }
+                              const lineTotalDiscountedTRY = discountedPriceTRY * quantity;
+
                               return (
                                 <TableRow key={product.id} className="border-b border-slate-200/80 bg-white hover:bg-slate-50/60 transition-colors">
                                   {/* Product Image */}
@@ -5859,6 +5869,11 @@ function App() {
                                           (1 {product.currency} = ₺{formatPrice(exchangeRates[product.currency] || 0)})
                                         </div>
                                       )}
+                                      {showQuoteDiscountedPrices && (
+                                        <div className="text-[10px] text-purple-600 font-extrabold mt-1">
+                                          Geliş: ₺ {formatPrice(discountedPriceTRY)}
+                                        </div>
+                                      )}
                                     </div>
                                   </TableCell>
                                   
@@ -5887,6 +5902,11 @@ function App() {
                                       </div>
                                       {customPrice !== undefined && customPrice !== null && (
                                         <span className="text-[9px] text-purple-500 font-bold mt-0.5 select-none">(Özel Toplam TL)</span>
+                                      )}
+                                      {showQuoteDiscountedPrices && (
+                                        <div className="text-[10px] text-purple-500 font-bold mt-1">
+                                          Geliş: ₺ {formatPrice(lineTotalDiscountedTRY)}
+                                        </div>
                                       )}
                                     </div>
                                   </TableCell>
