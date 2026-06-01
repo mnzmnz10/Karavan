@@ -28,7 +28,7 @@ from reportlab.lib.pagesizes import A4, letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import cm, mm
 from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, KeepTogether
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -2586,17 +2586,30 @@ class PDFQuoteGenerator:
         accent_color = colors.HexColor('#85e8ff')       # Açık turkuaz
         text_color = colors.HexColor('#2d3748')         # Koyu gri
         
+        # Eyebrow (başlık üstü küçük etiket) - turkuaz, harf aralıklı
+        self.eyebrow_style = ParagraphStyle(
+            'Eyebrow',
+            parent=self.styles['Normal'],
+            fontName=self.get_font_name(is_bold=True),
+            fontSize=9,
+            spaceAfter=2,
+            spaceBefore=0,
+            alignment=TA_LEFT,
+            textColor=colors.HexColor('#1ba3cc'),
+            leading=11,
+        )
+
         # Başlık stili - Yeni renk (#2F4B68)
         self.title_style = ParagraphStyle(
             'CustomTitle',
             parent=self.styles['Heading1'],
             fontName=self.get_font_name(is_bold=True),
-            fontSize=22,
-            spaceAfter=25,
-            spaceBefore=10,
-            alignment=TA_CENTER,
+            fontSize=21,
+            spaceAfter=14,
+            spaceBefore=0,
+            alignment=TA_LEFT,
             textColor=new_primary_color,  # YENİ RENK
-            leading=26
+            leading=25
         )
         
         # Alt başlık stili - Yeni renk (#2F4B68)
@@ -2605,8 +2618,8 @@ class PDFQuoteGenerator:
             parent=self.styles['Heading2'],
             fontName=self.get_font_name(is_bold=True),
             fontSize=14,
-            spaceAfter=15,
-            spaceBefore=10,
+            spaceAfter=10,
+            spaceBefore=4,
             alignment=TA_LEFT,
             textColor=new_primary_color,  # YENİ RENK
             leading=18
@@ -2670,163 +2683,501 @@ class PDFQuoteGenerator:
             leading=18
         )
 
+    # Kurumsal teklif tasarımı renk paleti
+    PROP_PRIMARY = '#1B3A5C'    # Koyu lacivert (başlık şeritleri, footer)
+    PROP_PRIMARY2 = '#2F4B68'   # Ara lacivert
+    PROP_ACCENT = '#4F7CAE'     # Orta mavi accent çizgi
+    PROP_LIGHT = '#F4F6F9'      # Kart/zebra zemini
+    PROP_BORDER = '#D9E0E8'     # İnce kenarlık
+    PROP_CONTENT_W = 18.0       # cm — kullanılabilir içerik genişliği
+
     def create_quote_pdf(self, quote_data: Dict) -> BytesIO:
-        """Gelişmiş teklif PDF'i oluştur - Türkçe karakter desteği ile"""
+        """Kurumsal teklif PDF'i — PowerTrail tarzı profesyonel düzen."""
         buffer = BytesIO()
-        
-        # Yüksek kaliteli PDF ayarları
+
         doc = SimpleDocTemplate(
             buffer,
             pagesize=A4,
-            rightMargin=2.5*cm,
-            leftMargin=2.5*cm,
-            topMargin=2*cm,
-            bottomMargin=2*cm,
+            rightMargin=1.5*cm,
+            leftMargin=1.5*cm,
+            topMargin=1.4*cm,
+            bottomMargin=2.4*cm,  # alt iletişim şeridi için yer
             title=f"Teklif - {quote_data.get('name', 'Adsız')}",
-            author="Karavan Elektrik Ekipmanları"
+            author="Çorlu Karavan"
         )
-        
+
         story = []
-        
-        # Üst header bölümü
-        story.append(self._create_modern_header())
-        story.append(Spacer(1, 10))
-        
-        # Antetli yatay çizgi
-        hr = Table([['']], colWidths=[16*cm], rowHeights=[2])
-        hr.setStyle(TableStyle([
-            ('LINEBELOW', (0,0), (-1,-1), 1.5, colors.HexColor('#2F4B68')),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 0),
-            ('TOPPADDING', (0,0), (-1,-1), 0),
-        ]))
-        story.append(hr)
-        story.append(Spacer(1, 20))
-        
-        # Teklif başlığı
-        quote_name = quote_data.get('name', 'Fiyat Teklifi')
-        story.append(Paragraph(f"<b>{quote_name}</b>", self.title_style))
-        story.append(Spacer(1, 15))
-        
-        # Teklif bilgileri satırı (Tarih, Geçerlilik vs. içeren kart)
-        story.append(self._create_quote_info_section(quote_data))
-        story.append(Spacer(1, 25))
-        
-        # Ürün tablosu başlığı
-        story.append(Paragraph("<b>Teklif Detayları</b>", self.subtitle_style))
-        story.append(Spacer(1, 10))
-        
-        # Ürün tablosu
-        story.append(self._create_modern_products_table(quote_data['products']))
-        story.append(Spacer(1, 25))
-        
-        # Teklif notları (varsa - sol kenar vurgulu callout kutusu içinde)
-        quote_notes = quote_data.get('notes', '').strip() if quote_data.get('notes') else ''
-        if quote_notes:
-            # Not başlık ve metin stilleri
-            note_title_style = ParagraphStyle(
-                'NoteTitle',
-                parent=self.styles['Normal'],
-                fontSize=9.5,
-                fontName=self.get_font_name(is_bold=True),
-                textColor=colors.HexColor('#2F4B68'),
-                spaceAfter=4
-            )
-            note_text_style = ParagraphStyle(
-                'NoteText',
-                parent=self.styles['Normal'],
-                fontSize=8.5,
-                leading=11.5,
-                textColor=colors.HexColor('#2D3748'),
-                fontName=self.get_font_name()
-            )
-            
-            note_content = [
-                Paragraph("<b>Notlar ve Özel Koşullar:</b>", note_title_style),
-                Spacer(1, 2),
-                Paragraph(quote_notes, note_text_style)
-            ]
-            
-            # Callout tablosu
-            notes_callout = Table([[note_content]], colWidths=[16*cm])
-            notes_callout.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F8FAFC')),
-                ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#E2E8F0')),
-                ('LINEBEFORE', (0, 0), (0, -1), 3.5, colors.HexColor('#2F4B68')), # Sol kalın dikey çizgi
-                ('TOPPADDING', (0, 0), (-1, -1), 10),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
-                ('LEFTPADDING', (0, 0), (-1, -1), 14),
-                ('RIGHTPADDING', (0, 0), (-1, -1), 14),
-            ]))
-            story.append(notes_callout)
-            story.append(Spacer(1, 20))
-        
-        # Toplam hesaplama bölümü
-        story.extend(self._create_modern_totals_section(quote_data))
-        story.append(Spacer(1, 30))
-        
-        # Footer notları
-        story.extend(self._create_modern_footer())
-        
-        # PDF oluştur
-        doc.build(story)
+
+        # 1) Üst başlık: logo + marka | sağ meta kutusu (No/Tarih/Geçerlilik)
+        story.append(self._create_proposal_header(quote_data))
+        story.append(Spacer(1, 16))
+
+        # 2) Ürün tablosu (şeritli başlık dahil)
+        story.append(self._create_proposal_products_table(quote_data['products']))
+        story.append(Spacer(1, 16))
+
+        # 3) Toplam teklif bölümü (tam genişlik yatay bant)
+        story.append(self._create_totals_section_full(quote_data))
+        story.append(Spacer(1, 14))
+
+        # 4) Notlar & şartlar + imza (tam genişlik yatay bant)
+        story.append(self._create_notes_section_full())
+
+        doc.build(story, onFirstPage=self._draw_page_decorations, onLaterPages=self._draw_page_decorations)
         buffer.seek(0)
         return buffer
-    
-    def _create_modern_header(self):
-        """Logo ve Çorlu Karavan bilgileri başlığı - Yeni logo ile"""
+
+    def _draw_page_decorations(self, canvas, doc):
+        """Her sayfaya üst ince accent şerit + alt koyu lacivert iletişim şeridi (slogan + iletişim)."""
+        canvas.saveState()
+        width, height = A4
+        primary = colors.HexColor(self.PROP_PRIMARY)
+        accent = colors.HexColor(self.PROP_ACCENT)
+
+        # Üst ince accent şerit
+        canvas.setFillColor(primary)
+        canvas.rect(0, height - 6, width, 6, stroke=0, fill=1)
+
+        # Slogan satırı (footer şeridinin hemen üstünde, ince)
+        slogan_y = 2.05 * cm
+        canvas.setFont(self.get_font_name(is_bold=True), 7.5)
+        canvas.setFillColor(primary)
+        canvas.drawCentredString(width / 2, slogan_y,
+            "KALİTELİ EKİPMAN  ·  UZMAN MONTAJ  ·  KESİNTİSİZ ENERJİ")
+
+        # Alt koyu lacivert iletişim şeridi
+        bar_h = 1.5 * cm
+        canvas.setFillColor(primary)
+        canvas.rect(0, 0, width, bar_h, stroke=0, fill=1)
+        # üst ince accent çizgi
+        canvas.setFillColor(accent)
+        canvas.rect(0, bar_h, width, 2.5, stroke=0, fill=1)
+
+        # İletişim metinleri (ikon yerine kısa etiketler)
+        canvas.setFillColor(colors.white)
+        cy = bar_h / 2 - 3
+        canvas.setFont(self.get_font_name(is_bold=True), 8)
+        canvas.drawString(1.5 * cm, cy, "Tel: 0505 813 77 65")
+        canvas.setFont(self.get_font_name(), 8)
+        canvas.drawCentredString(width / 2 - 1.2*cm, cy, "info@corlukaravan.com")
+        canvas.drawCentredString(width / 2 + 4.3*cm, cy, "www.corlukaravan.com")
+        canvas.drawRightString(width - 1.5 * cm, cy, "Çorlu / Tekirdağ")
+        # sayfa no (şeridin hemen üstünde sağda)
+        canvas.setFont(self.get_font_name(), 6.5)
+        canvas.setFillColor(colors.HexColor('#B8C4D0'))
+        canvas.drawRightString(width - 1.5 * cm, bar_h + 5, f"Sayfa {doc.page}")
+        canvas.restoreState()
+
+    # ===================== KURUMSAL TEKLİF TASARIMI HELPER'LARI =====================
+
+    def _quote_meta(self, quote_data: Dict):
+        """Teklif no, tarih ve geçerlilik tarihini döndür."""
+        quote_id = str(quote_data.get('id', '') or '')
+        no = quote_id.replace('-', '')[:8].upper() if quote_id else datetime.now().strftime('%y%m%d%H')
+        try:
+            created = datetime.fromisoformat(quote_data['created_at'].replace('Z', '+00:00'))
+        except Exception:
+            created = datetime.now()
+        return f"QT-{no}", created.strftime('%d.%m.%Y'), (created + timedelta(days=7)).strftime('%d.%m.%Y')
+
+    def _create_proposal_header(self, quote_data: Dict):
+        """Sol logo+marka | orta büyük başlık | sağ meta kutusu (No/Tarih/Geçerlilik)."""
         from reportlab.platypus import Table as PDFTable
-        
-        # Yeni logo yolu
+        P = self.PROP_PRIMARY
+
+        # --- Sol: logo + marka ---
+        brand_style = ParagraphStyle('PHBrand', parent=self.styles['Normal'],
+            fontName=self.get_font_name(is_bold=True), fontSize=17, textColor=colors.HexColor(P),
+            alignment=TA_CENTER, leading=19)
+        brand_par = [Paragraph("ÇORLU KARAVAN", brand_style)]
         logo_path = Path(__file__).parent / 'images' / 'corlu_karavan_logo_new.png'
-        
-        # Header tablosu oluştur (Logo + Firma bilgileri)
         if logo_path.exists():
             try:
-                logo_img = Image(str(logo_path), width=80, height=80)
-                
-                # Firma bilgileri - ÇORLU KARAVAN yeni renk ile (#2F4B68)
-                company_info = [
-                    "<font size='16' color='#2F4B68'><b>ÇORLU KARAVAN</b></font>",
-                    " ",
-                    "<font size='10'>Adres: Hatip, Sarı Salkım 3.Sokak Mobilyacılar Sitesi No: B1, 59000 Çorlu/Tekirdağ</font>",
-                    "<font size='10'>Telefon: 0505 813 77 65</font>",
-                    "<font size='10'>E-posta: info@corlukaravan.com</font>",
-                    "<font size='10'>Teknik Destek: mehmetnecdet@corlukaravan.com</font>"
-                ]
-                
-                company_text = "<br/>".join(company_info)
-                company_paragraph = Paragraph(company_text, self.company_style)
-                
-                # Logo ve metin tablosu
-                header_data = [[logo_img, company_paragraph]]
-                header_table = PDFTable(header_data, colWidths=[100, 400])
-                header_table.setStyle(TableStyle([
-                    ('ALIGN', (0, 0), (0, 0), 'CENTER'),  # Logo ortala
-                    ('ALIGN', (1, 0), (1, 0), 'LEFT'),    # Metin sola hizala
-                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'), # Dikey ortala
+                logo_img = Image(str(logo_path), width=64, height=64)
+                left_cell = PDFTable([[logo_img, brand_par]], colWidths=[72, 160])
+                left_cell.setStyle(TableStyle([
+                    ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                    ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (0,0), 8),
+                    ('TOPPADDING', (0,0), (-1,-1), 0), ('BOTTOMPADDING', (0,0), (-1,-1), 0),
+                ]))
+            except Exception:
+                left_cell = brand_par
+        else:
+            left_cell = brand_par
+
+        # --- Sağ: meta kutusu ---
+        no, date_str, valid_str = self._quote_meta(quote_data)
+        ml = ParagraphStyle('PHMetaL', parent=self.styles['Normal'],
+            fontName=self.get_font_name(), fontSize=7.5, textColor=colors.HexColor('#6B7B8C'), leading=10)
+        mv = ParagraphStyle('PHMetaV', parent=self.styles['Normal'],
+            fontName=self.get_font_name(is_bold=True), fontSize=8, textColor=colors.HexColor(P),
+            alignment=TA_RIGHT, leading=10)
+        meta_rows = [
+            [Paragraph("Teklif No", ml), Paragraph(no, mv)],
+            [Paragraph("Tarih", ml), Paragraph(date_str, mv)],
+            [Paragraph("Geçerlilik", ml), Paragraph(valid_str, mv)],
+        ]
+        meta_tbl = PDFTable(meta_rows, colWidths=[2.0*cm, 2.9*cm])
+        meta_tbl.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('BOX', (0,0), (-1,-1), 0.6, colors.HexColor(self.PROP_BORDER)),
+            ('INNERGRID', (0,0), (-1,-1), 0.6, colors.HexColor(self.PROP_BORDER)),
+            ('LINEBEFORE', (0,0), (0,-1), 3, colors.HexColor(P)),
+            ('TOPPADDING', (0,0), (-1,-1), 6), ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+            ('LEFTPADDING', (0,0), (-1,-1), 6), ('RIGHTPADDING', (0,0), (-1,-1), 6),
+        ]))
+
+        header = PDFTable([[left_cell, meta_tbl]], colWidths=[13.0*cm, 5.0*cm])
+        header.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('ALIGN', (1,0), (1,0), 'RIGHT'),
+            ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0),
+            ('TOPPADDING', (0,0), (-1,-1), 0), ('BOTTOMPADDING', (0,0), (-1,-1), 0),
+        ]))
+        return header
+
+    def _create_section_band(self, title: str):
+        """Koyu lacivert bölüm başlık şeridi."""
+        from reportlab.platypus import Table as PDFTable
+        st = ParagraphStyle('BandTitle', parent=self.styles['Normal'],
+            fontName=self.get_font_name(is_bold=True), fontSize=10, textColor=colors.white, leading=12)
+        band = PDFTable([[Paragraph(title, st)]], colWidths=[self.PROP_CONTENT_W*cm])
+        band.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor(self.PROP_PRIMARY)),
+            ('LINEBEFORE', (0,0), (0,-1), 4, colors.HexColor(self.PROP_ACCENT)),
+            ('TOPPADDING', (0,0), (-1,-1), 7), ('BOTTOMPADDING', (0,0), (-1,-1), 7),
+            ('LEFTPADDING', (0,0), (-1,-1), 12), ('RIGHTPADDING', (0,0), (-1,-1), 12),
+        ]))
+        return band
+
+    def _create_client_info_block(self, quote_data: Dict):
+        """MÜŞTERİ BİLGİLERİ şeridi + 2 kolonlu kart."""
+        from reportlab.platypus import Table as PDFTable
+        band = self._create_section_band("MÜŞTERİ BİLGİLERİ")
+
+        lbl = ParagraphStyle('CILabel', parent=self.styles['Normal'],
+            fontName=self.get_font_name(is_bold=True), fontSize=8.5, textColor=colors.HexColor('#5A6B7C'), leading=12)
+        val = ParagraphStyle('CIVal', parent=self.styles['Normal'],
+            fontName=self.get_font_name(), fontSize=9, textColor=colors.HexColor('#2D3748'), leading=12)
+        valb = ParagraphStyle('CIValB', parent=self.styles['Normal'],
+            fontName=self.get_font_name(is_bold=True), fontSize=9, textColor=colors.HexColor(self.PROP_PRIMARY), leading=12)
+
+        customer = quote_data.get('customer_name') or 'Bireysel Müşteri'
+        email = quote_data.get('customer_email') or '-'
+        title = quote_data.get('name', 'Fiyat Teklifi')
+        notes = (quote_data.get('notes') or '').strip() or '-'
+        if len(notes) > 160:
+            notes = notes[:157] + '...'
+
+        def kv(label, value, vstyle=val):
+            return PDFTable([[Paragraph(label, lbl), Paragraph(value, vstyle)]], colWidths=[2.3*cm, 6.0*cm])
+
+        left_col = [
+            kv("Müşteri Adı", customer, valb), Spacer(1, 6),
+            kv("E-posta", email),
+        ]
+        right_col = [
+            kv("Teklif Başlığı", title, valb), Spacer(1, 6),
+            kv("Proje Notları", notes),
+        ]
+        card = PDFTable([[left_col, right_col]], colWidths=[8.9*cm, 9.1*cm])
+        card.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor(self.PROP_LIGHT)),
+            ('BOX', (0,0), (-1,-1), 0.6, colors.HexColor(self.PROP_BORDER)),
+            ('LINEAFTER', (0,0), (0,0), 0.6, colors.HexColor(self.PROP_BORDER)),
+            ('TOPPADDING', (0,0), (-1,-1), 10), ('BOTTOMPADDING', (0,0), (-1,-1), 10),
+            ('LEFTPADDING', (0,0), (-1,-1), 14), ('RIGHTPADDING', (0,0), (-1,-1), 14),
+        ]))
+        return KeepTogether([band, card])
+
+    def _create_proposal_products_table(self, products: List[Dict]):
+        """ITEM/Ürün/Adet/Birim/Birim(TL)/Tutar/Tutar(TL) — şeritli kurumsal tablo."""
+        P = self.PROP_PRIMARY
+        band = self._create_section_band("TEKLİF İÇERİĞİ")
+
+        hs = ParagraphStyle('PTH', parent=self.data_style, fontName=self.get_font_name(is_bold=True),
+            textColor=colors.white, fontSize=8.5, leading=10)
+        hsc = ParagraphStyle('PTHc', parent=hs, alignment=TA_CENTER)
+        hsr = ParagraphStyle('PTHr', parent=hs, alignment=TA_RIGHT)
+        c_l = ParagraphStyle('PTl', parent=self.data_style, fontName=self.get_font_name(), fontSize=8.5, leading=11)
+        c_c = ParagraphStyle('PTc', parent=c_l, alignment=TA_CENTER)
+        c_r = ParagraphStyle('PTr', parent=c_l, alignment=TA_RIGHT)
+        c_rb = ParagraphStyle('PTrb', parent=c_r, fontName=self.get_font_name(is_bold=True))
+        c_rbb = ParagraphStyle('PTrbb', parent=c_rb, textColor=colors.HexColor(P))
+        idx_st = ParagraphStyle('PTidx', parent=c_c, fontName=self.get_font_name(is_bold=True),
+            textColor=colors.HexColor(P))
+
+        headers = [
+            Paragraph("#", hsc), Paragraph("ÜRÜN", hs), Paragraph("ADET", hsc),
+            Paragraph("BİRİM FİYAT", hsr), Paragraph("BİRİM (TL)", hsr),
+            Paragraph("TUTAR", hsr), Paragraph("TUTAR (TL)", hsr),
+        ]
+        data = [headers]
+        for i, product in enumerate(products, 1):
+            qty = product.get('quantity', 1)
+            cur = product.get('currency', 'TRY')
+            sym = '$' if cur == 'USD' else ('€' if cur == 'EUR' else '₺')
+            cp = product.get('custom_price')
+            unit = float(cp) if cp is not None else float(product.get('list_price', 0))
+            total = unit * qty
+            unit_try = float(product.get('list_price_try', 0))
+            total_try = unit_try * qty
+            name = product.get('name', '')
+            info = f"<b>{name}</b>"
+            data.append([
+                Paragraph(str(i), idx_st),
+                Paragraph(info, c_l),
+                Paragraph(str(qty), c_c),
+                Paragraph(f"{sym} {self._format_price_modern(unit)}", c_r),
+                Paragraph(f"₺ {self._format_price_modern(unit_try)}", c_r),
+                Paragraph(f"{sym} {self._format_price_modern(total)}", c_rb),
+                Paragraph(f"<b>₺ {self._format_price_modern(total_try)}</b>", c_rbb),
+            ])
+
+        table = Table(data, colWidths=[0.85*cm, 5.35*cm, 1.45*cm, 2.4*cm, 2.4*cm, 2.5*cm, 2.65*cm], repeatRows=1)
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor(P)),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('TOPPADDING', (0,0), (-1,0), 8), ('BOTTOMPADDING', (0,0), (-1,0), 8),
+            ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor(self.PROP_LIGHT)]),
+            ('TOPPADDING', (0,1), (-1,-1), 7), ('BOTTOMPADDING', (0,1), (-1,-1), 7),
+            ('LINEBELOW', (0,1), (-1,-1), 0.4, colors.HexColor(self.PROP_BORDER)),
+            ('LINEAFTER', (0,0), (0,-1), 0.4, colors.HexColor(self.PROP_BORDER)),
+            ('LEFTPADDING', (0,0), (-1,-1), 7), ('RIGHTPADDING', (0,0), (-1,-1), 7),
+            ('LEFTPADDING', (0,0), (0,-1), 3), ('RIGHTPADDING', (0,0), (0,-1), 3),
+            ('BOX', (0,0), (-1,-1), 0.6, colors.HexColor(self.PROP_BORDER)),
+        ]))
+        return KeepTogether([band, table]) if len(products) <= 6 else Table([[band],[table]], colWidths=[self.PROP_CONTENT_W*cm])
+
+    def _create_totals_section_full(self, quote_data: Dict):
+        """TOPLAM TEKLİF — fatura estetiği: şerit başlık + ara toplam satırları + büyük GENEL TOPLAM barı."""
+        from reportlab.platypus import Table as PDFTable
+        P = self.PROP_PRIMARY
+        W = self.PROP_CONTENT_W
+        net = quote_data.get('total_net_price', 0)
+
+        band = self._create_section_band("TOPLAM TEKLİF")
+
+        lbl = ParagraphStyle('TBL', parent=self.styles['Normal'],
+            fontName=self.get_font_name(), fontSize=9.5, textColor=colors.HexColor('#4A5868'),
+            alignment=TA_RIGHT, leading=13)
+        valr = ParagraphStyle('TBV', parent=self.styles['Normal'],
+            fontName=self.get_font_name(is_bold=True), fontSize=9.5, textColor=colors.HexColor('#2D3748'),
+            alignment=TA_RIGHT, leading=13)
+
+        # --- Ara toplam kalemleri: sağ blokta hizalı (label sağ | değer sağ) ---
+        total_list = quote_data.get('total_list_price', 0)
+        rows = [[Paragraph("Ara Toplam (Liste)", lbl), Paragraph(f"₺ {self._format_price_modern(total_list)}", valr)]]
+        disc = quote_data.get('discount_percentage', 0)
+        if disc > 0:
+            rows.append([Paragraph(f"İndirim (%{disc})", lbl),
+                Paragraph(f"<font color='#dc2626'>− ₺ {self._format_price_modern(total_list*disc/100)}</font>", valr)])
+        labor = quote_data.get('labor_cost', 0)
+        if labor > 0:
+            rows.append([Paragraph("İşçilik Maliyeti", lbl),
+                Paragraph(f"<font color='#059669'>+ ₺ {self._format_price_modern(labor)}</font>", valr)])
+        sub = PDFTable(rows, colWidths=[5.0*cm, 4.0*cm], hAlign='RIGHT')
+        sstyle = [
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('TOPPADDING', (0,0), (-1,-1), 7), ('BOTTOMPADDING', (0,0), (-1,-1), 7),
+            ('LEFTPADDING', (0,0), (-1,-1), 4), ('RIGHTPADDING', (0,0), (-1,-1), 0),
+        ]
+        for i in range(len(rows)-1):
+            sstyle.append(('LINEBELOW', (0,i), (-1,i), 0.4, colors.HexColor(self.PROP_BORDER)))
+        sub.setStyle(TableStyle(sstyle))
+
+        # Ara toplam bölgesi: açık zeminli, sağa hizalı kalemler (sol taraf ferah boşluk)
+        sub_wrap = PDFTable([[sub]], colWidths=[W*cm])
+        sub_wrap.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor(self.PROP_LIGHT)),
+            ('ALIGN', (0,0), (-1,-1), 'RIGHT'),
+            ('TOPPADDING', (0,0), (-1,-1), 4), ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+            ('LEFTPADDING', (0,0), (-1,-1), 16), ('RIGHTPADDING', (0,0), (-1,-1), 16),
+        ]))
+
+        # --- GENEL TOPLAM barı: tam genişlik, koyu, sol etiket + sağ büyük rakam ---
+        gl = ParagraphStyle('GTL', parent=self.styles['Normal'],
+            fontName=self.get_font_name(is_bold=True), fontSize=12.5, textColor=colors.white, leading=16)
+        glsub = ParagraphStyle('GTLs', parent=self.styles['Normal'],
+            fontName=self.get_font_name(), fontSize=7.5, textColor=colors.HexColor('#A9C2DD'), leading=10)
+        gv = ParagraphStyle('GTV', parent=self.styles['Normal'],
+            fontName=self.get_font_name(is_bold=True), fontSize=22, textColor=colors.white,
+            alignment=TA_RIGHT, leading=25)
+        # döviz karşılığı (sağ rakamın altında küçük)
+        fx_txt = ""
+        try:
+            eur = float(currency_service.rates_cache.get('EUR', 37.0)) if currency_service.rates_cache else 37.0
+            usd = float(currency_service.rates_cache.get('USD', 34.0)) if currency_service.rates_cache else 34.0
+            fx_txt = f"≈ € {self._format_price_modern(net/eur)}  |  $ {self._format_price_modern(net/usd)}"
+        except Exception:
+            pass
+        gfx = ParagraphStyle('GTFX', parent=self.styles['Normal'],
+            fontName=self.get_font_name(), fontSize=8, textColor=colors.HexColor('#A9C2DD'),
+            alignment=TA_RIGHT, leading=11)
+
+        left_cell = [Paragraph("GENEL TOPLAM", gl), Paragraph("Net ödenecek tutar", glsub)]
+        right_cell = [Paragraph(f"₺ {self._format_price_modern(net)}", gv)]
+        if fx_txt:
+            right_cell.append(Paragraph(fx_txt, gfx))
+        grand = PDFTable([[left_cell, right_cell]], colWidths=[9.0*cm, 9.0*cm])
+        grand.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor(P)),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('LINEABOVE', (0,0), (-1,0), 3, colors.HexColor(self.PROP_ACCENT)),
+            ('TOPPADDING', (0,0), (-1,-1), 14), ('BOTTOMPADDING', (0,0), (-1,-1), 14),
+            ('LEFTPADDING', (0,0), (0,0), 16), ('RIGHTPADDING', (-1,0), (-1,0), 16),
+        ]))
+
+        outer = PDFTable([[band],[sub_wrap],[grand]], colWidths=[W*cm])
+        outer.setStyle(TableStyle([
+            ('LEFTPADDING',(0,0),(-1,-1),0),('RIGHTPADDING',(0,0),(-1,-1),0),
+            ('TOPPADDING',(0,0),(-1,-1),0),('BOTTOMPADDING',(0,0),(-1,-1),0),
+            ('BOX',(0,0),(-1,-1),0.6,colors.HexColor(self.PROP_BORDER)),
+        ]))
+        return KeepTogether([outer])
+
+    def _create_notes_section_full(self):
+        """Tam genişlik yatay NOTLAR & ŞARTLAR bandı + imza (sağ alt)."""
+        from reportlab.platypus import Table as PDFTable
+        P = self.PROP_PRIMARY
+        W = self.PROP_CONTENT_W
+
+        band = self._create_section_band("NOTLAR & ŞARTLAR")
+
+        terms_st = ParagraphStyle('TS', parent=self.styles['Normal'],
+            fontName=self.get_font_name(), fontSize=8, textColor=colors.HexColor('#4A5568'), leading=12)
+        terms = (
+            "• Yukarıdaki fiyatlandırmanın, 1 hafta geçerli olduğunu lütfen göz önünde bulundurunuz.<br/>"
+            "• Ürün özellikleri ve fiyatları değişiklik gösterebilir.<br/>"
+            "• Servisimiz dışında yapılan işlemlerde montaj ve nakliye masrafları ayrıca hesaplanacaktır."
+        )
+
+        # İmza (sağ) — çizgi + isim + altyazı aynı genişlikte ortalı blok
+        sig_name = ParagraphStyle('SIGN', parent=self.styles['Normal'],
+            fontName=self.get_font_name(is_bold=True), fontSize=9.5, textColor=colors.HexColor(P),
+            alignment=TA_CENTER, leading=12)
+        sig_sub = ParagraphStyle('SIGS', parent=self.styles['Normal'],
+            fontName=self.get_font_name(), fontSize=7.5, textColor=colors.HexColor('#6B7B8C'),
+            alignment=TA_CENTER, leading=10)
+        sig_block = PDFTable([
+            [Spacer(1, 14)],
+            [Paragraph("Mehmet Necdet Zamkı", sig_name)],
+            [Paragraph("Çorlu Karavan", sig_sub)],
+        ], colWidths=[5.0*cm], hAlign='RIGHT')
+        sig_block.setStyle(TableStyle([
+            ('LINEBELOW', (0,1), (0,1), 0.8, colors.HexColor('#9AA8B6')),  # isim ALTINA imza çizgisi
+            ('TOPPADDING', (0,1), (0,1), 0), ('BOTTOMPADDING', (0,1), (0,1), 2),  # isim-çizgi arası (yakın)
+            ('TOPPADDING', (0,0), (0,0), 0), ('BOTTOMPADDING', (0,0), (0,0), 0),
+            ('TOPPADDING', (0,2), (0,2), 3), ('BOTTOMPADDING', (0,2), (0,2), 0),  # çizgi-Çorlu arası (yakın)
+            ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0),
+        ]))
+        sig_inner = [sig_block]
+
+        content = PDFTable([[Paragraph(terms, terms_st), sig_inner]], colWidths=[11.5*cm, 6.5*cm])
+        content.setStyle(TableStyle([
+            ('VALIGN', (0,0), (0,0), 'TOP'), ('VALIGN', (1,0), (1,0), 'TOP'),
+            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor(self.PROP_LIGHT)),
+            ('LEFTPADDING', (0,0), (-1,-1), 14), ('RIGHTPADDING', (0,0), (-1,-1), 14),
+            ('TOPPADDING', (0,0), (-1,-1), 10), ('BOTTOMPADDING', (0,0), (-1,-1), 10),
+        ]))
+
+        outer = PDFTable([[band],[content]], colWidths=[W*cm])
+        outer.setStyle(TableStyle([
+            ('LEFTPADDING',(0,0),(-1,-1),0),('RIGHTPADDING',(0,0),(-1,-1),0),
+            ('TOPPADDING',(0,0),(-1,-1),0),('BOTTOMPADDING',(0,0),(-1,-1),0),
+            ('BOX',(0,1),(-1,1),0.6,colors.HexColor(self.PROP_BORDER)),
+        ]))
+        return KeepTogether([outer])
+
+    def _create_modern_header(self, quote_data: Dict = None, badge_label: str = "TEKLİF NO"):
+        """Logo + Çorlu Karavan bilgileri (sol) ve no/tarih rozeti (sağ üst)."""
+        from reportlab.platypus import Table as PDFTable
+
+        # Sağ üst rozet (no + tarih)
+        badge_flowable = self._create_header_badge(quote_data or {}, badge_label=badge_label)
+
+        # Firma iletişim metni
+        company_info = [
+            "<font size='15' color='#2F4B68'><b>ÇORLU KARAVAN</b></font>",
+            "<font size='8' color='#1ba3cc'><b>KARAVAN ELEKTRİK EKİPMANLARI</b></font>",
+            " ",
+            "<font size='9' color='#4A5568'>Hatip, Sarı Salkım 3. Sokak Mobilyacılar Sitesi No: B1, 59000 Çorlu/Tekirdağ</font>",
+            "<font size='9' color='#4A5568'>Telefon: 0505 813 77 65 &nbsp;·&nbsp; info@corlukaravan.com</font>",
+        ]
+        company_paragraph = Paragraph("<br/>".join(company_info), self.company_style)
+
+        logo_path = Path(__file__).parent / 'images' / 'corlu_karavan_logo_new.png'
+        left_cell = company_paragraph
+        if logo_path.exists():
+            try:
+                logo_img = Image(str(logo_path), width=70, height=70)
+                left_inner = PDFTable([[logo_img, company_paragraph]], colWidths=[80, 250])
+                left_inner.setStyle(TableStyle([
+                    ('ALIGN', (0, 0), (0, 0), 'CENTER'),
+                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                    ('LEFTPADDING', (0, 0), (-1, -1), 0),
+                    ('RIGHTPADDING', (0, 0), (0, 0), 8),
                     ('TOPPADDING', (0, 0), (-1, -1), 0),
                     ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
-                    ('LEFTPADDING', (0, 0), (-1, -1), 0),
-                    ('RIGHTPADDING', (0, 0), (-1, -1), 0),
                 ]))
-                
-                return header_table
-                
+                left_cell = left_inner
             except Exception as e:
                 logger.error(f"Logo loading error: {e}")
-        
-        # Logo yoksa sadece metin - ÇORLU KARAVAN yeni renk ile
-        company_info = [
-            "<font size='16' color='#2F4B68'><b>ÇORLU KARAVAN</b></font>",
-            " ",
-            "<font size='10'>Adres: Hatip, Sarı Salkım 3.Sokak Mobilyacılar Sitesi No: B1, 59000 Çorlu/Tekirdağ</font>",
-            "<font size='10'>Telefon: 0505 813 77 65</font>",
-            "<font size='10'>E-posta: info@corlukaravan.com</font>",
-            "<font size='10'>Teknik Destek: mehmetnecdet@corlukaravan.com</font>"
+
+        # Sol (logo+firma) | Sağ (rozet) — 16cm toplam
+        header_table = PDFTable([[left_cell, badge_flowable]], colWidths=[11.0*cm, 5.0*cm])
+        header_table.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (0, 0), 'MIDDLE'),
+            ('VALIGN', (1, 0), (1, 0), 'TOP'),
+            ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+            ('TOPPADDING', (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+        ]))
+        return header_table
+
+    def _create_header_badge(self, quote_data: Dict, badge_label: str = "TEKLİF NO"):
+        """Sağ üstte belge numarası ve tarihini gösteren kompakt rozet."""
+        from reportlab.platypus import Table as PDFTable
+
+        # No: id'nin ilk 8 hanesi (yoksa tarih bazlı)
+        quote_id = str(quote_data.get('id', '') or '')
+        quote_no = quote_id.replace('-', '')[:8].upper() if quote_id else datetime.now().strftime('%y%m%d%H')
+        try:
+            created = datetime.fromisoformat(quote_data['created_at'].replace('Z', '+00:00'))
+            date_str = created.strftime('%d.%m.%Y')
+        except Exception:
+            date_str = datetime.now().strftime('%d.%m.%Y')
+
+        label_style = ParagraphStyle('BadgeLabel', parent=self.styles['Normal'],
+            fontName=self.get_font_name(is_bold=True), fontSize=7, textColor=colors.HexColor('#A6C9EC'),
+            alignment=TA_RIGHT, leading=9)
+        value_style = ParagraphStyle('BadgeValue', parent=self.styles['Normal'],
+            fontName=self.get_font_name(is_bold=True), fontSize=11, textColor=colors.white,
+            alignment=TA_RIGHT, leading=14)
+        date_style = ParagraphStyle('BadgeDate', parent=self.styles['Normal'],
+            fontName=self.get_font_name(), fontSize=9, textColor=colors.white,
+            alignment=TA_RIGHT, leading=12)
+
+        inner = [
+            Paragraph(badge_label, label_style),
+            Paragraph(f"#{quote_no}", value_style),
+            Spacer(1, 5),
+            Paragraph("TARİH", label_style),
+            Paragraph(date_str, date_style),
         ]
-        
-        header_text = "<br/>".join(company_info)
-        return Paragraph(header_text, self.company_style)
+        badge = PDFTable([[inner]], colWidths=[4.4*cm])
+        badge.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#2F4B68')),
+            ('TOPPADDING', (0, 0), (-1, -1), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+            ('LEFTPADDING', (0, 0), (-1, -1), 14),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 14),
+            ('LINEABOVE', (0, 0), (-1, 0), 3, colors.HexColor('#25c7eb')),
+        ]))
+        return badge
     
     def _create_quote_info_section(self, quote_data: Dict):
         """Teklif ve müşteri bilgilerini içeren premium kart görünümü"""
@@ -2892,10 +3243,13 @@ class PDFQuoteGenerator:
             ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F8FAFC')),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#E2E8F0')),
-            ('TOPPADDING', (0, 0), (-1, -1), 10),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
-            ('LEFTPADDING', (0, 0), (-1, -1), 12),
+            ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#E2E8F0')),
+            ('LINEBEFORE', (0, 0), (0, -1), 3.5, colors.HexColor('#25c7eb')),  # sol turkuaz accent
+            ('LINEBELOW', (0, 0), (-1, 0), 0.5, colors.HexColor('#E2E8F0')),   # satır ayıracı
+            ('TOPPADDING', (0, 0), (-1, -1), 9),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 9),
+            ('LEFTPADDING', (0, 0), (0, -1), 14),
+            ('LEFTPADDING', (1, 0), (-1, -1), 6),
             ('RIGHTPADDING', (0, 0), (-1, -1), 12),
         ]))
         
@@ -2944,9 +3298,9 @@ class PDFQuoteGenerator:
         # Tablo başlıkları (Genişletilmiş sütunlar, Miktar sığacak şekilde 1.6*cm)
         headers = [
             Paragraph("<b>Ürün Bilgisi</b>", header_left),
-            Paragraph("<b>Miktar</b>", header_center),
+            Paragraph("<b>Adet</b>", header_center),
             Paragraph("<b>Birim Fiyat</b>", header_right),
-            Paragraph("<b>Birim Fiyat (TL)</b>", header_right),
+            Paragraph("<b>Birim (TL)</b>", header_right),
             Paragraph("<b>Tutar</b>", header_right),
             Paragraph("<b>Tutar (TL)</b>", header_right)
         ]
@@ -2993,20 +3347,21 @@ class PDFQuoteGenerator:
             data.append(row)
         
         # Tablo genişlikleri (A4 kullanılabilir alan: 16cm = 160mm, Miktar 1.6cm ile tek satırda sığdırıldı)
-        table = Table(data, colWidths=[5.0*cm, 1.6*cm, 2.3*cm, 2.3*cm, 2.4*cm, 2.4*cm])
+        table = Table(data, colWidths=[4.7*cm, 1.6*cm, 2.3*cm, 2.3*cm, 2.45*cm, 2.55*cm], repeatRows=1)
         table.setStyle(TableStyle([
-            # Başlık stili - Premium koyu renk ve mükemmel kontrast
+            # Başlık stili - Premium koyu renk + turkuaz üst accent
             ('BACKGROUND', (0, 0), (-1, 0), new_primary_color),
+            ('LINEABOVE', (0, 0), (-1, 0), 2.5, colors.HexColor('#25c7eb')),
             ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('TOPPADDING', (0, 0), (-1, 0), 10),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+            ('TOPPADDING', (0, 0), (-1, 0), 11),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 11),
             
             # Veri satırları renklendirme (Zebra desenli ferah görünüm)
             ('BACKGROUND', (0, 1), (-1, -1), colors.white),
             ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, accent_color]),
-            ('TOPPADDING', (0, 1), (-1, -1), 10),
-            ('BOTTOMPADDING', (0, 1), (-1, -1), 10),
+            ('TOPPADDING', (0, 1), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
             
             # Yatay bölücü çizgiler (Dikey çizgiler minimalist etki için tamamen kaldırıldı)
             ('LINEBELOW', (0, 0), (-1, 0), 1.5, new_primary_color),       # Başlık altı kalın çizgi
@@ -3015,8 +3370,11 @@ class PDFQuoteGenerator:
             # İç dolgular
             ('LEFTPADDING', (0, 0), (-1, -1), 8),
             ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+            # Adet sütunu dar olduğu için dolgusunu azalt (başlık kırılmasını önler)
+            ('LEFTPADDING', (1, 0), (1, -1), 2),
+            ('RIGHTPADDING', (1, 0), (1, -1), 2),
         ]))
-        
+
         return table
     
     def _create_modern_totals_section(self, quote_data: Dict):
@@ -3080,110 +3438,152 @@ class PDFQuoteGenerator:
             leading=10
         )
         
-        table_data = []
-        
-        # 1. Genel Liste Toplamı
+        # --- Ara toplamlar (açık zeminli kutu) ---
+        sub_data = []
         total_list_price = quote_data.get('total_list_price', 0)
-        table_data.append([
-            Paragraph("Genel Liste Toplamı:", label_style),
+        sub_data.append([
+            Paragraph("Genel Liste Toplamı", label_style),
             Paragraph(f"₺ {self._format_price_modern(total_list_price)}", value_style)
         ])
-        
-        # 2. Uygulanan İndirim
+
         discount_percentage = quote_data.get('discount_percentage', 0)
         if discount_percentage > 0:
             discount_amount = total_list_price * (discount_percentage / 100)
-            table_data.append([
-                Paragraph(f"Uygulanan İndirim (%{discount_percentage}):", label_style),
-                Paragraph(f"<font color='#dc2626'>-₺ {self._format_price_modern(discount_amount)}</font>", value_style)
+            sub_data.append([
+                Paragraph(f"Uygulanan İndirim (%{discount_percentage})", label_style),
+                Paragraph(f"<font color='#dc2626'>− ₺ {self._format_price_modern(discount_amount)}</font>", value_style)
             ])
-            
-        # 3. İşçilik Maliyeti
+
         labor_cost = quote_data.get('labor_cost', 0)
         if labor_cost > 0:
-            table_data.append([
-                Paragraph("İşçilik Maliyeti:", label_style),
-                Paragraph(f"<font color='#059669'>+₺ {self._format_price_modern(labor_cost)}</font>", value_style)
+            sub_data.append([
+                Paragraph("İşçilik Maliyeti", label_style),
+                Paragraph(f"<font color='#059669'>+ ₺ {self._format_price_modern(labor_cost)}</font>", value_style)
             ])
-            
-        # 4. Net Toplam
+
+        sub_table = Table(sub_data, colWidths=[5.5*cm, 3.5*cm])
+        sub_style = [
+            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, 0), (-1, -1), 7),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
+            ('LEFTPADDING', (0, 0), (-1, -1), 12),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 12),
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F8FAFC')),
+        ]
+        for i in range(len(sub_data) - 1):
+            sub_style.append(('LINEBELOW', (0, i), (-1, i), 0.5, colors.HexColor('#E2E8F0')))
+        sub_table.setStyle(TableStyle(sub_style))
+
+        # --- NET TOPLAM (koyu mavi dolgulu vurgu barı) ---
         net_total = quote_data.get('total_net_price', 0)
-        table_data.append([
-            Paragraph("<b>NET TOPLAM:</b>", label_bold_style),
-            Paragraph(f"<b>₺ {self._format_price_modern(net_total)}</b>", value_bold_style)
-        ])
-        
-        # 5. Euro and USD equivalents
+        net_label_style = ParagraphStyle('NetLabel', parent=self.normal_style,
+            fontName=self.get_font_name(is_bold=True), fontSize=12, alignment=TA_LEFT,
+            textColor=colors.white, leading=15)
+        net_value_style = ParagraphStyle('NetValue', parent=self.normal_style,
+            fontName=self.get_font_name(is_bold=True), fontSize=15, alignment=TA_RIGHT,
+            textColor=colors.white, leading=18)
+        net_table = Table([[
+            Paragraph("NET TOPLAM", net_label_style),
+            Paragraph(f"₺ {self._format_price_modern(net_total)}", net_value_style)
+        ]], colWidths=[5.5*cm, 3.5*cm])
+        net_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#2F4B68')),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
+            ('TOPPADDING', (0, 0), (-1, -1), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+            ('LEFTPADDING', (0, 0), (-1, -1), 12),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 12),
+            ('LINEABOVE', (0, 0), (-1, 0), 3, colors.HexColor('#25c7eb')),
+        ]))
+
+        # --- EUR / USD karşılıkları (muted alt satır) ---
+        fx_rows = []
         try:
             eur_rate = float(currency_service.rates_cache.get('EUR', 37.0)) if currency_service.rates_cache else 37.0
             usd_rate = float(currency_service.rates_cache.get('USD', 34.0)) if currency_service.rates_cache else 34.0
-            
             net_total_eur = net_total / eur_rate
             net_total_usd = net_total / usd_rate
-            
-            table_data.append([
-                Paragraph("<i>Euro Karşılığı (EUR):</i>", label_muted_style),
-                Paragraph(f"<i>€ {self._format_price_modern(net_total_eur)}</i>", value_muted_style)
-            ])
-            table_data.append([
-                Paragraph("<i>Dolar Karşılığı (USD):</i>", label_muted_style),
-                Paragraph(f"<i>$ {self._format_price_modern(net_total_usd)}</i>", value_muted_style)
-            ])
+            fx_rows = [[
+                Paragraph(f"<i>≈ € {self._format_price_modern(net_total_eur)}</i>", value_muted_style),
+                Paragraph(f"<i>≈ $ {self._format_price_modern(net_total_usd)}</i>", value_muted_style)
+            ]]
         except Exception as e:
             logger.warning(f"Could not calculate currencies equivalent: {e}")
-            
-        # Create totals table (Width: 9cm total, hAlign='RIGHT')
-        totals_table = Table(table_data, colWidths=[5.5*cm, 3.5*cm], hAlign='RIGHT')
-        totals_table.setStyle(TableStyle([
-            ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-            ('TOPPADDING', (0, 0), (-1, -1), 4),
+
+        # Sağa hizalı sarmalayıcı: ara toplam kutusu + net bar + fx
+        wrapper_rows = [[sub_table], [Spacer(1, 6)], [net_table]]
+        if fx_rows:
+            fx_table = Table(fx_rows, colWidths=[4.5*cm, 4.5*cm])
+            fx_table.setStyle(TableStyle([
+                ('ALIGN', (0, 0), (0, 0), 'LEFT'),
+                ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
+                ('TOPPADDING', (0, 0), (-1, -1), 5),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+                ('LEFTPADDING', (0, 0), (-1, -1), 12),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 12),
+            ]))
+            wrapper_rows.append([fx_table])
+
+        wrapper = Table(wrapper_rows, colWidths=[9.0*cm], hAlign='RIGHT')
+        wrapper.setStyle(TableStyle([
             ('LEFTPADDING', (0, 0), (-1, -1), 0),
             ('RIGHTPADDING', (0, 0), (-1, -1), 0),
-            ('LINEABOVE', (0, -3 if len(table_data) > 4 else -1), (1, -3 if len(table_data) > 4 else -1), 0.5, colors.HexColor('#cbd5e0')),
+            ('TOPPADDING', (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
         ]))
-        
-        return [totals_table]
-    
-    def _create_modern_footer(self):
-        """Güncellenmiş footer mesajı - Sol vurgulu modern callout kutusu içinde"""
-        # Not başlık ve metin stilleri
+
+        # Sol kolon: önemli notlar kutusu (dikey yer kazanmak için totals ile yan yana)
+        notes_box = self._create_footer_notes_box(width=6.6*cm)
+
+        two_col = Table([[notes_box, wrapper]], colWidths=[6.8*cm, 9.2*cm])
+        two_col.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING', (0, 0), (0, 0), 12),
+            ('RIGHTPADDING', (1, 0), (1, 0), 0),
+            ('TOPPADDING', (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+        ]))
+
+        # Tüm blok (notlar + ara toplamlar + net bar + döviz) birlikte kalsın
+        return [KeepTogether([two_col])]
+
+    def _create_footer_notes_box(self, width=16*cm):
+        """Önemli notlar/şartlar kutusu - sol turkuaz vurgulu callout."""
         note_title_style = ParagraphStyle(
-            'FooterNotesHeader',
-            parent=self.styles['Normal'],
-            fontSize=9.5,
-            fontName=self.get_font_name(is_bold=True),
-            textColor=colors.HexColor('#2F4B68'),
-            spaceAfter=6
+            'FooterNotesHeader2', parent=self.styles['Normal'], fontSize=9,
+            fontName=self.get_font_name(is_bold=True), textColor=colors.HexColor('#2F4B68'),
+            spaceAfter=6,
         )
-        
+        compact_footer_style = ParagraphStyle(
+            'FooterNotesCompact2', parent=self.footer_style, fontSize=7.5, leading=11, spaceAfter=0,
+        )
         notes = [
-            "• Yukarıdaki fiyatlandırmanın, teklif tarihinden itibaren <b>7 gün geçerli</b> olduğunu lütfen göz önünde bulundurunuz.",
-            "• Ürün özellikleri ve fiyatları piyasa koşullarına bağlı olarak değişiklik gösterebilir.",
-            "• Karavan elektrik montaj/servisimiz dışındaki işlemlerde montaj ve nakliye masrafları ayrıca hesaplanacaktır."
+            "• Fiyatlandırma teklif tarihinden itibaren <b>7 gün geçerlidir.</b>",
+            "• Ürün özellikleri ve fiyatları piyasa koşullarına göre değişebilir.",
+            "• Montaj/servis dışı işlemlerde montaj ve nakliye ayrıca hesaplanır.",
         ]
-        
-        notes_text = "<br/>".join(notes)
-        
         callout_content = [
             Paragraph("<b>ÖNEMLİ NOTLAR VE ŞARTLAR</b>", note_title_style),
-            Paragraph(notes_text, self.footer_style)
+            Paragraph("<br/>".join(notes), compact_footer_style),
         ]
-        
-        # Callout tablosu
-        footer_callout = Table([[callout_content]], colWidths=[16*cm])
-        footer_callout.setStyle(TableStyle([
+        box = Table([[callout_content]], colWidths=[width])
+        box.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F8FAFC')),
             ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#E2E8F0')),
-            ('LINEBEFORE', (0, 0), (0, -1), 3.5, colors.HexColor('#2F4B68')), # Sol kalın dikey çizgi
+            ('LINEBEFORE', (0, 0), (0, -1), 3.5, colors.HexColor('#25c7eb')),
             ('TOPPADDING', (0, 0), (-1, -1), 10),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
-            ('LEFTPADDING', (0, 0), (-1, -1), 14),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 14),
+            ('LEFTPADDING', (0, 0), (-1, -1), 12),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 12),
         ]))
-        
-        return [footer_callout]
+        return box
+    
+    def _create_modern_footer(self):
+        """Önemli notlar callout'u (tam genişlik) - _create_footer_notes_box ile tutarlı."""
+        return [KeepTogether([self._create_footer_notes_box(width=16*cm)])]
     
     def _format_price_modern(self, price):
         """Modern Türkçe fiyat formatla - küsüratsız"""
@@ -3263,19 +3663,26 @@ class PDFPackageGenerator(PDFQuoteGenerator):
         # PDF içeriği
         story = []
         
-        # Header (Logo + Firma bilgileri)
-        story.append(self._create_modern_header())
-        story.append(Spacer(1, 30))
-        
-        # Tarih - sağ üst köşe
-        story.append(self._create_date_header())
+        # Header (Logo + Firma bilgileri + sağ üst PAKET rozeti)
+        story.append(self._create_modern_header(package_data, badge_label="PAKET NO"))
         story.append(Spacer(1, 10))
-        
-        # Paket başlığı
+
+        # Antetli yatay çizgi
+        hr = Table([['']], colWidths=[16*cm], rowHeights=[2])
+        hr.setStyle(TableStyle([
+            ('LINEBELOW', (0,0), (-1,-1), 1.5, colors.HexColor('#2F4B68')),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 0),
+            ('TOPPADDING', (0,0), (-1,-1), 0),
+        ]))
+        story.append(hr)
+        story.append(Spacer(1, 18))
+
+        # Paket başlığı — eyebrow + isim
         package_name = package_data.get('name', 'Paket Bilgisi')
+        story.append(Paragraph("ÜRÜN PAKETİ", self.eyebrow_style))
         story.append(Paragraph(f"<b>{package_name}</b>", self.title_style))
-        story.append(Spacer(1, 25))
-        
+        story.append(Spacer(1, 12))
+
         # Ürün tablosu başlığı
         story.append(Paragraph("<b>Paket İçeriği</b>", self.subtitle_style))
         story.append(Spacer(1, 10))
@@ -3284,33 +3691,31 @@ class PDFPackageGenerator(PDFQuoteGenerator):
         story.append(self._create_package_products_table_with_groups(products, include_prices, categories, category_groups))
         story.append(Spacer(1, 25))
         
-        # Paket notları (varsa)
+        # Paket notları (varsa - sol turkuaz vurgulu callout kutusu)
         package_notes = package_data.get('notes', '').strip() if package_data.get('notes') else ''
         if package_notes:
-            # Küçük notlar başlığı
-            notes_header_style = ParagraphStyle(
-                'NotesHeader',
-                parent=self.styles['Normal'],
-                fontSize=9,
-                fontName=self.get_font_name(is_bold=True),  # bold -> is_bold
-                spaceAfter=6,
-                leftIndent=20
-            )
-            story.append(Paragraph("<b>Notlar</b>", notes_header_style))
-            story.append(Spacer(1, 5))  # 10'dan 5'e küçültüldü
-            
-            # Notları paragraf olarak ekle (küçük font)
-            notes_style = ParagraphStyle(
-                'Notes',
-                parent=self.styles['Normal'],
-                fontSize=8,  # 10'dan 8'e küçültüldü
-                leading=11,  # 14'ten 11'e küçültüldü
-                spaceAfter=8,  # 12'den 8'e küçültüldü
-                leftIndent=20,
-                fontName=self.get_font_name()
-            )
-            story.append(Paragraph(package_notes, notes_style))
-            story.append(Spacer(1, 15))  # 25'ten 15'e küçültüldü
+            note_title_style = ParagraphStyle('PkgNoteTitle', parent=self.styles['Normal'],
+                fontSize=9.5, fontName=self.get_font_name(is_bold=True),
+                textColor=colors.HexColor('#2F4B68'), spaceAfter=4)
+            note_text_style = ParagraphStyle('PkgNoteText', parent=self.styles['Normal'],
+                fontSize=8.5, leading=11.5, textColor=colors.HexColor('#2D3748'),
+                fontName=self.get_font_name())
+            notes_callout = Table([[[
+                Paragraph("<b>Notlar ve Özel Koşullar:</b>", note_title_style),
+                Spacer(1, 2),
+                Paragraph(package_notes, note_text_style),
+            ]]], colWidths=[16*cm])
+            notes_callout.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F8FAFC')),
+                ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#E2E8F0')),
+                ('LINEBEFORE', (0, 0), (0, -1), 3.5, colors.HexColor('#2F4B68')),
+                ('TOPPADDING', (0, 0), (-1, -1), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+                ('LEFTPADDING', (0, 0), (-1, -1), 14),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 14),
+            ]))
+            story.append(notes_callout)
+            story.append(Spacer(1, 14))
         
         # Toplam hesaplama bölümü (indirim ve işçilik ile)
         if include_prices:
@@ -3331,16 +3736,16 @@ class PDFPackageGenerator(PDFQuoteGenerator):
             sale_price = float(package_data.get('sale_price', 0))
             story.extend(self._create_package_totals_section(sale_price, "Paket Satış Fiyatı"))
         
-        story.append(Spacer(1, 30))
-        
+        story.append(Spacer(1, 18))
+
         # Footer notları
         story.extend(self._create_modern_footer())
-        
-        # PDF oluştur
-        doc.build(story)
+
+        # PDF oluştur (üst brand şeridi + footer her sayfada)
+        doc.build(story, onFirstPage=self._draw_page_decorations, onLaterPages=self._draw_page_decorations)
         buffer.seek(0)
         return buffer
-    
+
     # _create_package_info_section removed - date moved to top-right
     
     def _create_package_products_table(self, products, include_prices=True):
@@ -3580,103 +3985,93 @@ class PDFPackageGenerator(PDFQuoteGenerator):
         return table
 
     def _create_package_totals_section_with_discount_labor(self, total_list_price, discount_percentage, discount_amount, labor_cost, final_total):
-        """Create package totals section with discount and labor cost calculations"""
-        from reportlab.platypus import Table as PDFTable
-        
-        elements = []
-        
-        # Başlık
-        elements.append(Paragraph("<b>Paket Fiyat Hesaplaması</b>", self.subtitle_style))
-        elements.append(Spacer(1, 10))
-        
-        # Tablo verisi
-        table_data = [
-            [Paragraph("<b>Açıklama</b>", self.header_style), Paragraph("<b>Tutar</b>", self.header_style)]
-        ]
-        
-        # Liste fiyatı toplamı
-        table_data.append([
-            Paragraph("Toplam Liste Fiyatı", self.data_style),
-            Paragraph(f"₺ {self._format_price_modern(total_list_price)}", self.data_style)
-        ])
-        
-        # İndirim (eğer varsa)
+        """Paket fiyat hesaplaması - teklif ile aynı NET TOPLAM bar stili."""
+        label_style = ParagraphStyle('PkgTotLabel', parent=self.normal_style,
+            fontName=self.get_font_name(), fontSize=9.5, alignment=TA_LEFT, leading=12)
+        value_style = ParagraphStyle('PkgTotValue', parent=self.normal_style,
+            fontName=self.get_font_name(), fontSize=9.5, alignment=TA_RIGHT, leading=12)
+        value_muted_style = ParagraphStyle('PkgTotMuted', parent=self.normal_style,
+            fontName=self.get_font_name(), fontSize=8, alignment=TA_RIGHT,
+            textColor=colors.HexColor('#718096'), leading=10)
+
+        # --- Ara toplamlar (açık zeminli kutu) ---
+        sub_data = [[
+            Paragraph("Toplam Liste Fiyatı", label_style),
+            Paragraph(f"₺ {self._format_price_modern(total_list_price)}", value_style)
+        ]]
         if discount_percentage > 0:
-            table_data.append([
-                Paragraph(f"İndirim (%{discount_percentage})", self.data_style),
-                Paragraph(f"- ₺ {self._format_price_modern(discount_amount)}", 
-                         ParagraphStyle('RedText', parent=self.data_style, textColor=colors.red))
+            sub_data.append([
+                Paragraph(f"İndirim (%{discount_percentage})", label_style),
+                Paragraph(f"<font color='#dc2626'>− ₺ {self._format_price_modern(discount_amount)}</font>", value_style)
             ])
-            
-            table_data.append([
-                Paragraph("İndirim Sonrası Toplam", self.data_style),
-                Paragraph(f"₺ {self._format_price_modern(total_list_price - discount_amount)}", self.data_style)
-            ])
-        
-        # İşçilik maliyeti (eğer varsa)
         if labor_cost > 0:
-            table_data.append([
-                Paragraph("İşçilik Maliyeti", self.data_style),
-                Paragraph(f"+ ₺ {self._format_price_modern(labor_cost)}", 
-                         ParagraphStyle('GreenText', parent=self.data_style, textColor=colors.green))
+            sub_data.append([
+                Paragraph("İşçilik Maliyeti", label_style),
+                Paragraph(f"<font color='#059669'>+ ₺ {self._format_price_modern(labor_cost)}</font>", value_style)
             ])
-        
-        # Net toplam
-        table_data.append([
-            Paragraph("<b>Net Toplam</b>", 
-                     ParagraphStyle('BoldData', parent=self.data_style, fontName=self.get_font_name(is_bold=True))),
-            Paragraph(f"<b>₺ {self._format_price_modern(final_total)}</b>", 
-                     ParagraphStyle('BoldTotal', parent=self.data_style, 
-                                   fontName=self.get_font_name(is_bold=True), 
-                                   textColor=colors.HexColor('#2F4B68')))
-        ])
-        
-        # Euro karşılığı
+
+        sub_table = Table(sub_data, colWidths=[5.5*cm, 3.5*cm])
+        sub_style = [
+            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, 0), (-1, -1), 7),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
+            ('LEFTPADDING', (0, 0), (-1, -1), 12),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 12),
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F8FAFC')),
+        ]
+        for i in range(len(sub_data) - 1):
+            sub_style.append(('LINEBELOW', (0, i), (-1, i), 0.5, colors.HexColor('#E2E8F0')))
+        sub_table.setStyle(TableStyle(sub_style))
+
+        # --- NET TOPLAM (koyu mavi dolgulu vurgu barı) ---
+        net_label_style = ParagraphStyle('PkgNetLabel', parent=self.normal_style,
+            fontName=self.get_font_name(is_bold=True), fontSize=12, alignment=TA_LEFT,
+            textColor=colors.white, leading=15)
+        net_value_style = ParagraphStyle('PkgNetValue', parent=self.normal_style,
+            fontName=self.get_font_name(is_bold=True), fontSize=15, alignment=TA_RIGHT,
+            textColor=colors.white, leading=18)
+        net_table = Table([[
+            Paragraph("NET TOPLAM", net_label_style),
+            Paragraph(f"₺ {self._format_price_modern(final_total)}", net_value_style)
+        ]], colWidths=[5.5*cm, 3.5*cm])
+        net_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#2F4B68')),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
+            ('TOPPADDING', (0, 0), (-1, -1), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+            ('LEFTPADDING', (0, 0), (-1, -1), 12),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 12),
+            ('LINEABOVE', (0, 0), (-1, 0), 3, colors.HexColor('#25c7eb')),
+        ]))
+
+        # --- EUR karşılığı (muted) ---
+        fx_table = None
         try:
-            # Use cached exchange rates (no async needed)
             eur_rate = float(currency_service.rates_cache.get('EUR', 48.5)) if currency_service.rates_cache else 48.5
             final_total_eur = final_total / eur_rate
-            
-            table_data.append([
-                Paragraph("<i>Euro Karşılığı</i>", 
-                         ParagraphStyle('ItalicGray', parent=self.data_style, textColor=colors.HexColor('#666666'))),
-                Paragraph(f"<i>€ {self._format_price_modern(final_total_eur)}</i>", 
-                         ParagraphStyle('ItalicGray', parent=self.data_style, textColor=colors.HexColor('#666666')))
-            ])
+            fx_table = Table([[Paragraph(f"<i>≈ € {self._format_price_modern(final_total_eur)}</i>", value_muted_style)]],
+                             colWidths=[9.0*cm])
+            fx_table.setStyle(TableStyle([
+                ('ALIGN', (0, 0), (0, 0), 'RIGHT'),
+                ('TOPPADDING', (0, 0), (-1, -1), 5),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 12),
+            ]))
         except Exception as e:
             logger.warning(f"Could not calculate EUR equivalent: {e}")
-        
-        # Tablo oluştur
-        table = PDFTable(table_data, colWidths=[10*cm, 6*cm])
-        table.setStyle(TableStyle([
-            # Header
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2F4B68')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), self.get_font_name(is_bold=True)),
-            ('FONTSIZE', (0, 0), (-1, 0), 10),
-            
-            # Veri satırları
-            ('ALIGN', (0, 1), (0, -1), 'LEFT'),
-            ('ALIGN', (1, 1), (1, -1), 'RIGHT'),
-            ('FONTNAME', (0, 1), (-1, -1), self.get_font_name()),
-            ('FONTSIZE', (0, 1), (-1, -1), 9),
-            ('LEFTPADDING', (0, 1), (-1, -1), 10),
-            ('RIGHTPADDING', (0, 1), (-1, -1), 10),
-            ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
-            ('TOPPADDING', (0, 1), (-1, -1), 6),
-            
-            # Kenarlık
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#E2E8F0')),
-            ('LINEABOVE', (0, -1), (-1, -1), 2, colors.HexColor('#2F4B68')),  # Net toplam üstüne kalın çizgi
-            
-            # Zemin renkleri
-            ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.HexColor('#F9FAFB')]),
-            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#EDF2F7'))  # Net toplam arka planı
+
+        wrapper_rows = [[sub_table], [Spacer(1, 6)], [net_table]]
+        if fx_table is not None:
+            wrapper_rows.append([fx_table])
+        wrapper = Table(wrapper_rows, colWidths=[9.0*cm], hAlign='RIGHT')
+        wrapper.setStyle(TableStyle([
+            ('LEFTPADDING', (0, 0), (-1, -1), 0), ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+            ('TOPPADDING', (0, 0), (-1, -1), 0), ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
         ]))
-        
-        elements.append(table)
-        return elements
+
+        return [Paragraph("<b>Paket Fiyat Hesaplaması</b>", self.subtitle_style), Spacer(1, 8), KeepTogether([wrapper])]
     
     def _create_package_totals_section(self, amount, label):
         """Paket toplam bölümü"""
@@ -7007,6 +7402,210 @@ Fiyat bulamazsan boş results listesi döndür. URL bilinmiyorsa null yaz. Fiyat
 
 
 # Include the router in the main app
+# ===================== KABLO ŞEMASI (WIRING) MODÜLÜ =====================
+# kablosemasi reposundan port edildi. Çakışmayı önlemek için tüm uçlar "wiring-"
+# namespace'inde, koleksiyonlar "wiring_" önekiyle. Görseller Emergent object
+# storage yerine MongoDB'de base64 saklanır; PDF cairosvg yerine svglib+reportlab
+# ile üretilir (Windows uyumu).
+from fastapi import UploadFile as _UploadFile, File as _File, Response as _Response
+from urllib.parse import quote as _urlquote
+import base64 as _base64
+
+class WiringProjectCreate(BaseModel):
+    name: str
+    vehicle_name: Optional[str] = ""
+    author: Optional[str] = ""
+    description: Optional[str] = ""
+    data: Dict[str, Any] = Field(default_factory=dict)
+
+class WiringProjectUpdate(BaseModel):
+    name: Optional[str] = None
+    vehicle_name: Optional[str] = None
+    author: Optional[str] = None
+    description: Optional[str] = None
+    data: Optional[Dict[str, Any]] = None
+
+class WiringProject(BaseModel):
+    id: str
+    name: str
+    vehicle_name: str = ""
+    author: str = ""
+    description: str = ""
+    data: Dict[str, Any] = Field(default_factory=dict)
+    created_at: str
+    updated_at: str
+
+class WiringPdfExportRequest(BaseModel):
+    svg: str
+    paper: str = "A4"
+    orientation: str = "landscape"
+    title: str = ""
+    vehicle_name: str = ""
+    author: str = ""
+    date: str = ""
+    description: str = ""
+    logo_url: Optional[str] = None
+
+class WiringDeviceTemplatePort(BaseModel):
+    id: Optional[str] = None
+    name: str = "+"
+    side: str = "left"
+    offset: float = 0.5
+    color: str = "#F8F9FA"
+
+class WiringDeviceTemplatePayload(BaseModel):
+    name: str
+    category: str = "load"
+    width: int = 120
+    height: int = 90
+    color: Optional[str] = None
+    image_id: Optional[str] = None
+    brand: str = ""
+    model: str = ""
+    rating_value: str = ""
+    rating_unit: str = ""
+    notes: str = ""
+    ports: List[WiringDeviceTemplatePort] = Field(default_factory=list)
+
+class WiringDeviceTemplate(WiringDeviceTemplatePayload):
+    id: str
+    is_custom: bool = True
+    created_at: str
+    updated_at: str
+
+def _wiring_port_with_id(p: dict) -> dict:
+    return {**p, "id": p.get("id") or f"p_{uuid.uuid4().hex[:6]}"}
+
+# ---- Görsel upload / serve (MongoDB base64) ----
+@api_router.post("/wiring-upload")
+async def wiring_upload_image(file: _UploadFile = _File(...)):
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(400, "Sadece resim dosyaları yüklenebilir.")
+    ext = (file.filename or "").split(".")[-1].lower() if file.filename and "." in file.filename else "png"
+    if ext not in ("png", "jpg", "jpeg", "webp", "gif"):
+        ext = "png"
+    data = await file.read()
+    if len(data) > 10 * 1024 * 1024:
+        raise HTTPException(400, "Dosya boyutu çok büyük (maks. 10MB).")
+    file_id = str(uuid.uuid4())
+    doc = {
+        "id": file_id,
+        "content_type": file.content_type or f"image/{ext}",
+        "original_filename": file.filename or f"{file_id}.{ext}",
+        "size": len(data),
+        "data_b64": _base64.b64encode(data).decode("ascii"),
+        "is_deleted": False,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.wiring_files.insert_one(doc.copy())
+    return {"id": file_id, "url": f"/api/wiring-files/{file_id}", "path": file_id}
+
+@api_router.get("/wiring-files/{file_id}")
+async def wiring_get_file(file_id: str):
+    record = await db.wiring_files.find_one({"id": file_id, "is_deleted": False}, {"_id": 0})
+    if not record:
+        raise HTTPException(404, "Dosya bulunamadı.")
+    data = _base64.b64decode(record["data_b64"])
+    return _Response(content=data, media_type=record.get("content_type", "image/png"))
+
+# ---- Proje CRUD ----
+@api_router.post("/wiring-projects", response_model=WiringProject)
+async def wiring_create_project(payload: WiringProjectCreate):
+    now = datetime.now(timezone.utc).isoformat()
+    proj = {"id": str(uuid.uuid4()), "created_at": now, "updated_at": now, **payload.model_dump()}
+    await db.wiring_projects.insert_one(proj.copy())
+    return WiringProject(**proj)
+
+@api_router.get("/wiring-projects", response_model=List[WiringProject])
+async def wiring_list_projects():
+    items = await db.wiring_projects.find({}, {"_id": 0}).sort("updated_at", -1).to_list(500)
+    return [WiringProject(**i) for i in items]
+
+@api_router.get("/wiring-projects/{project_id}", response_model=WiringProject)
+async def wiring_get_project(project_id: str):
+    item = await db.wiring_projects.find_one({"id": project_id}, {"_id": 0})
+    if not item:
+        raise HTTPException(404, "Proje bulunamadı.")
+    return WiringProject(**item)
+
+@api_router.put("/wiring-projects/{project_id}", response_model=WiringProject)
+async def wiring_update_project(project_id: str, payload: WiringProjectUpdate):
+    existing = await db.wiring_projects.find_one({"id": project_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Proje bulunamadı.")
+    update_data = payload.model_dump(exclude_unset=True)
+    update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    await db.wiring_projects.update_one({"id": project_id}, {"$set": update_data})
+    return WiringProject(**{**existing, **update_data})
+
+@api_router.delete("/wiring-projects/{project_id}")
+async def wiring_delete_project(project_id: str):
+    res = await db.wiring_projects.delete_one({"id": project_id})
+    if res.deleted_count == 0:
+        raise HTTPException(404, "Proje bulunamadı.")
+    return {"ok": True}
+
+# ---- Cihaz şablonu CRUD ----
+@api_router.post("/wiring-device-templates", response_model=WiringDeviceTemplate)
+async def wiring_create_template(payload: WiringDeviceTemplatePayload):
+    now = datetime.now(timezone.utc).isoformat()
+    ports = [_wiring_port_with_id(p.model_dump()) for p in payload.ports]
+    if not ports:
+        ports = [
+            {"id": f"p_{uuid.uuid4().hex[:6]}", "name": "+", "side": "left", "offset": 0.3, "color": "#FF3B30"},
+            {"id": f"p_{uuid.uuid4().hex[:6]}", "name": "-", "side": "left", "offset": 0.7, "color": "#1C1C1E"},
+        ]
+    doc = {**payload.model_dump(), "id": f"custom_{uuid.uuid4().hex[:10]}", "ports": ports,
+           "is_custom": True, "created_at": now, "updated_at": now}
+    await db.wiring_device_templates.insert_one(doc.copy())
+    return WiringDeviceTemplate(**doc)
+
+@api_router.get("/wiring-device-templates", response_model=List[WiringDeviceTemplate])
+async def wiring_list_templates():
+    items = await db.wiring_device_templates.find({}, {"_id": 0}).sort("name", 1).to_list(1000)
+    return [WiringDeviceTemplate(**i) for i in items]
+
+@api_router.put("/wiring-device-templates/{template_id}", response_model=WiringDeviceTemplate)
+async def wiring_update_template(template_id: str, payload: WiringDeviceTemplatePayload):
+    existing = await db.wiring_device_templates.find_one({"id": template_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Şablon bulunamadı.")
+    ports = [_wiring_port_with_id(p.model_dump()) for p in payload.ports]
+    update = {**payload.model_dump(), "ports": ports, "updated_at": datetime.now(timezone.utc).isoformat()}
+    await db.wiring_device_templates.update_one({"id": template_id}, {"$set": update})
+    return WiringDeviceTemplate(**{**existing, **update})
+
+@api_router.delete("/wiring-device-templates/{template_id}")
+async def wiring_delete_template(template_id: str):
+    res = await db.wiring_device_templates.delete_one({"id": template_id})
+    if res.deleted_count == 0:
+        raise HTTPException(404, "Şablon bulunamadı.")
+    return {"ok": True}
+
+# ---- PDF export (svglib + reportlab; cairosvg yerine Windows uyumu) ----
+@api_router.post("/wiring-export-pdf")
+async def wiring_export_pdf(req: WiringPdfExportRequest):
+    if not req.svg or "<svg" not in req.svg:
+        raise HTTPException(400, "Geçersiz SVG verisi.")
+    try:
+        from svglib.svglib import svg2rlg
+        from reportlab.graphics import renderPDF
+        drawing = svg2rlg(BytesIO(req.svg.encode("utf-8")))
+        if drawing is None:
+            raise ValueError("SVG çizime dönüştürülemedi")
+        pdf_io = BytesIO()
+        renderPDF.drawToFile(drawing, pdf_io)
+        pdf_bytes = pdf_io.getvalue()
+    except Exception as e:
+        logger.error(f"Wiring PDF dönüştürme hatası: {e}")
+        raise HTTPException(500, f"PDF dönüştürme hatası: {e}")
+    raw_title = (req.title or "karavan-sema").strip() or "karavan-sema"
+    ascii_fallback = raw_title.encode("ascii", "ignore").decode("ascii") or "karavan-sema"
+    cd = f'attachment; filename="{ascii_fallback}.pdf"; filename*=UTF-8\'\'{_urlquote(raw_title, safe="")}.pdf'
+    return _Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": cd})
+
+# ===================== /WIRING MODÜLÜ SONU =====================
+
 app.include_router(api_router)
 
 @app.on_event("shutdown")

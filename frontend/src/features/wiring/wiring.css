@@ -1,0 +1,125 @@
+/* Kablo Şeması editörü — izole koyu tema değişkenleri.
+   kablosemasi reposundan port edildi; Karavan'ın açık temasını bozmamak için
+   global :root yerine .wiring-root scope'una hapsedildi.
+   Dialog/Select gibi portal ile body'ye render olan bileşenler için aynı
+   değişkenler .wiring-portal class'ında da tanımlı (DialogContent/SelectContent'e
+   bu class eklenir). */
+.wiring-root,
+.wiring-portal {
+  /* Editöre özgü renkler */
+  --bg-canvas: #07080A;
+  --bg-panel: #0D0F14;
+  --bg-input: #14171F;
+  --bg-hover: #1C202B;
+  --border-structural: #1C202B;
+  --border-interactive: #2D3548;
+  --accent-cyan: #00E5FF;
+  --accent-yellow: #FFD600;
+  --accent-danger: #FF3366;
+  --accent-success: #00FF66;
+  --accent-warning: #FF9800;
+  --text-primary: #F8F9FA;
+  --text-secondary: #8B949E;
+  --text-tertiary: #484F58;
+
+  /* shadcn/Radix HSL değişkenleri (koyu tema) — cihaz ekleme paneli, kart,
+     input, select, dialog vb. bileşenlerin doğru görünmesi için. */
+  --background: 220 14% 5%;
+  --foreground: 210 17% 98%;
+  --card: 220 16% 7%;
+  --card-foreground: 210 17% 98%;
+  --popover: 220 16% 7%;
+  --popover-foreground: 210 17% 98%;
+  --primary: 187 100% 50%;
+  --primary-foreground: 220 14% 5%;
+  --secondary: 220 12% 14%;
+  --secondary-foreground: 210 17% 98%;
+  --muted: 220 12% 14%;
+  --muted-foreground: 215 8% 58%;
+  --accent: 220 12% 14%;
+  --accent-foreground: 210 17% 98%;
+  --destructive: 348 100% 60%;
+  --destructive-foreground: 210 17% 98%;
+  --border: 220 18% 14%;
+  --input: 220 18% 14%;
+  --ring: 187 100% 50%;
+  --radius: 2px;
+}
+
+/* ===== kablosemasi index.css custom class'ları (port edildi, @apply'sız) ===== */
+
+/* Canvas grid çizgileri */
+.canvas-grid {
+  background-image:
+    linear-gradient(to right, #14171F 1px, transparent 1px),
+    linear-gradient(to bottom, #14171F 1px, transparent 1px);
+}
+.wiring-root svg :focus { outline: none; }
+
+/* Kablo (wire) hover parıltısı */
+.wire-path { transition: filter 120ms ease; cursor: pointer; }
+.wire-path:hover { filter: drop-shadow(0 0 4px currentColor); }
+.wire-path.selected { filter: drop-shadow(0 0 6px currentColor); }
+
+/* Cihaz düğümü hover/seçili durumu */
+.device-node { cursor: move; }
+.device-node .device-frame { transition: stroke 120ms ease; }
+.device-node:hover .device-frame { stroke: var(--accent-cyan); }
+.device-node.selected .device-frame {
+  stroke: var(--accent-cyan);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+
+/* Port tutamacı */
+.port-handle { transition: transform 100ms ease, fill 100ms ease; cursor: crosshair; }
+.port-handle:hover { transform: scale(1.6); }
+.port-handle.connecting { fill: var(--accent-success); }
+
+/* Araç çubuğu butonları */
+.tool-btn {
+  height: 2rem; width: 2rem;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text-secondary);
+  border-radius: 2px;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.tool-btn:hover { background-color: var(--bg-hover); color: #fff; }
+.tool-btn.active { color: var(--accent-cyan); border-bottom: 1px solid var(--accent-cyan); }
+
+/* Panel başlık etiketleri (form label'ları) */
+.panel-title {
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+/* Cihaz kütüphanesi kartı */
+.lib-item {
+  border: 1px solid #1C202B;
+  background: #0D0F14;
+  padding: 0.5rem;
+  cursor: grab;
+  display: flex; align-items: center; gap: 0.5rem;
+  border-radius: 2px;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+.lib-item:hover { background: #14171F; border-color: var(--accent-cyan); }
+.lib-item:active { cursor: grabbing; }
+
+/* Teknik input'lar */
+.tech-input {
+  height: 2rem; padding: 0 0.5rem;
+  font-size: 0.75rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border-interactive);
+  color: #fff;
+  border-radius: 2px;
+  font-family: 'JetBrains Mono', monospace;
+}
+.tech-input:focus { outline: none; border-color: var(--accent-cyan); }
+
+/* Range slider rengi */
+.wiring-root input[type='range'],
+.wiring-portal input[type='range'] { accent-color: var(--accent-cyan); }

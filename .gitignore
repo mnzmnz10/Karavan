@@ -113,3 +113,10 @@ test_result.md
 # Genel olarak migrate ve test_freecurrency benzeri tek-sefer script'leri
 migrate_*.py
 *_credentials.*
+
+# ============================================
+# Kablo Şeması entegrasyonu / araç çıktıları (2026-06)
+# ============================================
+_external/
+brain/
+graphify-out/cache/

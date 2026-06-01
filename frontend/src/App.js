@@ -10,7 +10,8 @@ import { Badge } from './components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from './components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select';
-import { Trash2, Upload, RefreshCw, Plus, TrendingUp, Building2, Package, DollarSign, Edit, Save, X, FileText, Check, Archive, Download, Wrench, Eye, EyeOff, AlertTriangle, Tags, Copy, Pin, StickyNote, Users, Star, Search, Phone, Mail, MapPin, Calculator, Battery, Loader2, ScanSearch, LogOut, PlusCircle, MinusCircle, History, Settings, ChevronUp, ChevronDown, GripVertical } from 'lucide-react';
+import { Trash2, Upload, RefreshCw, Plus, TrendingUp, Building2, Package, DollarSign, Edit, Save, X, FileText, Check, Archive, Download, Wrench, Eye, EyeOff, AlertTriangle, Tags, Copy, Pin, StickyNote, Users, Star, Search, Phone, Mail, MapPin, Calculator, Battery, Loader2, ScanSearch, LogOut, PlusCircle, MinusCircle, History, Settings, ChevronUp, ChevronDown, GripVertical, Cable } from 'lucide-react';
+import KabloSemasiSection from '@/features/wiring/KabloSemasiSection';
 import { toast } from 'sonner';
 import { Toaster } from './components/ui/sonner';
 import LazyImage from './components/LazyImage';
@@ -707,6 +708,32 @@ function App() {
   const [quickQuoteCustomerName, setQuickQuoteCustomerName] = useState('');
   const [quickQuoteNotes, setQuickQuoteNotes] = useState(''); // Hızlı teklif notları
   const [activeTab, setActiveTab] = useState('products');
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Tarayıcı tam ekran durumunu izle: ESC ile çıkınca sidebar/döviz barı geri gelsin
+  // (yoksa kullanıcı tuzakta kalır, sekmelere dönemez).
+  useEffect(() => {
+    const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, []);
+
+  // Kablo Şeması sekmesine geçince tarayıcıyı tam ekrana al; çıkınca tam ekrandan çık.
+  const handleTabChange = (val) => {
+    setActiveTab(val);
+    try {
+      if (val === 'wiring-diagram') {
+        if (!document.fullscreenElement) {
+          document.documentElement.requestFullscreen?.().catch(() => {});
+        }
+      } else if (document.fullscreenElement) {
+        document.exitFullscreen?.().catch(() => {});
+      }
+    } catch (e) { /* fullscreen desteklenmiyorsa yoksay */ }
+  };
+
+  // Sidebar/döviz barı yalnızca wiring sekmesi AKTİF + tam ekrandayken gizlenir.
+  const hideChromeForWiring = activeTab === 'wiring-diagram' && isFullscreen;
   const [quotes, setQuotes] = useState([]);
   const [selectedQuote, setSelectedQuote] = useState(null);
   const [quoteSearchTerm, setQuoteSearchTerm] = useState('');
@@ -3473,9 +3500,9 @@ function App() {
       ) : (
         /* Main Application (Sidebar Layout) */
         <div className="w-full min-h-screen">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex min-h-screen bg-transparent">
+          <Tabs value={activeTab} onValueChange={handleTabChange} className="flex min-h-screen bg-transparent">
             {/* 1. Left Sidebar Navigation */}
-            <div className="w-72 bg-white/80 backdrop-blur-md border-r border-slate-200/80 p-6 flex flex-col justify-between shrink-0 shadow-lg h-screen sticky top-0 z-20">
+            <div className={`w-72 bg-white/80 backdrop-blur-md border-r border-slate-200/80 p-6 flex flex-col justify-between shrink-0 shadow-lg h-screen sticky top-0 z-20 ${hideChromeForWiring ? 'hidden' : ''}`}>
               <div className="space-y-6 flex flex-col overflow-y-auto no-scrollbar">
                 {/* Logo & Brand Info */}
                 <div className="flex items-center gap-4">
@@ -3558,6 +3585,14 @@ function App() {
                       <Battery className="w-4 h-4" />
                       <span>Akü Test</span>
                     </TabsTrigger>
+
+                    <TabsTrigger
+                      value="wiring-diagram"
+                      className="flex items-center justify-start gap-3 w-full h-11 px-4 text-sm font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100 rounded-xl data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
+                    >
+                      <Cable className="w-4 h-4" />
+                      <span>Kablo Şeması</span>
+                    </TabsTrigger>
                   </TabsList>
                 </div>
               </div>
@@ -3579,7 +3614,7 @@ function App() {
             <div className="flex-1 overflow-y-auto p-8 bg-slate-50/30">
               <div className="w-full space-y-6">
                 {/* Currency Rates Bar */}
-                <div className="flex justify-end">
+                <div className={`flex justify-end ${hideChromeForWiring ? 'hidden' : ''}`}>
                   <div className="flex flex-wrap items-center justify-end gap-2.5 bg-white/85 border border-slate-200/80 px-4 py-3 rounded-2xl shadow-sm backdrop-blur-md">
                     <div className="flex items-center gap-2 px-1">
                       <span className="text-xs font-extrabold text-slate-400 uppercase tracking-wider whitespace-nowrap">Döviz Kurları</span>
@@ -6695,6 +6730,9 @@ function App() {
                             >
                               <div className="flex justify-between items-start gap-3.5">
                                 <div className="min-w-0 flex-1">
+                                  <div className="text-[10px] font-black tracking-wider text-emerald-700/80 mb-1 tabular-nums">
+                                    QT-{(quote.id || '').replace(/-/g, '').slice(0, 8).toUpperCase()}
+                                  </div>
                                   <h5 className="font-extrabold text-slate-900 text-[15px] truncate leading-snug" title={quote.name}>
                                     {quote.name}
                                   </h5>
@@ -7046,6 +7084,11 @@ function App() {
           {/* Akü Test Tab */}
           <TabsContent value="battery-test" className="space-y-6">
             <BatteryTestSection />
+          </TabsContent>
+
+          {/* Kablo Şeması Tab */}
+          <TabsContent value="wiring-diagram" className="m-0 p-0">
+            <KabloSemasiSection fullscreen={hideChromeForWiring} />
           </TabsContent>
 
               </div> {/* max-w container */}
