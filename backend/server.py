@@ -7460,6 +7460,7 @@ class WiringDeviceTemplatePayload(BaseModel):
     height: int = 90
     color: Optional[str] = None
     image_id: Optional[str] = None
+    image_url: Optional[str] = None  # Karavan ürün görseli (harici URL) seçilmişse
     brand: str = ""
     model: str = ""
     rating_value: str = ""

@@ -122,6 +122,7 @@ export const useEditorStore = create((set, get) => ({
       ratingValue: tpl.rating_value || tpl.ratingValue || '',
       ratingUnit: tpl.rating_unit || tpl.ratingUnit || '',
       imageId: tpl.image_id || tpl.imageId || null,
+      imageUrl: tpl.image_url || tpl.imageUrl || null,
       ports: (tpl.ports || []).map((p) => ({ ...p })),
     };
     set((s) => ({ devices: [...s.devices, device], selectedId: device.id, selectedType: 'device' }));

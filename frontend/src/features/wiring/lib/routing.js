@@ -48,9 +48,14 @@ function segIntersectsRect(p1, p2, rect, pad = 2) {
   return false;
 }
 
-function countObstacleCrossings(path, obstacles) {
+function countObstacleCrossings(path, obstacles, skipEnds = false) {
   let n = 0;
-  for (let i = 0; i < path.length - 1; i++) {
+  // skipEnds: ilk ve son segment port çıkış stub'larıdır; kendi cihazlarının
+  // kenarıyla teknik olarak "kesişir" ama bu normaldir — sayma. Ortadaki
+  // segmentler bir cihazı keserse (içinden/arkasından geçme) ağır cezalanır.
+  const start = skipEnds ? 1 : 0;
+  const stop = skipEnds ? Math.max(1, path.length - 2) : path.length - 1;
+  for (let i = start; i < stop; i++) {
     for (const obs of obstacles) {
       if (segIntersectsRect(path[i], path[i + 1], obs)) n++;
     }
@@ -82,8 +87,32 @@ function simplify(path) {
   return out;
 }
 
+// Bir yolun, daha önce kullanılmış (ctx) kablo segmentleriyle ne kadar üst üste
+// bindiğini grid bazında sayar — fast mod kablo-kablo örtüşmesini cezalandırmak için.
+function countPathOverlap(points, ctx, gridSize = 10) {
+  if (!ctx || (!ctx.usedHoriz && !ctx.usedVert)) return 0;
+  let n = 0;
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1], b = points[i];
+    if (a.y === b.y) {
+      const min = Math.min(a.x, b.x), max = Math.max(a.x, b.x);
+      const gy = Math.round(a.y / gridSize) * gridSize;
+      for (let x = Math.round(min / gridSize) * gridSize; x < max; x += gridSize) {
+        if (ctx.usedHoriz && ctx.usedHoriz.has(`H:${gy}:${x}`)) n++;
+      }
+    } else if (a.x === b.x) {
+      const min = Math.min(a.y, b.y), max = Math.max(a.y, b.y);
+      const gx = Math.round(a.x / gridSize) * gridSize;
+      for (let y = Math.round(min / gridSize) * gridSize; y < max; y += gridSize) {
+        if (ctx.usedVert && ctx.usedVert.has(`V:${gx}:${y}`)) n++;
+      }
+    }
+  }
+  return n;
+}
+
 // ====== Fast L/Z routing (initial / fallback) ======
-function tryRoute(start, end, obstacles, stub) {
+function tryRoute(start, end, obstacles, stub, ctx = null, gridSize = 10) {
   const ea = exitPoint(start, stub);
   const eb = exitPoint(end, stub);
   const a = { x: start.x, y: start.y };
@@ -97,27 +126,36 @@ function tryRoute(start, end, obstacles, stub) {
   candidates.push([a, ea, { x: mx, y: ea.y }, { x: mx, y: eb.y }, eb, b]);
   candidates.push([a, ea, { x: ea.x, y: my }, { x: eb.x, y: my }, eb, b]);
 
-  const detour = 80;
-  candidates.push([a, ea, { x: ea.x, y: Math.min(ea.y, eb.y) - detour }, { x: eb.x, y: Math.min(ea.y, eb.y) - detour }, eb, b]);
-  candidates.push([a, ea, { x: ea.x, y: Math.max(ea.y, eb.y) + detour }, { x: eb.x, y: Math.max(ea.y, eb.y) + detour }, eb, b]);
-  candidates.push([a, ea, { x: Math.min(ea.x, eb.x) - detour, y: ea.y }, { x: Math.min(ea.x, eb.x) - detour, y: eb.y }, eb, b]);
-  candidates.push([a, ea, { x: Math.max(ea.x, eb.x) + detour, y: ea.y }, { x: Math.max(ea.x, eb.x) + detour, y: eb.y }, eb, b]);
+  // Örtüşmeden kaçınmak için kademeli sapma — küçük adımlarla başla ki kablolar
+  // büyük kavis yerine birbirine yakın paralel kanallara otursun ("alt alta").
+  for (const detour of [14, 26, 40, 56, 76, 100, 140]) {
+    candidates.push([a, ea, { x: ea.x, y: Math.min(ea.y, eb.y) - detour }, { x: eb.x, y: Math.min(ea.y, eb.y) - detour }, eb, b]);
+    candidates.push([a, ea, { x: ea.x, y: Math.max(ea.y, eb.y) + detour }, { x: eb.x, y: Math.max(ea.y, eb.y) + detour }, eb, b]);
+    candidates.push([a, ea, { x: Math.min(ea.x, eb.x) - detour, y: ea.y }, { x: Math.min(ea.x, eb.x) - detour, y: eb.y }, eb, b]);
+    candidates.push([a, ea, { x: Math.max(ea.x, eb.x) + detour, y: ea.y }, { x: Math.max(ea.x, eb.x) + detour, y: eb.y }, eb, b]);
+  }
 
   let best = null;
   let bestScore = Infinity;
   for (const raw of candidates) {
     const path = simplify(raw);
-    const crossings = countObstacleCrossings(path, obstacles);
+    const crossings = countObstacleCrossings(path, obstacles, true);
+    const overlap = countPathOverlap(path, ctx, gridSize);
     const len = pathLength(path);
     const bends = path.length - 2;
-    const score = crossings * 100000 + bends * 80 + len;
+    // Kablo-kablo örtüşmesi (overlap) ağır cezalı: önce cihazdan kaç, sonra
+    // diğer kablolarla üst üste binme, sonra kıvrım/uzunluk.
+    const score = crossings * 100000 + overlap * 4000 + bends * 80 + len;
     if (score < bestScore) { bestScore = score; best = path; }
   }
   return best;
 }
 
-export function routeWire(start, end, obstacles = [], stub = 20) {
-  return tryRoute(start, end, obstacles, stub);
+export function routeWire(start, end, obstacles = [], stub = 20, ctx = null, gridSize = 10) {
+  const path = tryRoute(start, end, obstacles, stub, ctx, gridSize);
+  // Bu kablonun segmentlerini ctx'e işle ki sonraki kablolar üstünden geçmesin.
+  if (ctx && path) markPathUsed(path, ctx, gridSize);
+  return path;
 }
 
 // ====== Min-heap for A* ======

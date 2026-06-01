@@ -1,4 +1,5 @@
 import React from 'react';
+import axios from 'axios';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -8,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Trash2, Upload, Plus } from 'lucide-react';
 import { DEVICE_CATEGORIES } from '@/features/wiring/lib/devices';
-import { uploadImage, fileUrl, createTemplate, updateTemplate } from '@/features/wiring/lib/api';
+import { uploadImage, fileUrl, createTemplate, updateTemplate, API } from '@/features/wiring/lib/api';
 import { toast } from 'sonner';
 
 function defaultPorts() {
@@ -31,6 +32,7 @@ function fromTemplate(tpl) {
     rating_unit: tpl.rating_unit || '',
     notes: tpl.notes || '',
     image_id: tpl.image_id || null,
+    image_url: tpl.image_url || null,
     ports: (tpl.ports || []).map((p) => ({ name: p.name, side: p.side, offset: p.offset, color: p.color })),
   } : {
     name: '',
@@ -43,6 +45,7 @@ function fromTemplate(tpl) {
     rating_unit: '',
     notes: '',
     image_id: null,
+    image_url: null,
     ports: defaultPorts(),
   };
 }
@@ -50,8 +53,24 @@ function fromTemplate(tpl) {
 export default function TemplateEditor({ open, onOpenChange, template, onSaved }) {
   const [form, setForm] = React.useState(() => fromTemplate(template));
   const [saving, setSaving] = React.useState(false);
+  const [products, setProducts] = React.useState([]);
+  const [productQuery, setProductQuery] = React.useState('');
 
   React.useEffect(() => { setForm(fromTemplate(template)); }, [template, open]);
+
+  // Dialog açılınca Karavan ürünlerinden görselli olanları çek (görsel seçimi için).
+  React.useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    axios.get(`${API}/products?skip_pagination=true`)
+      .then((r) => {
+        if (cancelled) return;
+        const items = Array.isArray(r.data) ? r.data : (r.data?.products || r.data?.items || []);
+        setProducts(items.filter((p) => p.image_url));
+      })
+      .catch(() => { /* ürünler çekilemezse sadece yükleme seçeneği kalır */ });
+    return () => { cancelled = true; };
+  }, [open]);
 
   const set = (patch) => setForm((s) => ({ ...s, ...patch }));
   const updatePort = (i, patch) => setForm((s) => ({ ...s, ports: s.ports.map((p, idx) => idx === i ? { ...p, ...patch } : p) }));
@@ -63,7 +82,7 @@ export default function TemplateEditor({ open, onOpenChange, template, onSaved }
     if (!file) return;
     try {
       const data = await uploadImage(file);
-      set({ image_id: data.id });
+      set({ image_id: data.id, image_url: null });
       toast.success('Görsel yüklendi');
     } catch {
       toast.error('Görsel yüklenemedi');
@@ -86,6 +105,7 @@ export default function TemplateEditor({ open, onOpenChange, template, onSaved }
         rating_unit: form.rating_unit,
         notes: form.notes,
         image_id: form.image_id,
+        image_url: form.image_url || null,
         ports: form.ports,
       };
       const saved = template?.id
@@ -176,18 +196,57 @@ export default function TemplateEditor({ open, onOpenChange, template, onSaved }
                   <span>{form.image_id ? 'DEĞİŞTİR' : 'YÜKLE'}</span>
                   <input type="file" accept="image/*" className="hidden" onChange={onImage} data-testid="tpl-image-input" />
                 </label>
-                {form.image_id && (
+                {(form.image_id || form.image_url) && (
                   <>
                     <div className="w-12 h-12 border border-[var(--border-interactive)] bg-white flex items-center justify-center overflow-hidden">
-                      <img src={fileUrl(form.image_id)} alt="preview" className="max-w-full max-h-full" />
+                      <img src={form.image_id ? fileUrl(form.image_id) : form.image_url} alt="preview" className="max-w-full max-h-full" />
                     </div>
                     <Button variant="ghost" size="sm" className="h-9 rounded-none text-[var(--accent-danger)] hover:bg-[var(--bg-hover)]"
-                            onClick={() => set({ image_id: null })}>
+                            onClick={() => set({ image_id: null, image_url: null })}>
                       <Trash2 className="w-3 h-3" />
                     </Button>
                   </>
                 )}
               </div>
+            </div>
+
+            {/* Karavan ürünlerinden görsel seç */}
+            <div className="space-y-1">
+              <Label className="panel-title">Ürünlerden Görsel Seç</Label>
+              <Input
+                value={productQuery}
+                onChange={(e) => setProductQuery(e.target.value)}
+                placeholder="Ürün ara..."
+                className="tech-input"
+              />
+              <ScrollArea className="h-32 border border-[var(--border-interactive)] bg-[var(--bg-input)]">
+                {products.length === 0 ? (
+                  <div className="text-[var(--text-tertiary)] text-[10px] p-2">
+                    Görselli ürün bulunamadı (veya ürünler yüklenemedi).
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-5 gap-1 p-1">
+                    {products
+                      .filter((p) => !productQuery || (p.name || '').toLowerCase().includes(productQuery.toLowerCase()))
+                      .slice(0, 80)
+                      .map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          title={p.name}
+                          onClick={() => set({ image_url: p.image_url, image_id: null })}
+                          className={`aspect-square border bg-white overflow-hidden transition-colors ${
+                            form.image_url === p.image_url
+                              ? 'border-[var(--accent-cyan)]'
+                              : 'border-[var(--border-interactive)] hover:border-[var(--accent-cyan)]'
+                          }`}
+                        >
+                          <img src={p.image_url} alt={p.name} className="w-full h-full object-contain" loading="lazy" />
+                        </button>
+                      ))}
+                  </div>
+                )}
+              </ScrollArea>
             </div>
           </div>
 

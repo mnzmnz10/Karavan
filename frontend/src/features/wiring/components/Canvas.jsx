@@ -98,10 +98,46 @@ const CanvasInner = React.forwardRef(function CanvasInner(_, ref) {
       // and end devices' bbox still gets respected for the rest of the path.
       const pts = routingMode === 'astar'
         ? aStarRoute(from, to, obstacles, ctx, { gridSize: 10, stub: 24 })
-        : routeWire(from, to, obstacles.filter((o) => o.id !== w.from.deviceId && o.id !== w.to.deviceId), 24);
+        : routeWire(from, to, obstacles, 24, ctx, 10);
       return { ...w, points: pts, from, to };
     });
   }, [wires, devices, portMap, routingMode]);
+
+  // ====== Etiket konumları: en uzun segment + çakışma çözümü ======
+  const labelAnchors = useMemo(() => {
+    // 1) Her kablo için etiketi EN UZUN segmentin ortasına yerleştir
+    //    (kısa çıkış stub'larında toplanıp üst üste binmesin).
+    const raw = wirePaths.map((w) => {
+      const pts = w.points || [];
+      if (pts.length < 2) return { id: w.id, x: 0, y: 0 };
+      let bestLen = -1, ax = 0, ay = 0;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const p = pts[i], q = pts[i + 1];
+        const len = Math.abs(q.x - p.x) + Math.abs(q.y - p.y);
+        if (len > bestLen) { bestLen = len; ax = (p.x + q.x) / 2; ay = (p.y + q.y) / 2; }
+      }
+      return { id: w.id, x: ax, y: ay };
+    });
+    // 2) Yakın etiketleri dikey kaydırarak çakışmayı önle.
+    const placed = [];
+    const minDX = 50, minDY = 12;
+    for (const a of raw) {
+      let y = a.y, moved = true, guard = 0;
+      while (moved && guard++ < 30) {
+        moved = false;
+        for (const p of placed) {
+          if (Math.abs(p.x - a.x) < minDX && Math.abs(p.y - y) < minDY) {
+            y = p.y + minDY;
+            moved = true;
+          }
+        }
+      }
+      placed.push({ id: a.id, x: a.x, y });
+    }
+    const map = new Map();
+    for (const p of placed) map.set(p.id, { x: p.x, y: p.y });
+    return map;
+  }, [wirePaths]);
 
   // ====== Crossings for bridge effect ======
   const crossings = useMemo(() => {
@@ -432,6 +468,7 @@ const CanvasInner = React.forwardRef(function CanvasInner(_, ref) {
                 wire={w}
                 selected={selectedId === w.id && selectedType === 'wire'}
                 showLabel={showLabels}
+                labelAnchor={labelAnchors.get(w.id)}
                 bridges={bridgesByWire.get(w.id) || []}
                 onSelect={() => store.select(w.id, 'wire')}
                 onAddPoint={(idx, p) => {
@@ -482,6 +519,23 @@ const CanvasInner = React.forwardRef(function CanvasInner(_, ref) {
             ))}
           </g>
 
+          {/* Kablo etiketleri — en üst katman: kablo ve cihazların arkasında kalmaz */}
+          <g>
+            {wirePaths.map((w) => (
+              <WireLabel
+                key={`lbl-${w.id}`}
+                wire={w}
+                labelAnchor={labelAnchors.get(w.id)}
+                showLabel={showLabels}
+                onLabelMouseDown={(e) => {
+                  e.stopPropagation();
+                  const { x, y } = screenToCanvas(e.clientX, e.clientY);
+                  setDragLabel({ wireId: w.id, anchorX: x - (w.labelOffset?.x || 0), anchorY: y - (w.labelOffset?.y || 0) });
+                }}
+              />
+            ))}
+          </g>
+
           {/* Selection rectangle */}
           {selRect && (
             <rect
@@ -525,9 +579,9 @@ function DeviceSvg({ device, selected, onMouseDown, onPortMouseDown, onCornerMou
       />
       <rect x={0} y={0} width={device.w} height={4} fill={accent} opacity={0.6} />
 
-      {device.imageId ? (
+      {device.imageId || device.imageUrl ? (
         <image
-          href={fileUrl(device.imageId)}
+          href={device.imageId ? fileUrl(device.imageId) : device.imageUrl}
           x={4} y={8}
           width={device.w - 8} height={device.h - 30}
           preserveAspectRatio="xMidYMid meet"
@@ -607,7 +661,7 @@ function DeviceSvg({ device, selected, onMouseDown, onPortMouseDown, onCornerMou
   );
 }
 
-function WireSvg({ wire, selected, showLabel, bridges, onSelect, onAddPoint, onPointMouseDown, onLabelMouseDown }) {
+function WireSvg({ wire, selected, showLabel, labelAnchor, bridges, onSelect, onAddPoint, onPointMouseDown, onLabelMouseDown }) {
   const { points, color, thickness, style, segmentColors } = wire;
   const label = getWireDisplayLabel(wire);
   if (!points || points.length < 2) return null;
@@ -660,15 +714,9 @@ function WireSvg({ wire, selected, showLabel, bridges, onSelect, onAddPoint, onP
     <circle key={i} cx={c.x} cy={c.y} r={bridgeRadius} fill="var(--bg-canvas)" stroke={color} strokeWidth={thickness} />
   ));
 
-  let labelX = 0, labelY = 0;
-  if (points.length >= 2) {
-    const mid = Math.floor(points.length / 2);
-    const a = points[Math.max(0, mid - 1)];
-    const b = points[mid] || a;
-    labelX = (a.x + b.x) / 2;
-    labelY = (a.y + b.y) / 2;
-  }
-  if (wire.labelOffset) { labelX += wire.labelOffset.x; labelY += wire.labelOffset.y; }
+  // Not: Etiket (kablo kesit/tip yazısı) artık burada DEĞİL — tüm kablolardan ve
+  // cihazlardan SONRA, ayrı bir üst katmanda (WireLabel) render edilir ki başka
+  // kabloların/cihazların arkasında kalmasın.
 
   return (
     <g onClick={(e) => { e.stopPropagation(); onSelect(); }} data-testid={`wire-${wire.id}`}>
@@ -691,21 +739,26 @@ function WireSvg({ wire, selected, showLabel, bridges, onSelect, onAddPoint, onP
           onMouseDown={(e) => onPointMouseDown(i, e)}
         />
       ))}
+    </g>
+  );
+}
 
-      {showLabel && wire.showLabel !== false && label ? (
-        <g
-          transform={`translate(${labelX} ${labelY})`}
-          onMouseDown={onLabelMouseDown}
-          style={{ cursor: 'move' }}
-        >
-          <rect x={-label.length * 3 - 4} y={-9} width={label.length * 6 + 8} height={14}
-                fill="#0D0F14" stroke={color} strokeWidth="0.8" />
-          <text x={0} y={1} textAnchor="middle" alignmentBaseline="middle" fill="#F8F9FA"
-                fontSize="9" fontFamily="JetBrains Mono, monospace">
-            {label}
-          </text>
-        </g>
-      ) : null}
+// Kablo etiketi (kesit/tip yazısı) — ayrı üst katman bileşeni. Tüm kablolar ve
+// cihazlardan sonra render edilir ki hiçbir şeyin arkasında kalmasın.
+function WireLabel({ wire, labelAnchor, showLabel, onLabelMouseDown }) {
+  const label = getWireDisplayLabel(wire);
+  if (!showLabel || wire.showLabel === false || !label) return null;
+  let lx = labelAnchor ? labelAnchor.x : 0;
+  let ly = labelAnchor ? labelAnchor.y : 0;
+  if (wire.labelOffset) { lx += wire.labelOffset.x; ly += wire.labelOffset.y; }
+  return (
+    <g transform={`translate(${lx} ${ly})`} onMouseDown={onLabelMouseDown} style={{ cursor: 'move' }}>
+      <rect x={-label.length * 2 - 3} y={-6} width={label.length * 4 + 6} height={10}
+            fill="#0D0F14" stroke={wire.color} strokeWidth="0.6" rx="1" />
+      <text x={0} y={0.5} textAnchor="middle" alignmentBaseline="middle" fill="#F8F9FA"
+            fontSize="6.5" fontFamily="JetBrains Mono, monospace">
+        {label}
+      </text>
     </g>
   );
 }
