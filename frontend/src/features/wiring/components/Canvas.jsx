@@ -579,14 +579,31 @@ function DeviceSvg({ device, selected, onMouseDown, onPortMouseDown, onCornerMou
       />
       <rect x={0} y={0} width={device.w} height={4} fill={accent} opacity={0.6} />
 
-      {device.imageId || device.imageUrl ? (
-        <image
-          href={device.imageId ? fileUrl(device.imageId) : device.imageUrl}
-          x={4} y={8}
-          width={device.w - 8} height={device.h - 30}
-          preserveAspectRatio="xMidYMid meet"
-        />
-      ) : Icon ? (
+      {device.imageId || device.imageUrl ? (() => {
+        const boxX = 4, boxY = 8, boxW = device.w - 8, boxH = device.h - 30;
+        const scale = device.imageScale || 1;
+        const ox = device.imageOffsetX || 0;
+        const oy = device.imageOffsetY || 0;
+        const fit = device.imageFit === 'cover' ? 'xMidYMid slice' : 'xMidYMid meet';
+        const imgW = boxW * scale, imgH = boxH * scale;
+        const imgX = boxX + (boxW - imgW) / 2 + ox;
+        const imgY = boxY + (boxH - imgH) / 2 + oy;
+        const clipId = `imgclip-${device.id}`;
+        return (
+          <>
+            <clipPath id={clipId}>
+              <rect x={boxX} y={boxY} width={boxW} height={boxH} />
+            </clipPath>
+            <g clipPath={`url(#${clipId})`}>
+              <image
+                href={device.imageId ? fileUrl(device.imageId) : device.imageUrl}
+                x={imgX} y={imgY} width={imgW} height={imgH}
+                preserveAspectRatio={fit}
+              />
+            </g>
+          </>
+        );
+      })() : Icon ? (
         <g transform={`translate(${device.w / 2 - 14} ${device.h / 2 - 22})`} pointerEvents="none">
           <foreignObject x={0} y={0} width={28} height={28}>
             <div style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B949E' }}>

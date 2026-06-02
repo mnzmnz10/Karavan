@@ -20,6 +20,12 @@ export function fileUrl(id) {
   return `${API}/wiring-files/${id}`;
 }
 
+// Görselin arka planını (köşe/beyaz) kaldırır, yeni şeffaf PNG image_id döndürür.
+export async function removeBackground(payload) {
+  const { data } = await client.post('/wiring-remove-bg', payload);
+  return data; // { id, url }
+}
+
 export async function listProjects() {
   const { data } = await client.get('/wiring-projects');
   return data;

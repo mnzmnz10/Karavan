@@ -7583,6 +7583,80 @@ async def wiring_delete_template(template_id: str):
         raise HTTPException(404, "Şablon bulunamadı.")
     return {"ok": True}
 
+# ---- Arka plan kaldırma (Pillow, köşe flood-fill — beyaz/düz arka plan) ----
+class WiringRemoveBgRequest(BaseModel):
+    image_url: Optional[str] = None
+    image_id: Optional[str] = None
+    tolerance: int = 36
+
+def _wiring_remove_bg(raw: bytes, tolerance: int = 36) -> bytes:
+    from PIL import Image
+    from collections import deque
+    img = Image.open(BytesIO(raw)).convert("RGBA")
+    # Çok büyük görselleri küçült (performans + Pi belleği)
+    max_side = 700
+    if max(img.size) > max_side:
+        ratio = max_side / max(img.size)
+        img = img.resize((int(img.size[0] * ratio), int(img.size[1] * ratio)))
+    w, h = img.size
+    px = img.load()
+    ref = px[0, 0]  # sol-üst köşe = arka plan referansı
+    def near(c):
+        return abs(c[0] - ref[0]) <= tolerance and abs(c[1] - ref[1]) <= tolerance and abs(c[2] - ref[2]) <= tolerance
+    visited = bytearray(w * h)
+    dq = deque()
+    for (cx, cy) in [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)]:
+        i = cy * w + cx
+        if not visited[i]:
+            visited[i] = 1
+            dq.append((cx, cy))
+    while dq:
+        x, y = dq.popleft()
+        r, g, b, a = px[x, y]
+        if not near((r, g, b)):
+            continue
+        px[x, y] = (r, g, b, 0)  # şeffaf
+        for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+            if 0 <= nx < w and 0 <= ny < h:
+                i = ny * w + nx
+                if not visited[i]:
+                    visited[i] = 1
+                    dq.append((nx, ny))
+    out = BytesIO()
+    img.save(out, format="PNG")
+    return out.getvalue()
+
+@api_router.post("/wiring-remove-bg")
+async def wiring_remove_bg(req: WiringRemoveBgRequest):
+    # Kaynak görsel verisini al
+    if req.image_id:
+        rec = await db.wiring_files.find_one({"id": req.image_id, "is_deleted": False}, {"_id": 0})
+        if not rec:
+            raise HTTPException(404, "Görsel bulunamadı.")
+        raw = _base64.b64decode(rec["data_b64"])
+    elif req.image_url:
+        try:
+            resp = requests.get(req.image_url, timeout=20)
+            resp.raise_for_status()
+            raw = resp.content
+        except Exception as e:
+            raise HTTPException(400, f"Görsel indirilemedi: {e}")
+    else:
+        raise HTTPException(400, "image_url veya image_id gerekli.")
+    try:
+        out_bytes = await asyncio.to_thread(_wiring_remove_bg, raw, req.tolerance)
+    except Exception as e:
+        logger.error(f"Arka plan kaldırma hatası: {e}")
+        raise HTTPException(500, f"Arka plan kaldırılamadı: {e}")
+    file_id = str(uuid.uuid4())
+    doc = {
+        "id": file_id, "content_type": "image/png", "original_filename": f"{file_id}.png",
+        "size": len(out_bytes), "data_b64": _base64.b64encode(out_bytes).decode("ascii"),
+        "is_deleted": False, "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.wiring_files.insert_one(doc.copy())
+    return {"id": file_id, "url": f"/api/wiring-files/{file_id}"}
+
 # ---- PDF export (svglib + reportlab; cairosvg yerine Windows uyumu) ----
 @api_router.post("/wiring-export-pdf")
 async def wiring_export_pdf(req: WiringPdfExportRequest):

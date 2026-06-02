@@ -10,7 +10,7 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { WIRE_PRESETS, COLOR_PALETTE, getWirePreset } from '@/features/wiring/lib/wireTypes';
 import { Trash2, Upload, ArrowUp, ArrowDown, Plus, RotateCw } from 'lucide-react';
-import { uploadImage, fileUrl } from '@/features/wiring/lib/api';
+import { uploadImage, fileUrl, removeBackground } from '@/features/wiring/lib/api';
 import { toast } from 'sonner';
 import { getPortAbsolute } from '@/features/wiring/store/editorStore';
 import { aStarRoute, routeWire } from '@/features/wiring/lib/routing';
@@ -197,16 +197,31 @@ function ProjectForm({ defaults }) {
 
 function DeviceForm({ device }) {
   const store = useEditorStore();
+  const [removingBg, setRemovingBg] = React.useState(false);
   const update = (patch) => store.updateDevice(device.id, patch);
   const onUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
       const data = await uploadImage(file);
-      update({ imageId: data.id });
+      update({ imageId: data.id, imageUrl: null });
       toast.success('Görsel yüklendi');
     } catch (err) {
       toast.error('Yükleme başarısız');
+    }
+  };
+  const onRemoveBg = async () => {
+    if (!device.imageId && !device.imageUrl) return;
+    setRemovingBg(true);
+    try {
+      const payload = device.imageId ? { image_id: device.imageId } : { image_url: device.imageUrl };
+      const data = await removeBackground(payload);
+      update({ imageId: data.id, imageUrl: null });
+      toast.success('Arka plan kaldırıldı');
+    } catch (err) {
+      toast.error('Arka plan kaldırılamadı');
+    } finally {
+      setRemovingBg(false);
     }
   };
   return (
@@ -263,14 +278,61 @@ function DeviceForm({ device }) {
               <span>YÜKLE</span>
               <input type="file" accept="image/*" className="hidden" onChange={onUpload} data-testid="device-image-input" />
             </label>
-            {device.imageId && (
+            {(device.imageId || device.imageUrl) && (
               <Button variant="ghost" size="sm" className="h-8 rounded-none text-[var(--accent-danger)] hover:bg-[var(--bg-hover)]"
-                      onClick={() => update({ imageId: null })}>
+                      onClick={() => update({ imageId: null, imageUrl: null })}>
                 <Trash2 className="w-3 h-3" />
               </Button>
             )}
           </div>
         </Field>
+
+        {(device.imageId || device.imageUrl) && (
+          <div className="space-y-2 border border-[var(--border-structural)] p-2">
+            <div className="panel-title">GÖRSEL AYARLA (KIRP / YAKINLAŞTIR)</div>
+            <Field label={`Yakınlaştırma — ${(device.imageScale || 1).toFixed(2)}x`}>
+              <input type="range" min="0.3" max="3" step="0.05"
+                     value={device.imageScale || 1}
+                     onChange={(e) => update({ imageScale: parseFloat(e.target.value) })}
+                     className="w-full" />
+            </Field>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Yatay konum">
+                <input type="range" min={-Math.round(device.w / 2)} max={Math.round(device.w / 2)} step="1"
+                       value={device.imageOffsetX || 0}
+                       onChange={(e) => update({ imageOffsetX: parseFloat(e.target.value) })}
+                       className="w-full" />
+              </Field>
+              <Field label="Dikey konum">
+                <input type="range" min={-Math.round(device.h / 2)} max={Math.round(device.h / 2)} step="1"
+                       value={device.imageOffsetY || 0}
+                       onChange={(e) => update({ imageOffsetY: parseFloat(e.target.value) })}
+                       className="w-full" />
+              </Field>
+            </div>
+            <div className="flex gap-1">
+              <button type="button"
+                      onClick={() => update({ imageFit: 'contain' })}
+                      className={`flex-1 h-7 text-[10px] border ${(!device.imageFit || device.imageFit === 'contain') ? 'border-[var(--accent-cyan)] text-[var(--accent-cyan)]' : 'border-[var(--border-interactive)] text-[var(--text-secondary)]'} hover:border-[var(--accent-cyan)]`}>
+                SIĞDIR
+              </button>
+              <button type="button"
+                      onClick={() => update({ imageFit: 'cover' })}
+                      className={`flex-1 h-7 text-[10px] border ${device.imageFit === 'cover' ? 'border-[var(--accent-cyan)] text-[var(--accent-cyan)]' : 'border-[var(--border-interactive)] text-[var(--text-secondary)]'} hover:border-[var(--accent-cyan)]`}>
+                DOLDUR (KIRP)
+              </button>
+              <button type="button"
+                      onClick={() => update({ imageScale: 1, imageOffsetX: 0, imageOffsetY: 0, imageFit: 'contain' })}
+                      className="flex-1 h-7 text-[10px] border border-[var(--border-interactive)] text-[var(--text-secondary)] hover:border-[var(--accent-cyan)]">
+                SIFIRLA
+              </button>
+            </div>
+            <button type="button" onClick={onRemoveBg} disabled={removingBg}
+                    className="w-full h-7 text-[10px] border border-[var(--border-interactive)] text-[var(--accent-cyan)] hover:border-[var(--accent-cyan)] hover:bg-[var(--bg-hover)] disabled:opacity-50">
+              {removingBg ? 'KALDIRILIYOR…' : '✂ ARKA PLANI KALDIR'}
+            </button>
+          </div>
+        )}
 
         <div className="flex gap-2 pt-2">
           <Button variant="ghost" size="sm" className="flex-1 h-8 rounded-none hover:bg-[var(--bg-hover)]"
