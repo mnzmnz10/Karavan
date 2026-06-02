@@ -75,18 +75,28 @@ async def create_indexes():
         await db.products.create_index("discounted_price_try", sparse=True)
         
         # Enhanced text search index with weights for better relevance
-        await db.products.create_index([
-            ("name", "text"), 
-            ("description", "text"),
-            ("brand", "text")
-        ], {
-            "weights": {
-                "name": 10,      # Name is most important
-                "brand": 5,      # Brand is second
-                "description": 1  # Description is least important
-            },
-            "name": "products_text_search"
-        })
+        try:
+            await db.products.create_index(
+                [("name", "text"), ("description", "text"), ("brand", "text")],
+                weights={"name": 10, "brand": 5, "description": 1},
+                name="products_text_search",
+            )
+        except Exception as _txt_err:
+            # Eski/ağırlıksız bir text index varsa (IndexOptionsConflict) onu düşürüp
+            # ağırlıklı olanı yeniden oluştur. Arama zaten çalışıyordu; bu iyileştirme.
+            logger.warning(f"Text index conflict, yeniden oluşturuluyor: {_txt_err}")
+            try:
+                existing = await db.products.index_information()
+                for idx_name, info in existing.items():
+                    if any(field == "_fts" for field, _ in info.get("key", [])):
+                        await db.products.drop_index(idx_name)
+                await db.products.create_index(
+                    [("name", "text"), ("description", "text"), ("brand", "text")],
+                    weights={"name": 10, "brand": 5, "description": 1},
+                    name="products_text_search",
+                )
+            except Exception as _txt_err2:
+                logger.warning(f"Ağırlıklı text index kurulamadı (mevcut index kullanılacak): {_txt_err2}")
         
         # Companies collection indexes - ENHANCED
         await db.companies.create_index("name")
@@ -2295,6 +2305,7 @@ async def create_quote(quote: QuoteCreate):
             "name": quote.name,
             "customer_name": quote.customer_name,
             "customer_email": quote.customer_email,
+            "customer_id": quote.customer_id,  # Müşteriye teklif bağlama (bug fix)
             "discount_percentage": quote.discount_percentage,
             "labor_cost": labor_cost,  # İşçilik maliyeti eklendi
             "total_list_price": total_list_price,
@@ -2336,9 +2347,11 @@ async def get_quote(quote_id: str):
         
         if not quote:
             raise HTTPException(status_code=404, detail="Quote not found")
-        
+
         return quote
-        
+
+    except HTTPException:
+        raise  # 404'ü 500'e çevirme; olduğu gibi ilet
     except Exception as e:
         logger.error(f"Error fetching quote: {e}")
         raise HTTPException(status_code=500, detail=f"Error fetching quote: {str(e)}")
