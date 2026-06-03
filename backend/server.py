@@ -238,44 +238,15 @@ logger = logging.getLogger(__name__)
 cache = {}
 CACHE_DURATION = 300  # 5 minutes
 
-# Cache middleware
+# Zamanlama middleware'i.
+# NOT: Eski cache mantığı kaldırıldı — route'lar StreamingResponse döndürdüğü için
+# response.body okumak ya işe yaramıyordu (cache hiç dolmuyordu) ya da stream'i
+# tüketip istemciye BOŞ yanıt gönderme riski taşıyordu (07/05 raporu). Gerçek
+# önbellekleme gerekirse fastapi-cache2 gibi test edilmiş bir kütüphane kullanılmalı.
 @app.middleware("http")
-async def cache_middleware(request: Request, call_next):
-    """Simple in-memory cache middleware for GET requests"""
+async def timing_middleware(request: Request, call_next):
     start_time = time.time()
-    
-    # Only cache GET requests to specific endpoints
-    if request.method == "GET" and any(path in str(request.url) for path in ["/api/products", "/api/companies", "/api/categories"]):
-        cache_key = str(request.url)
-        
-        # Check cache
-        if cache_key in cache:
-            cached_data, timestamp = cache[cache_key]
-            if time.time() - timestamp < CACHE_DURATION:
-                logger.info(f"Cache HIT for {cache_key}")
-                response = JSONResponse(content=cached_data)
-                response.headers["X-Cache"] = "HIT"
-                response.headers["X-Response-Time"] = f"{(time.time() - start_time) * 1000:.2f}ms"
-                return response
-    
-    # Process request
     response = await call_next(request)
-    
-    # Cache successful GET responses
-    if (request.method == "GET" and 
-        response.status_code == 200 and 
-        any(path in str(request.url) for path in ["/api/products", "/api/companies", "/api/categories"])):
-        
-        cache_key = str(request.url)
-        if hasattr(response, 'body'):
-            import json
-            try:
-                body = json.loads(response.body.decode())
-                cache[cache_key] = (body, time.time())
-                logger.info(f"Cache SET for {cache_key}")
-            except:
-                pass
-    
     response.headers["X-Response-Time"] = f"{(time.time() - start_time) * 1000:.2f}ms"
     return response
 
@@ -776,11 +747,18 @@ class BackgroundScheduler:
     def __init__(self):
         self.running = False
         self.thread = None
-    
+        self.loop = None  # ana event loop referansı (worker thread'den thread-safe gönderim için)
+
     def start(self):
         """Start background scheduler for Raspberry Pi"""
         if not self.running:
             self.running = True
+            # start() lifespan (async context) içinde çağrılır; çalışan ana loop'u yakala.
+            try:
+                self.loop = asyncio.get_running_loop()
+            except RuntimeError:
+                self.loop = None
+                logger.warning("Background scheduler: çalışan event loop bulunamadı")
             self.thread = threading.Thread(target=self._run_scheduler, daemon=True)
             self.thread.start()
             logger.info("Background scheduler started for Raspberry Pi stability")
@@ -797,19 +775,23 @@ class BackgroundScheduler:
         import time
         while self.running:
             try:
-                # Update exchange rates every 30 minutes
-                asyncio.run_coroutine_threadsafe(
-                    currency_service.get_exchange_rates(), 
-                    asyncio.get_event_loop()
-                )
-                logger.info("Background exchange rate update completed")
-                
+                # Update exchange rates every 30 minutes — ana loop'a thread-safe gönder
+                if self.loop and self.loop.is_running():
+                    fut = asyncio.run_coroutine_threadsafe(
+                        currency_service.get_exchange_rates(),
+                        self.loop,
+                    )
+                    fut.result(timeout=90)  # tamamlanmayı bekle ki hatalar yakalansın
+                    logger.info("Background exchange rate update completed")
+                else:
+                    logger.warning("Background scheduler: ana event loop yok/çalışmıyor, atlandı")
+
                 # Sleep for 30 minutes
                 for _ in range(1800):  # 30 minutes = 1800 seconds
                     if not self.running:
                         break
                     time.sleep(1)
-                        
+
             except Exception as e:
                 logger.error(f"Background scheduler error: {e}")
                 time.sleep(300)  # Wait 5 minutes on error
