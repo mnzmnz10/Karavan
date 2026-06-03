@@ -5360,7 +5360,7 @@ class AIConfirmRequest(BaseModel):
 
 @api_router.post("/companies/{company_id}/ai-extract-products")
 async def ai_extract_products(company_id: str, file: UploadFile = File(...)):
-    """PDF / Excel / Görsel yükle -> Gemini ile ürünleri çıkar.
+    """PDF / Excel / Görsel yükle -> GPT-4o mini ile ürünleri çıkar.
     KAYDETMEZ; kullanıcının kontrol edip onaylaması için önizleme listesi döner."""
     company = await db.companies.find_one({"id": company_id})
     if not company:
@@ -5380,7 +5380,7 @@ async def ai_extract_products(company_id: str, file: UploadFile = File(...)):
     if len(data) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail=f"Dosya çok büyük (en fazla {MAX_UPLOAD_BYTES // (1024*1024)} MB).")
 
-    # Gemini cagrisi senkron -> thread havuzunda calistir (event loop bloke olmasin)
+    # AI cagrisi senkron -> thread havuzunda calistir (event loop bloke olmasin)
     loop = asyncio.get_event_loop()
     products = await loop.run_in_executor(None, _extract_products_from_file, data, filename, ext, content_type)
 
@@ -6673,6 +6673,49 @@ GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
 GEMINI_MODEL = 'gemini-flash-latest'  # gemini-1.5-flash alias
 GEMINI_ENDPOINT = f'https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent'
 
+# OpenAI (GPT-4o mini) - sistemdeki tum yapay zeka islerinin (batarya analizi + urun cikarma) ana modeli
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
+OPENAI_MODEL = os.environ.get('OPENAI_MODEL', 'gpt-4o-mini')
+OPENAI_ENDPOINT = 'https://api.openai.com/v1/chat/completions'
+
+
+def _call_openai_chat(messages: list, max_tokens: int = 2048, temperature: float = 0.2, json_mode: bool = False) -> str:
+    """OpenAI Chat Completions (GPT-4o mini) cagrisi. messages OpenAI formatinda; metin doner.
+    json_mode=True ise response_format JSON nesnesi zorlanir (prompt'ta 'json' gecmeli)."""
+    if not OPENAI_API_KEY:
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY tanımlı değil (backend/.env).")
+    payload = {
+        "model": OPENAI_MODEL,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+    }
+    if json_mode:
+        payload["response_format"] = {"type": "json_object"}
+    try:
+        response = requests.post(
+            OPENAI_ENDPOINT,
+            headers={"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"},
+            json=payload,
+            timeout=120,
+        )
+    except requests.RequestException as e:
+        logger.error(f"OpenAI bağlantı hatası: {e}")
+        raise HTTPException(status_code=504, detail="OpenAI API'ye ulaşılamadı.")
+    if response.status_code != 200:
+        logger.error(f"OpenAI API hatası ({response.status_code}): {response.text[:500]}")
+        raise HTTPException(status_code=502, detail=f"OpenAI API hatası: {response.status_code}")
+    data = response.json()
+    choices = data.get('choices') or []
+    if not choices:
+        raise HTTPException(status_code=502, detail="OpenAI boş yanıt döndü.")
+    return choices[0].get('message', {}).get('content', '') or ''
+
+
+def _image_bytes_to_data_url(image_bytes: bytes, mime: str = "image/jpeg") -> str:
+    """Goruntu baytlarini OpenAI vision icin data URL'ine cevir."""
+    return f"data:{mime};base64,{base64.b64encode(image_bytes).decode('utf-8')}"
+
 BATTERY_ANALYSIS_PROMPT = """Aşağıdaki görseller UNI-T UT673A cihazı ile yapılan bir akü testine aittir. Akü tipi (JEL, AGM, Kurşun-Asit vb.), kapasite ve kullanım amacı (marş aküsü, derin döngü/karavan aküsü, ek akü, servis aküsü vb.) hakkında HİÇBİR varsayımda bulunma. Cihazda hangi tipin seçildiği ve akünün hangi amaçla kullanıldığı sana bildirilmemiştir. Senin görevin yalnızca ölçülen değerleri yorumlamak ve akünün GENEL elektriksel sağlık durumunu raporlamaktır.
 
 Aşağıdaki ÇOK ÖZEL formatta yanıt ver. Başka hiçbir başlık, preambül, tarih veya cihaz bilgisi EKLEME:
@@ -6730,74 +6773,31 @@ def _resize_image_to_720p(image_bytes: bytes) -> bytes:
         return image_bytes
 
 
-def _call_gemini_for_battery_analysis(image_bytes_list: list) -> str:
-    """Gemini 1.5 Flash modeline görselleri gönderip Türkçe servis raporu al."""
-    if not GEMINI_API_KEY:
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY tanımlı değil (backend/.env).")
+def _call_ai_for_battery_analysis(image_bytes_list: list) -> str:
+    """GPT-4o mini'ye akü test görsellerini gönderip Türkçe servis raporu al."""
+    if not OPENAI_API_KEY:
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY tanımlı değil (backend/.env).")
 
     if not image_bytes_list:
         raise HTTPException(status_code=400, detail="En az bir görsel yüklemelisiniz.")
 
-    # Parts oluştur: önce prompt, sonra görseller
-    parts = [{"text": BATTERY_ANALYSIS_PROMPT}]
+    content = [{"type": "text", "text": BATTERY_ANALYSIS_PROMPT}]
     for img_bytes in image_bytes_list:
         resized = _resize_image_to_720p(img_bytes)
-        b64 = base64.b64encode(resized).decode('utf-8')
-        parts.append({
-            "inline_data": {
-                "mime_type": "image/jpeg",
-                "data": b64
-            }
+        content.append({
+            "type": "image_url",
+            "image_url": {"url": _image_bytes_to_data_url(resized, "image/jpeg")}
         })
 
-    payload = {
-        "contents": [{"parts": parts}],
-        "generationConfig": {
-            "temperature": 0.4,
-            "topP": 0.9,
-            "topK": 32,
-            "maxOutputTokens": 2048
-        }
-    }
-
-    try:
-        response = requests.post(
-            GEMINI_ENDPOINT,
-            params={"key": GEMINI_API_KEY},
-            json=payload,
-            timeout=90,
-            headers={"Content-Type": "application/json"}
-        )
-        if response.status_code != 200:
-            logger.error(f"Gemini API hatası ({response.status_code}): {response.text[:500]}")
-            raise HTTPException(
-                status_code=502,
-                detail=f"Gemini API hatası: {response.status_code} - {response.text[:200]}"
-            )
-
-        data = response.json()
-        # Yanıt yapısı: candidates[0].content.parts[0].text
-        candidates = data.get('candidates') or []
-        if not candidates:
-            block_reason = data.get('promptFeedback', {}).get('blockReason', 'Bilinmiyor')
-            raise HTTPException(
-                status_code=502,
-                detail=f"Gemini boş yanıt döndü. Engelleme nedeni: {block_reason}"
-            )
-        content = candidates[0].get('content', {})
-        parts_resp = content.get('parts', [])
-        text_chunks = [p.get('text', '') for p in parts_resp if 'text' in p]
-        full_text = "\n".join(t for t in text_chunks if t).strip()
-        if not full_text:
-            raise HTTPException(status_code=502, detail="Gemini yanıtında metin bulunamadı.")
-        return full_text
-    except requests.RequestException as e:
-        logger.error(f"Gemini bağlantı hatası: {e}")
-        raise HTTPException(status_code=504, detail=f"Gemini API'ye ulaşılamadı: {str(e)}")
+    messages = [{"role": "user", "content": content}]
+    full_text = _call_openai_chat(messages, max_tokens=2048, temperature=0.4).strip()
+    if not full_text:
+        raise HTTPException(status_code=502, detail="AI yanıtında metin bulunamadı.")
+    return full_text
 
 
 # ============================================================================
-# AI ÜRÜN ÇIKARMA (PDF / Excel / Görsel -> Gemini -> ürün listesi)
+# AI ÜRÜN ÇIKARMA (PDF / Excel / Görsel -> GPT-4o mini -> ürün listesi)
 # ============================================================================
 
 PRODUCT_EXTRACTION_PROMPT = """Sana bir tedarikçi fiyat listesi verildi (PDF, Excel içeriği veya görsel olabilir).
@@ -6815,27 +6815,11 @@ KURALLAR:
 - Fiyatı olmayan veya 0 olan satırları DAHİL ETME (bunlar genelde başlık/kategoridir).
 - Türkçe sayı formatına dikkat et: nokta binlik, virgül ondalık ayıracıdır.
 - Uydurma ürün ekleme; sadece dosyada GÖRDÜĞÜN ürünleri çıkar.
-- Yanıtı SADECE JSON dizisi olarak ver."""
-
-_PRODUCT_RESPONSE_SCHEMA = {
-    "type": "ARRAY",
-    "items": {
-        "type": "OBJECT",
-        "properties": {
-            "name": {"type": "STRING"},
-            "brand": {"type": "STRING"},
-            "list_price": {"type": "NUMBER"},
-            "discounted_price": {"type": "NUMBER", "nullable": True},
-            "currency": {"type": "STRING"},
-            "description": {"type": "STRING", "nullable": True},
-        },
-        "required": ["name", "list_price"],
-    },
-}
+- Yanıtı SADECE JSON olarak ver."""
 
 
 def _excel_to_text(data: bytes) -> str:
-    """Excel dosyasini Gemini'ye metin olarak vermek icin CSV'ye cevir (tum sayfalar)."""
+    """Excel dosyasini AI'ya metin olarak vermek icin CSV'ye cevir (tum sayfalar)."""
     try:
         sheets = pd.read_excel(BytesIO(data), sheet_name=None, header=None, dtype=str)
     except Exception as e:
@@ -6887,74 +6871,75 @@ def _normalize_currency(value) -> str:
     return 'USD'
 
 
-def _extract_products_from_file(data: bytes, filename: str, ext: str, content_type: str) -> list:
-    """Dosyayi Gemini'ye gonderip yapilandirilmis urun listesi al (KAYDETMEZ)."""
-    if not GEMINI_API_KEY:
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY tanımlı değil (backend/.env).")
+def _pdf_extract_for_ai(data: bytes):
+    """PDF'ten metin çıkar; metin yetersizse (taranmış olabilir) sayfaları görüntüye çevir.
+    (text, [jpeg_bytes]) döner."""
+    import fitz  # pymupdf
+    try:
+        doc = fitz.open(stream=data, filetype="pdf")
+    except Exception as e:
+        logger.warning(f"PDF açılamadı: {e}")
+        raise HTTPException(status_code=422, detail="PDF dosyası okunamadı.")
+    try:
+        text_parts = [page.get_text() for page in doc]
+        full_text = "\n".join(text_parts).strip()
+        if len(full_text) >= 200:
+            return full_text[:200000], []
+        # Az metin -> sayfaları görüntüye çevir (maks 8 sayfa, vision ile oku)
+        images = []
+        for i in range(min(len(doc), 8)):
+            pix = doc[i].get_pixmap(dpi=150)
+            images.append(pix.tobytes("jpeg"))
+        return full_text, images
+    finally:
+        doc.close()
 
-    parts = [{"text": PRODUCT_EXTRACTION_PROMPT}]
+
+def _extract_products_from_file(data: bytes, filename: str, ext: str, content_type: str) -> list:
+    """Dosyayi GPT-4o mini'ye gonderip yapilandirilmis urun listesi al (KAYDETMEZ)."""
+    if not OPENAI_API_KEY:
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY tanımlı değil (backend/.env).")
+
     is_pdf = ext == "pdf" or content_type == "application/pdf"
     is_excel = ext in ("xlsx", "xls")
     is_image = content_type.startswith("image/") or ext in ("png", "jpg", "jpeg", "webp")
+
+    prompt = PRODUCT_EXTRACTION_PROMPT + '\n\nYanıtı {"products": [ ... ]} biçiminde tek bir JSON nesnesi olarak ver.'
+    content = [{"type": "text", "text": prompt}]
 
     if is_excel:
         text = _excel_to_text(data)
         if not text.strip():
             raise HTTPException(status_code=422, detail="Excel dosyası boş görünüyor.")
-        parts.append({"text": f"\n\nFiyat listesi (Excel) içeriği:\n{text}"})
+        content.append({"type": "text", "text": f"\n\nFiyat listesi (Excel) içeriği:\n{text}"})
     elif is_pdf:
-        parts.append({"inline_data": {"mime_type": "application/pdf", "data": base64.b64encode(data).decode('utf-8')}})
+        text, page_images = _pdf_extract_for_ai(data)
+        if text:
+            content.append({"type": "text", "text": f"\n\nFiyat listesi (PDF) içeriği:\n{text}"})
+        for jpeg in page_images:
+            content.append({"type": "image_url", "image_url": {"url": _image_bytes_to_data_url(jpeg, "image/jpeg")}})
+        if not text and not page_images:
+            raise HTTPException(status_code=422, detail="PDF'ten içerik çıkarılamadı.")
     elif is_image:
         img_bytes, mime = _doc_image_bytes(data)
-        parts.append({"inline_data": {"mime_type": mime, "data": base64.b64encode(img_bytes).decode('utf-8')}})
+        content.append({"type": "image_url", "image_url": {"url": _image_bytes_to_data_url(img_bytes, mime)}})
     else:
         raise HTTPException(status_code=400, detail="Desteklenmeyen dosya türü.")
 
-    payload = {
-        "contents": [{"parts": parts}],
-        "generationConfig": {
-            "temperature": 0.1,
-            "maxOutputTokens": 8192,
-            "responseMimeType": "application/json",
-            "responseSchema": _PRODUCT_RESPONSE_SCHEMA,
-        },
-    }
-
-    try:
-        response = requests.post(
-            GEMINI_ENDPOINT,
-            params={"key": GEMINI_API_KEY},
-            json=payload,
-            timeout=120,
-            headers={"Content-Type": "application/json"},
-        )
-    except requests.RequestException as e:
-        logger.error(f"Gemini bağlantı hatası (ürün çıkarma): {e}")
-        raise HTTPException(status_code=504, detail="Gemini API'ye ulaşılamadı.")
-
-    if response.status_code != 200:
-        logger.error(f"Gemini API hatası ({response.status_code}): {response.text[:500]}")
-        raise HTTPException(status_code=502, detail=f"Gemini API hatası: {response.status_code}")
-
-    data_json = response.json()
-    candidates = data_json.get('candidates') or []
-    if not candidates:
-        block = data_json.get('promptFeedback', {}).get('blockReason', 'Bilinmiyor')
-        raise HTTPException(status_code=502, detail=f"Gemini boş yanıt döndü (neden: {block}).")
-    parts_resp = candidates[0].get('content', {}).get('parts', [])
-    raw_text = "".join(p.get('text', '') for p in parts_resp if 'text' in p).strip()
+    messages = [{"role": "user", "content": content}]
+    raw_text = _call_openai_chat(messages, max_tokens=8192, temperature=0.1, json_mode=True).strip()
     if not raw_text:
         return []
 
     try:
         parsed = json.loads(raw_text)
     except json.JSONDecodeError:
-        # Bazen modeli ```json ... ``` ile sarabilir; temizleyip tekrar dene
+        # Modeli ```json ... ``` ile sarmis olabilir; temizleyip tekrar dene
         cleaned = re.sub(r'^```(?:json)?|```$', '', raw_text.strip(), flags=re.MULTILINE).strip()
         try:
             parsed = json.loads(cleaned)
         except json.JSONDecodeError:
-            logger.error(f"Gemini ürün JSON parse edilemedi: {raw_text[:300]}")
+            logger.error(f"AI ürün JSON parse edilemedi: {raw_text[:300]}")
             raise HTTPException(status_code=502, detail="AI yanıtı çözümlenemedi, tekrar deneyin.")
 
     if isinstance(parsed, dict):
@@ -6995,7 +6980,7 @@ def _extract_products_from_file(data: bytes, filename: str, ext: str, content_ty
 @api_router.post("/battery-analysis")
 async def battery_analysis(files: List[UploadFile] = File(...)):
     """
-    Tek bir akü için UT673A test görsellerini Gemini 1.5 Flash ile analiz et.
+    Tek bir akü için UT673A test görsellerini GPT-4o mini ile analiz et.
     Maks. 5 görsel önerilir.
     """
     if not files or len(files) == 0:
@@ -7025,9 +7010,9 @@ async def battery_analysis(files: List[UploadFile] = File(...)):
     if not image_bytes_list:
         raise HTTPException(status_code=400, detail="Geçerli görsel verisi bulunamadı.")
 
-    # Gemini'yi senkron çağırıyoruz; FastAPI thread havuzunda çalıştır
+    # AI cagrisi senkron; FastAPI thread havuzunda çalıştır
     loop = asyncio.get_event_loop()
-    report_text = await loop.run_in_executor(None, _call_gemini_for_battery_analysis, image_bytes_list)
+    report_text = await loop.run_in_executor(None, _call_ai_for_battery_analysis, image_bytes_list)
 
     # Görselleri base64 olarak da geri döndür (frontend önizleme + PDF için)
     images_b64 = []
@@ -7040,7 +7025,7 @@ async def battery_analysis(files: List[UploadFile] = File(...)):
         "report": report_text,
         "image_count": len(image_bytes_list),
         "images_base64": images_b64,
-        "model": GEMINI_MODEL,
+        "model": OPENAI_MODEL,
         "analyzed_at": datetime.now(timezone.utc).isoformat()
     }
 
