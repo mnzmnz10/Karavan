@@ -454,8 +454,13 @@ function App() {
   const [uploadCompanyName, setUploadCompanyName] = useState(''); // Excel yükleme için manuel firma adı
   const [useExistingCompany, setUseExistingCompany] = useState(true); // Mevcut firma mı yoksa yeni mi
   const [uploadFile, setUploadFile] = useState(null);
-  const [uploadCurrency, setUploadCurrency] = useState('USD'); // Excel yükleme için para birimi
-  const [uploadDiscount, setUploadDiscount] = useState(''); // Excel yükleme için iskonto yüzdesi
+  const [uploadCurrency, setUploadCurrency] = useState('USD'); // Yükleme için para birimi
+  const [uploadDiscount, setUploadDiscount] = useState(''); // Yükleme için iskonto yüzdesi
+  // AI ürün çıkarma (PDF/Excel/görsel -> önizleme -> onay)
+  const [aiExtracting, setAiExtracting] = useState(false); // çıkarma sürüyor mu
+  const [aiPreviewProducts, setAiPreviewProducts] = useState(null); // çıkarılan ürünler (önizleme); null = önizleme yok
+  const [aiPreviewCompanyId, setAiPreviewCompanyId] = useState(''); // önizlemenin ait olduğu firma
+  const [aiSaving, setAiSaving] = useState(false); // kaydetme sürüyor mu
   const [copyPackageDialog, setCopyPackageDialog] = useState(false); // Paket kopyalama dialog'u
   const [packageToCopy, setPackageToCopy] = useState(null); // Kopyalanacak paket
   const [copyPackageName, setCopyPackageName] = useState(''); // Yeni paket adı
@@ -1478,11 +1483,11 @@ function App() {
     }
   };
 
-  const uploadExcelFile = async () => {
+  // 1. ADIM: Dosyayı (PDF/Excel/görsel) yapay zekâya gönder, ürünleri çıkar ve ÖNİZLEME göster (kaydetmez)
+  const aiExtractProducts = async () => {
     let companyId = null;
     let companyName = '';
 
-    // Mevcut firma seçildiyse
     if (useExistingCompany) {
       if (!selectedCompany) {
         toast.error('Lütfen bir firma seçin');
@@ -1490,7 +1495,6 @@ function App() {
       }
       companyId = selectedCompany;
     } else {
-      // Yeni firma adı girildiyse
       if (!uploadCompanyName.trim()) {
         toast.error('Lütfen firma adını girin');
         return;
@@ -1499,45 +1503,119 @@ function App() {
     }
 
     if (!uploadFile) {
-      toast.error('Lütfen bir dosya seçin');
+      toast.error('Lütfen bir dosya seçin (PDF, Excel veya görsel)');
       return;
     }
 
     try {
-      setLoading(true);
+      setAiExtracting(true);
 
-      // Eğer yeni firma adı girildiyse, önce firmayı oluştur
+      // Yeni firma ise önce oluştur
       if (!useExistingCompany) {
         const companyResponse = await axios.post(`${API}/companies`, { name: companyName });
         companyId = companyResponse.data.id;
         toast.success(`"${companyName}" firması oluşturuldu`);
-        // Firma listesini güncelle
         await loadCompanies();
+        setSelectedCompany(companyId);
+        setUseExistingCompany(true);
       }
 
-      // Excel dosyasını yükle
       const formData = new FormData();
       formData.append('file', uploadFile);
-      formData.append('currency', uploadCurrency); // Para birimini de gönder
-      formData.append('discount', uploadDiscount || '0'); // İskonto yüzdesini de gönder
 
-      const response = await axios.post(`${API}/companies/${companyId}/upload-excel`, formData, {
+      const response = await axios.post(`${API}/companies/${companyId}/ai-extract-products`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
-      
-      // Form alanlarını temizle
+
+      const products = (response.data.products || []).map((p) => ({
+        name: p.name || '',
+        brand: p.brand || '',
+        list_price: p.list_price ?? '',
+        discounted_price: p.discounted_price ?? '',
+        currency: p.currency || uploadCurrency,
+        description: p.description || ''
+      }));
+
+      if (products.length === 0) {
+        toast.error('Dosyadan ürün çıkarılamadı. Daha net bir fiyat listesi deneyin.');
+        return;
+      }
+
+      setAiPreviewProducts(products);
+      setAiPreviewCompanyId(companyId);
+      toast.success(`${products.length} ürün bulundu. Lütfen kontrol edip onaylayın.`);
+    } catch (error) {
+      console.error('AI çıkarma hatası:', error);
+      toast.error(error.response?.data?.detail || 'Ürünler çıkarılamadı');
+    } finally {
+      setAiExtracting(false);
+    }
+  };
+
+  // Önizlemedeki bir ürünün alanını düzenle
+  const updateAiPreviewProduct = (index, field, value) => {
+    setAiPreviewProducts((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], [field]: value };
+      return next;
+    });
+  };
+
+  // Önizlemeden bir ürünü çıkar
+  const removeAiPreviewProduct = (index) => {
+    setAiPreviewProducts((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  // Önizlemeyi iptal et
+  const cancelAiPreview = () => {
+    setAiPreviewProducts(null);
+    setAiPreviewCompanyId('');
+  };
+
+  // 2. ADIM: Önizlemede onaylanan (ve düzenlenen) ürünleri kaydet
+  const aiConfirmProducts = async () => {
+    if (!aiPreviewProducts || aiPreviewProducts.length === 0) {
+      toast.error('Kaydedilecek ürün yok');
+      return;
+    }
+    // Geçerli ürünler: isim ve 0'dan büyük fiyat
+    const valid = aiPreviewProducts.filter(
+      (p) => (p.name || '').trim() && parseFloat(p.list_price) > 0
+    );
+    if (valid.length === 0) {
+      toast.error('En az bir ürün için isim ve geçerli fiyat girin');
+      return;
+    }
+
+    try {
+      setAiSaving(true);
+      const response = await axios.post(`${API}/companies/${aiPreviewCompanyId}/ai-confirm-products`, {
+        products: valid.map((p) => ({
+          name: p.name,
+          brand: p.brand,
+          list_price: parseFloat(p.list_price),
+          discounted_price: p.discounted_price !== '' && p.discounted_price != null ? parseFloat(p.discounted_price) : null,
+          currency: p.currency,
+          description: p.description || null
+        })),
+        currency: null, // her ürünün kendi (önizlemede düzenlenebilir) para birimi geçerli
+        discount: uploadDiscount || '0',
+        filename: uploadFile?.name || 'AI-import'
+      });
+
+      // Temizle
+      setAiPreviewProducts(null);
+      setAiPreviewCompanyId('');
       setUploadFile(null);
-      setSelectedCompany('');
       setUploadCompanyName('');
-      setUploadCurrency('USD');
       setUploadDiscount('');
       await loadProducts(1, true);
-      toast.success(response.data.message);
+      toast.success(response.data.message || 'Ürünler kaydedildi');
     } catch (error) {
-      console.error('Error uploading file:', error);
-      toast.error(error.response?.data?.detail || 'Dosya yüklenemedi');
+      console.error('AI kaydetme hatası:', error);
+      toast.error(error.response?.data?.detail || 'Ürünler kaydedilemedi');
     } finally {
-      setLoading(false);
+      setAiSaving(false);
     }
   };
 
@@ -4916,21 +4994,19 @@ function App() {
           <TabsContent value="upload" className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Excel Dosyası Yükle</CardTitle>
-                <CardDescription>Ürün fiyat listelerinizi Excel formatında yükleyin</CardDescription>
+                <CardTitle>Yapay Zekâ ile Ürün Ekle</CardTitle>
+                <CardDescription>PDF, Excel veya fotoğraf yükleyin; yapay zekâ ürünleri otomatik çıkarsın, siz onaylayın</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                  <h4 className="font-semibold text-amber-800 mb-2">Renk Kodlama (Renkli Excel için):</h4>
-                  <p className="text-sm text-amber-700 space-y-1">
-                    <span className="block">🔴 <strong>Kırmızı:</strong> Ürün Adı</span>
-                    <span className="block">🔵 <strong>Mavi:</strong> Ürün Açıklaması</span>
-                    <span className="block">🟡 <strong>Sarı:</strong> Marka (yeni!)</span>
-                    <span className="block">🟢 <strong>Yeşil:</strong> Liste Fiyatı</span>
-                    <span className="block">🟠 <strong>Turuncu:</strong> İndirimli Fiyat</span>
+                <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+                  <h4 className="font-semibold text-indigo-800 mb-2">✨ Nasıl çalışır?</h4>
+                  <p className="text-sm text-indigo-700 space-y-1">
+                    <span className="block">1️⃣ <strong>Firma</strong> seçin/oluşturun ve bir dosya yükleyin.</span>
+                    <span className="block">2️⃣ <strong>Çıkar</strong> butonuna basın — yapay zekâ ürünleri okur.</span>
+                    <span className="block">3️⃣ Çıkan listeyi <strong>kontrol/düzeltin</strong>, sonra <strong>Onayla ve Kaydet</strong> deyin.</span>
                   </p>
-                  <p className="text-xs text-amber-600 mt-2">
-                    💼 <strong>Firma:</strong> Aşağıdaki dropdown'dan seçilir/oluşturulur
+                  <p className="text-xs text-indigo-600 mt-2">
+                    📎 Desteklenen: <strong>PDF</strong>, <strong>Excel</strong> (.xlsx/.xls), <strong>Fotoğraf</strong> (JPG/PNG)
                   </p>
                 </div>
                 <div className="space-y-4">
@@ -5035,24 +5111,99 @@ function App() {
                   </div>
 
                   <div>
-                    <Label htmlFor="file-upload">Excel Dosyası</Label>
+                    <Label htmlFor="file-upload">Dosya (PDF / Excel / Fotoğraf)</Label>
                     <Input
                       id="file-upload"
                       type="file"
-                      accept=".xlsx,.xls"
+                      accept=".pdf,.xlsx,.xls,image/*"
                       onChange={(e) => setUploadFile(e.target.files[0])}
                     />
                   </div>
 
-                  <Button 
-                    onClick={uploadExcelFile} 
-                    disabled={loading || (!selectedCompany && useExistingCompany) || (!uploadCompanyName.trim() && !useExistingCompany) || !uploadFile}
+                  <Button
+                    onClick={aiExtractProducts}
+                    disabled={aiExtracting || (!selectedCompany && useExistingCompany) || (!uploadCompanyName.trim() && !useExistingCompany) || !uploadFile}
                     className="w-full"
                   >
                     <Upload className="w-4 h-4 mr-2" />
-                    {loading ? 'Yükleniyor...' : 'Excel Dosyası Yükle'}
+                    {aiExtracting ? 'Yapay zekâ okuyor...' : '✨ Ürünleri Çıkar'}
                   </Button>
                 </div>
+
+                {/* ÖNİZLEME: çıkarılan ürünler — kontrol/düzeltme + onay */}
+                {aiPreviewProducts && (
+                  <div className="mt-6 border-t pt-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="font-semibold text-slate-800">
+                        Çıkarılan Ürünler ({aiPreviewProducts.length}) — kontrol edip onaylayın
+                      </h4>
+                      <Button variant="ghost" size="sm" onClick={cancelAiPreview} disabled={aiSaving}>
+                        İptal
+                      </Button>
+                    </div>
+                    <div className="overflow-x-auto rounded-lg border">
+                      <table className="w-full text-sm">
+                        <thead className="bg-slate-50 text-slate-600">
+                          <tr>
+                            <th className="px-2 py-2 text-left font-medium">Ürün Adı</th>
+                            <th className="px-2 py-2 text-left font-medium">Marka</th>
+                            <th className="px-2 py-2 text-right font-medium">Liste Fiyatı</th>
+                            <th className="px-2 py-2 text-right font-medium">İnd. Fiyat</th>
+                            <th className="px-2 py-2 text-left font-medium">Birim</th>
+                            <th className="px-2 py-2"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {aiPreviewProducts.map((p, i) => (
+                            <tr key={i} className="border-t">
+                              <td className="px-1 py-1">
+                                <Input value={p.name} onChange={(e) => updateAiPreviewProduct(i, 'name', e.target.value)} className="h-8 min-w-[180px]" />
+                              </td>
+                              <td className="px-1 py-1">
+                                <Input value={p.brand} onChange={(e) => updateAiPreviewProduct(i, 'brand', e.target.value)} className="h-8 min-w-[100px]" />
+                              </td>
+                              <td className="px-1 py-1">
+                                <Input type="number" step="0.01" value={p.list_price} onChange={(e) => updateAiPreviewProduct(i, 'list_price', e.target.value)} className="h-8 w-24 text-right" />
+                              </td>
+                              <td className="px-1 py-1">
+                                <Input type="number" step="0.01" value={p.discounted_price} onChange={(e) => updateAiPreviewProduct(i, 'discounted_price', e.target.value)} className="h-8 w-24 text-right" placeholder="-" />
+                              </td>
+                              <td className="px-1 py-1">
+                                <select
+                                  value={p.currency}
+                                  onChange={(e) => updateAiPreviewProduct(i, 'currency', e.target.value)}
+                                  className="h-8 border rounded px-1"
+                                >
+                                  <option value="USD">USD</option>
+                                  <option value="EUR">EUR</option>
+                                  <option value="TRY">TRY</option>
+                                </select>
+                              </td>
+                              <td className="px-1 py-1 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => removeAiPreviewProduct(i)}
+                                  className="text-red-500 hover:text-red-700"
+                                  title="Bu ürünü çıkar"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="flex gap-3 mt-4">
+                      <Button onClick={aiConfirmProducts} disabled={aiSaving} className="flex-1">
+                        {aiSaving ? 'Kaydediliyor...' : `Onayla ve Kaydet (${aiPreviewProducts.length})`}
+                      </Button>
+                      <Button variant="outline" onClick={cancelAiPreview} disabled={aiSaving}>
+                        Vazgeç
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
