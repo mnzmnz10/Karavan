@@ -13,6 +13,7 @@ from bson import ObjectId
 import os
 import uuid
 import pandas as pd
+import re
 import requests
 import logging
 from io import BytesIO
@@ -5153,61 +5154,12 @@ async def get_favorite_products():
         logger.error(f"Error getting favorite products: {e}")
         raise HTTPException(status_code=500, detail="Favori ürünler getirilemedi")
 
-@api_router.post("/companies/{company_id}/upload-excel")  
-async def upload_excel(company_id: str, file: UploadFile = File(...), currency: str = Form(None), discount: str = Form("0")):
-    """Upload Excel file for a company with smart update system"""
+async def _save_products_smart(company, products_data, user_selected_currency, discount_percentage, filename):
+    """Ayristirilan/AI ile cikarilan urunleri akilli guncelleme ile DB'ye kaydet.
+    Mevcut urun varsa gunceller, yoksa olusturur; fiyat degisikliklerini izler;
+    upload_history kaydi olusturur ve ozet doner."""
+    company_id = company['id']
     try:
-        # Verify company exists
-        company = await db.companies.find_one({"id": company_id})
-        if not company:
-            raise HTTPException(status_code=404, detail="Firma bulunamadı")
-        
-        # Check file type
-        if not file.filename.endswith(('.xlsx', '.xls')):
-            raise HTTPException(status_code=400, detail="Sadece Excel dosyaları (.xlsx, .xls) kabul edilir")
-        
-        # Read file content
-        file_content = await file.read()
-
-        # Boyut limiti: cok buyuk dosya Pi belleğini taşırabilir
-        if len(file_content) > MAX_UPLOAD_BYTES:
-            raise HTTPException(
-                status_code=413,
-                detail=f"Dosya çok büyük (en fazla {MAX_UPLOAD_BYTES // (1024*1024)} MB)."
-            )
-
-        # Try color-based parsing first, then fall back to traditional parsing
-        try:
-            # Color-based parsing
-            products_data = ColorBasedExcelService.parse_colored_excel(file_content, company['name'])
-            logger.info(f"Color-based parsing successful: {len(products_data)} products")
-        except Exception as color_parse_error:
-            logger.warning(f"Color-based parsing failed: {color_parse_error}")
-            # Fall back to traditional parsing
-            products_data = excel_service.parse_excel_file(file_content)
-            logger.info(f"Traditional parsing used: {len(products_data)} products")
-        
-        if not products_data:
-            raise HTTPException(status_code=400, detail="Excel dosyasında geçerli ürün verisi bulunamadı")
-        
-        # Handle user-selected currency override
-        user_selected_currency = None
-        if currency and currency.upper() in ['USD', 'EUR', 'TRY']:
-            user_selected_currency = currency.upper()
-            logger.info(f"User selected currency override: {user_selected_currency}")
-        
-        # Handle discount percentage
-        discount_percentage = 0.0
-        try:
-            if discount and discount.strip():
-                discount_percentage = float(discount)
-                if discount_percentage < 0 or discount_percentage > 100:
-                    raise ValueError("Discount must be between 0 and 100")
-                logger.info(f"User selected discount: {discount_percentage}%")
-        except ValueError as e:
-            logger.error(f"Invalid discount value: {discount}, error: {e}")
-            raise HTTPException(status_code=400, detail=f"Geçersiz iskonto değeri: {discount}")
-        
         # Get current exchange rates
         await currency_service.get_exchange_rates()
         
@@ -5351,7 +5303,7 @@ async def upload_excel(company_id: str, file: UploadFile = File(...), currency: 
             "id": str(uuid.uuid4()),
             "company_id": company_id,
             "company_name": company['name'],
-            "filename": file.filename,
+            "filename": filename,
             "upload_date": datetime.now(timezone.utc),
             "total_products": len(products_data),
             "new_products": new_products,
@@ -5395,8 +5347,106 @@ async def upload_excel(company_id: str, file: UploadFile = File(...), currency: 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error uploading Excel file: {e}")
-        raise HTTPException(status_code=500, detail=f"Excel dosyası yüklenemedi: {str(e)}")
+        logger.error(f"Error saving products: {e}")
+        raise HTTPException(status_code=500, detail="Ürünler kaydedilirken hata oluştu")
+
+
+class AIConfirmRequest(BaseModel):
+    products: List[Dict[str, Any]]
+    currency: Optional[str] = None
+    discount: Optional[str] = "0"
+    filename: Optional[str] = "AI-import"
+
+
+@api_router.post("/companies/{company_id}/ai-extract-products")
+async def ai_extract_products(company_id: str, file: UploadFile = File(...)):
+    """PDF / Excel / Görsel yükle -> Gemini ile ürünleri çıkar.
+    KAYDETMEZ; kullanıcının kontrol edip onaylaması için önizleme listesi döner."""
+    company = await db.companies.find_one({"id": company_id})
+    if not company:
+        raise HTTPException(status_code=404, detail="Firma bulunamadı")
+
+    filename = file.filename or "dosya"
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    content_type = (file.content_type or "").lower()
+
+    allowed_ext = {"pdf", "xlsx", "xls", "png", "jpg", "jpeg", "webp"}
+    if ext not in allowed_ext and not (content_type.startswith("image/") or content_type == "application/pdf"):
+        raise HTTPException(status_code=400, detail="Sadece PDF, Excel (.xlsx/.xls) veya görsel dosyaları kabul edilir.")
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Boş dosya.")
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail=f"Dosya çok büyük (en fazla {MAX_UPLOAD_BYTES // (1024*1024)} MB).")
+
+    # Gemini cagrisi senkron -> thread havuzunda calistir (event loop bloke olmasin)
+    loop = asyncio.get_event_loop()
+    products = await loop.run_in_executor(None, _extract_products_from_file, data, filename, ext, content_type)
+
+    if not products:
+        raise HTTPException(status_code=422, detail="Dosyadan ürün çıkarılamadı. Dosyanın net bir fiyat listesi içerdiğinden emin olun.")
+
+    return {"success": True, "count": len(products), "products": products, "filename": filename}
+
+
+@api_router.post("/companies/{company_id}/ai-confirm-products")
+async def ai_confirm_products(company_id: str, payload: AIConfirmRequest):
+    """Önizlemede kullanıcının onayladığı (ve düzenlediği) ürünleri akıllı güncelleme ile kaydet."""
+    company = await db.companies.find_one({"id": company_id})
+    if not company:
+        raise HTTPException(status_code=404, detail="Firma bulunamadı")
+    if not payload.products:
+        raise HTTPException(status_code=400, detail="Kaydedilecek ürün yok.")
+
+    # Para birimi override
+    user_selected_currency = None
+    if payload.currency and payload.currency.upper() in ['USD', 'EUR', 'TRY']:
+        user_selected_currency = payload.currency.upper()
+
+    # Iskonto
+    discount_percentage = 0.0
+    try:
+        if payload.discount and str(payload.discount).strip():
+            discount_percentage = float(payload.discount)
+            if discount_percentage < 0 or discount_percentage > 100:
+                raise ValueError()
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Geçersiz iskonto değeri (0-100 olmalı).")
+
+    # Onizleme urunlerini _save_products_smart'in bekledigi forma normalize et
+    products_data = []
+    for p in payload.products:
+        name = (p.get('name') or '').strip()
+        if not name:
+            continue
+        try:
+            list_price = float(p.get('list_price') or 0)
+        except (ValueError, TypeError):
+            continue
+        if list_price <= 0:
+            continue
+        dp = p.get('discounted_price')
+        try:
+            discounted_price = float(dp) if dp not in (None, '', 0, '0') else None
+        except (ValueError, TypeError):
+            discounted_price = None
+        products_data.append({
+            'name': name,
+            'brand': (p.get('brand') or '').strip(),
+            'description': p.get('description') or None,
+            'list_price': list_price,
+            'discounted_price': discounted_price,
+            'currency': (p.get('currency') or 'USD'),
+        })
+
+    if not products_data:
+        raise HTTPException(status_code=400, detail="Geçerli ürün bulunamadı (her ürün için isim ve 0'dan büyük fiyat gerekli).")
+
+    return await _save_products_smart(
+        company, products_data, user_selected_currency, discount_percentage, payload.filename or "AI-import"
+    )
+
 
 @api_router.get("/products/count")
 async def get_products_count(
@@ -6744,6 +6794,202 @@ def _call_gemini_for_battery_analysis(image_bytes_list: list) -> str:
     except requests.RequestException as e:
         logger.error(f"Gemini bağlantı hatası: {e}")
         raise HTTPException(status_code=504, detail=f"Gemini API'ye ulaşılamadı: {str(e)}")
+
+
+# ============================================================================
+# AI ÜRÜN ÇIKARMA (PDF / Excel / Görsel -> Gemini -> ürün listesi)
+# ============================================================================
+
+PRODUCT_EXTRACTION_PROMPT = """Sana bir tedarikçi fiyat listesi verildi (PDF, Excel içeriği veya görsel olabilir).
+Görevin: Listedeki TÜM ürünleri yapılandırılmış veri olarak çıkarmak.
+
+Her ürün için şu alanları doldur:
+- name: Ürünün tam adı/modeli (zorunlu). Kategori başlıkları, açıklama satırları veya toplamlar ürün DEĞİLDİR, onları atla.
+- brand: Marka adı (biliniyorsa, yoksa boş string).
+- list_price: Liste/birim fiyat, SADECE sayı (para birimi sembolü, binlik ayıracı OLMADAN). Örn: "1.234,56 ₺" -> 1234.56
+- discounted_price: İndirimli/iskontolu fiyat varsa sayı olarak, yoksa null.
+- currency: Para birimi. Sembol/metni şuna çevir: $/USD/dolar -> "USD", €/EUR/euro -> "EUR", ₺/TL/TRY/lira -> "TRY". Belirsizse "USD".
+- description: Varsa kısa açıklama, yoksa null.
+
+KURALLAR:
+- Fiyatı olmayan veya 0 olan satırları DAHİL ETME (bunlar genelde başlık/kategoridir).
+- Türkçe sayı formatına dikkat et: nokta binlik, virgül ondalık ayıracıdır.
+- Uydurma ürün ekleme; sadece dosyada GÖRDÜĞÜN ürünleri çıkar.
+- Yanıtı SADECE JSON dizisi olarak ver."""
+
+_PRODUCT_RESPONSE_SCHEMA = {
+    "type": "ARRAY",
+    "items": {
+        "type": "OBJECT",
+        "properties": {
+            "name": {"type": "STRING"},
+            "brand": {"type": "STRING"},
+            "list_price": {"type": "NUMBER"},
+            "discounted_price": {"type": "NUMBER", "nullable": True},
+            "currency": {"type": "STRING"},
+            "description": {"type": "STRING", "nullable": True},
+        },
+        "required": ["name", "list_price"],
+    },
+}
+
+
+def _excel_to_text(data: bytes) -> str:
+    """Excel dosyasini Gemini'ye metin olarak vermek icin CSV'ye cevir (tum sayfalar)."""
+    try:
+        sheets = pd.read_excel(BytesIO(data), sheet_name=None, header=None, dtype=str)
+    except Exception as e:
+        logger.warning(f"Excel pandas ile okunamadi: {e}")
+        raise HTTPException(status_code=422, detail="Excel dosyası okunamadı.")
+    chunks = []
+    for sheet_name, df in sheets.items():
+        chunks.append(f"--- Sayfa: {sheet_name} ---")
+        chunks.append(df.fillna('').to_csv(index=False, header=False))
+    text = "\n".join(chunks)
+    return text[:200000]  # asiri buyuk dosyalari sinirla
+
+
+def _doc_image_bytes(data: bytes) -> tuple:
+    """Belge gorselini OKUNABILIR cozunurlukte tut (metin icin 720p'ye kucultme); JPEG'e cevir."""
+    try:
+        img = PILImage.open(BytesIO(data))
+        if img.mode in ('RGBA', 'LA', 'P'):
+            bg = PILImage.new('RGB', img.size, (255, 255, 255))
+            if img.mode == 'P':
+                img = img.convert('RGBA')
+            bg.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
+            img = bg
+        elif img.mode != 'RGB':
+            img = img.convert('RGB')
+        max_dim = 2200  # metin okunabilirligini koru
+        if max(img.width, img.height) > max_dim:
+            ratio = max_dim / float(max(img.width, img.height))
+            img = img.resize((int(img.width * ratio), int(img.height * ratio)), PILImage.Resampling.LANCZOS)
+        out = BytesIO()
+        img.save(out, format='JPEG', quality=90, optimize=True)
+        out.seek(0)
+        return out.read(), "image/jpeg"
+    except Exception as e:
+        logger.warning(f"Belge gorsel donusum hatasi: {e}")
+        return data, "image/jpeg"
+
+
+def _normalize_currency(value) -> str:
+    s = str(value or '').strip().upper()
+    if s in ('USD', 'EUR', 'TRY'):
+        return s
+    if '$' in s or 'USD' in s or 'DOLAR' in s:
+        return 'USD'
+    if '€' in s or 'EUR' in s or 'EURO' in s:
+        return 'EUR'
+    if '₺' in s or 'TL' in s or 'TRY' in s or 'LIRA' in s:
+        return 'TRY'
+    return 'USD'
+
+
+def _extract_products_from_file(data: bytes, filename: str, ext: str, content_type: str) -> list:
+    """Dosyayi Gemini'ye gonderip yapilandirilmis urun listesi al (KAYDETMEZ)."""
+    if not GEMINI_API_KEY:
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY tanımlı değil (backend/.env).")
+
+    parts = [{"text": PRODUCT_EXTRACTION_PROMPT}]
+    is_pdf = ext == "pdf" or content_type == "application/pdf"
+    is_excel = ext in ("xlsx", "xls")
+    is_image = content_type.startswith("image/") or ext in ("png", "jpg", "jpeg", "webp")
+
+    if is_excel:
+        text = _excel_to_text(data)
+        if not text.strip():
+            raise HTTPException(status_code=422, detail="Excel dosyası boş görünüyor.")
+        parts.append({"text": f"\n\nFiyat listesi (Excel) içeriği:\n{text}"})
+    elif is_pdf:
+        parts.append({"inline_data": {"mime_type": "application/pdf", "data": base64.b64encode(data).decode('utf-8')}})
+    elif is_image:
+        img_bytes, mime = _doc_image_bytes(data)
+        parts.append({"inline_data": {"mime_type": mime, "data": base64.b64encode(img_bytes).decode('utf-8')}})
+    else:
+        raise HTTPException(status_code=400, detail="Desteklenmeyen dosya türü.")
+
+    payload = {
+        "contents": [{"parts": parts}],
+        "generationConfig": {
+            "temperature": 0.1,
+            "maxOutputTokens": 8192,
+            "responseMimeType": "application/json",
+            "responseSchema": _PRODUCT_RESPONSE_SCHEMA,
+        },
+    }
+
+    try:
+        response = requests.post(
+            GEMINI_ENDPOINT,
+            params={"key": GEMINI_API_KEY},
+            json=payload,
+            timeout=120,
+            headers={"Content-Type": "application/json"},
+        )
+    except requests.RequestException as e:
+        logger.error(f"Gemini bağlantı hatası (ürün çıkarma): {e}")
+        raise HTTPException(status_code=504, detail="Gemini API'ye ulaşılamadı.")
+
+    if response.status_code != 200:
+        logger.error(f"Gemini API hatası ({response.status_code}): {response.text[:500]}")
+        raise HTTPException(status_code=502, detail=f"Gemini API hatası: {response.status_code}")
+
+    data_json = response.json()
+    candidates = data_json.get('candidates') or []
+    if not candidates:
+        block = data_json.get('promptFeedback', {}).get('blockReason', 'Bilinmiyor')
+        raise HTTPException(status_code=502, detail=f"Gemini boş yanıt döndü (neden: {block}).")
+    parts_resp = candidates[0].get('content', {}).get('parts', [])
+    raw_text = "".join(p.get('text', '') for p in parts_resp if 'text' in p).strip()
+    if not raw_text:
+        return []
+
+    try:
+        parsed = json.loads(raw_text)
+    except json.JSONDecodeError:
+        # Bazen modeli ```json ... ``` ile sarabilir; temizleyip tekrar dene
+        cleaned = re.sub(r'^```(?:json)?|```$', '', raw_text.strip(), flags=re.MULTILINE).strip()
+        try:
+            parsed = json.loads(cleaned)
+        except json.JSONDecodeError:
+            logger.error(f"Gemini ürün JSON parse edilemedi: {raw_text[:300]}")
+            raise HTTPException(status_code=502, detail="AI yanıtı çözümlenemedi, tekrar deneyin.")
+
+    if isinstance(parsed, dict):
+        # tek obje ya da {products:[...]} sarmali olabilir
+        parsed = parsed.get('products') or parsed.get('items') or [parsed]
+    if not isinstance(parsed, list):
+        return []
+
+    products = []
+    for item in parsed:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get('name') or '').strip()
+        if not name:
+            continue
+        try:
+            list_price = float(item.get('list_price') or 0)
+        except (ValueError, TypeError):
+            continue
+        if list_price <= 0:
+            continue
+        dp = item.get('discounted_price')
+        try:
+            discounted_price = float(dp) if dp not in (None, '', 0, '0') else None
+        except (ValueError, TypeError):
+            discounted_price = None
+        products.append({
+            "name": name[:500],
+            "brand": str(item.get('brand') or '').strip()[:200],
+            "list_price": list_price,
+            "discounted_price": discounted_price,
+            "currency": _normalize_currency(item.get('currency')),
+            "description": (str(item.get('description')).strip()[:2000] if item.get('description') else None),
+        })
+    return products
 
 
 @api_router.post("/battery-analysis")
