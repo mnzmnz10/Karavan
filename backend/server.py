@@ -45,6 +45,9 @@ from openpyxl.styles import PatternFill
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
+# Upload boyut limiti (Raspberry Pi belleğini büyük dosyalardan koru)
+MAX_UPLOAD_BYTES = int(os.environ.get('MAX_UPLOAD_MB', '25')) * 1024 * 1024
+
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
@@ -1246,7 +1249,7 @@ class ColorBasedExcelService:
                         ColorBasedExcelService.detect_color_category(price_cell.fill) == 'GREEN'):
                         try:
                             list_price = float(str(price_cell.value).replace(',', '.'))
-                        except:
+                        except (ValueError, TypeError):
                             list_price = 0
 
                 # İndirimli Fiyat (Turuncu) - SADECE turuncu hücre kabul edilir
@@ -1256,7 +1259,7 @@ class ColorBasedExcelService:
                         ColorBasedExcelService.detect_color_category(disc_price_cell.fill) == 'ORANGE'):
                         try:
                             discounted_price = float(str(disc_price_cell.value).replace(',', '.'))
-                        except:
+                        except (ValueError, TypeError):
                             discounted_price = None
 
                 # Özel mantık: Turuncu var ama yeşil yoksa
@@ -1387,7 +1390,7 @@ class ExcelService:
                                 list_price = numeric_value
                             elif discounted_price is None and numeric_value < list_price:
                                 discounted_price = numeric_value
-                    except:
+                    except (ValueError, TypeError):
                         pass
                     
                     # Ürün adı hücresi mi kontrol et (text ve uzun)
@@ -1498,7 +1501,7 @@ class ExcelService:
                 if len(row) > price_col and pd.notna(row.iloc[price_col]):
                     try:
                         list_price = float(row.iloc[price_col])
-                    except:
+                    except (ValueError, TypeError):
                         list_price = 0
                 
                 # İndirimli fiyat (Col8)
@@ -1506,7 +1509,7 @@ class ExcelService:
                 if len(row) > discounted_price_col and pd.notna(row.iloc[discounted_price_col]):
                     try:
                         discounted_price = float(row.iloc[discounted_price_col])
-                    except:
+                    except (ValueError, TypeError):
                         discounted_price = None
                 
                 # Geçerli ürün kontrolü
@@ -1642,7 +1645,7 @@ class ExcelService:
                 if 'list_price' in row:
                     try:
                         list_price = float(row['list_price']) if pd.notna(row['list_price']) else 0
-                    except:
+                    except (ValueError, TypeError):
                         list_price = 0
                 
                 # İndirimli fiyat
@@ -1650,7 +1653,7 @@ class ExcelService:
                 if 'discounted_price' in row and pd.notna(row['discounted_price']):
                     try:
                         discounted_price = float(row['discounted_price'])
-                    except:
+                    except (ValueError, TypeError):
                         discounted_price = None
                 
                 # Para birimi algılama - gelişmiş
@@ -3197,7 +3200,7 @@ class PDFQuoteGenerator:
             start_date_str = created_date.strftime('%d.%m.%Y')
             end_date = created_date + timedelta(days=7)
             end_date_str = end_date.strftime('%d.%m.%Y')
-        except:
+        except (ValueError, TypeError, KeyError, AttributeError):
             today = datetime.now()
             start_date_str = today.strftime('%d.%m.%Y')
             end_date_str = (today + timedelta(days=7)).strftime('%d.%m.%Y')
@@ -5154,7 +5157,14 @@ async def upload_excel(company_id: str, file: UploadFile = File(...), currency: 
         
         # Read file content
         file_content = await file.read()
-        
+
+        # Boyut limiti: cok buyuk dosya Pi belleğini taşırabilir
+        if len(file_content) > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Dosya çok büyük (en fazla {MAX_UPLOAD_BYTES // (1024*1024)} MB)."
+            )
+
         # Try color-based parsing first, then fall back to traditional parsing
         try:
             # Color-based parsing
@@ -6515,7 +6525,7 @@ async def scrape_products(request: ScrapeRequest):
                     if price_match:
                         try:
                             price = float(price_match.group(1))
-                        except:
+                        except (ValueError, TypeError):
                             pass
                 
                 # Görsel - productImage veya productImageOwlSlider içindeki img'yi bul
@@ -6748,6 +6758,11 @@ async def battery_analysis(files: List[UploadFile] = File(...)):
         data = await f.read()
         if not data:
             continue
+        if len(data) > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Görsel çok büyük: {f.filename} (en fazla {MAX_UPLOAD_BYTES // (1024*1024)} MB)."
+            )
         image_bytes_list.append(data)
 
     if not image_bytes_list:
