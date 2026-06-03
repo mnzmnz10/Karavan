@@ -292,14 +292,14 @@ class Product(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class ProductCreate(BaseModel):
-    name: str
+    name: str = Field(..., min_length=1, max_length=500)
     company_id: str
     category_id: Optional[str] = None
-    brand: str = ""  # Yeni marka alanı
-    description: Optional[str] = None
+    brand: str = Field("", max_length=200)  # Yeni marka alanı
+    description: Optional[str] = Field(None, max_length=5000)
     image_url: Optional[str] = None
-    list_price: Decimal
-    discounted_price: Optional[Decimal] = None
+    list_price: Decimal = Field(..., ge=0)
+    discounted_price: Optional[Decimal] = Field(None, ge=0)
     currency: str
     is_favorite: bool = False
 
@@ -314,8 +314,8 @@ class Category(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class CategoryCreate(BaseModel):
-    name: str
-    description: Optional[str] = None
+    name: str = Field(..., min_length=1, max_length=200)
+    description: Optional[str] = Field(None, max_length=2000)
     color: Optional[str] = None
     image_url: Optional[str] = None  # Kategori küçük resmi
     sort_order: Optional[int] = None  # Yeni kategori için varsayılan sıra
@@ -4256,10 +4256,12 @@ async def download_quote_pdf(quote_id: str):
             media_type='application/pdf',
             headers=headers
         )
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error generating PDF: {e}")
-        raise HTTPException(status_code=500, detail=f"Error generating PDF: {str(e)}")
+        raise HTTPException(status_code=500, detail="PDF oluşturulurken hata oluştu")
 
 # Category endpoints
 @api_router.post("/categories", response_model=Category)
@@ -6402,16 +6404,20 @@ async def scrape_products(request: ScrapeRequest):
     import re
     
     try:
-        print(f"🌐 Scraping URL: {request.url}")
-        
+        logger.info(f"Scraping URL: {request.url}")
+
         # URL'i fetch et
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
-        response = requests.get(request.url, headers=headers, timeout=30)
+        # Senkron requests.get'i executor'a sar -> event loop bloke olmasin (yuk altinda diger istekler donmasin)
+        loop = asyncio.get_running_loop()
+        response = await loop.run_in_executor(
+            None, lambda: requests.get(request.url, headers=headers, timeout=30)
+        )
         response.raise_for_status()
-        
-        print(f"✅ Sayfa başarıyla indirildi. Boyut: {len(response.content)} bytes")
+
+        logger.info(f"Sayfa indirildi. Boyut: {len(response.content)} bytes")
         
         # HTML'i parse et
         soup = BeautifulSoup(response.content, 'lxml')
