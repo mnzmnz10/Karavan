@@ -143,7 +143,12 @@ async def create_indexes():
         await db.customers.create_index("is_favorite")
         await db.customers.create_index("created_at")
         await db.customers.create_index([("is_favorite", -1), ("name", 1)])  # For favorites-first sorting
-        
+
+        # Sessions collection - kalici oturum (restart'ta dusmesin)
+        await db.sessions.create_index("token", unique=True)
+        # TTL: expires_at gecince Mongo otomatik siler (expireAfterSeconds=0 => alandaki zamani kullan)
+        await db.sessions.create_index("expires_at", expireAfterSeconds=0)
+
         logger.info("PERFORMANCE: Database indexes created successfully")
         
     except Exception as e:
@@ -808,45 +813,51 @@ currency_service = CurrencyService()
 # Authentication Service
 class AuthService:
     def __init__(self):
-        self.sessions = {}  # In-memory session storage - basit cookie based oturum
-        
+        # Oturumlar MongoDB 'sessions' koleksiyonunda saklanir (restart'ta dusmezler).
+        # Suresi dolanlari TTL index otomatik siler (bkz. create_database_indexes).
+        pass
+
     def hash_password(self, password: str) -> str:
         """Hash password using SHA-256"""
         return hashlib.sha256(password.encode()).hexdigest()
-    
+
     def verify_password(self, password: str, password_hash: str) -> bool:
         """Verify password against hash"""
         return self.hash_password(password) == password_hash
-    
-    def create_session(self, username: str) -> str:
-        """Create session token"""
+
+    async def create_session(self, username: str) -> str:
+        """Create session token (Mongo'da kalici)"""
         session_token = secrets.token_urlsafe(32)
-        self.sessions[session_token] = {
+        now = datetime.now(timezone.utc)
+        await db.sessions.insert_one({
+            'token': session_token,
             'username': username,
-            'created_at': datetime.now(timezone.utc),
-            'expires_at': datetime.now(timezone.utc) + timedelta(hours=24)  # 24 saat oturum
-        }
+            'created_at': now,
+            'expires_at': now + timedelta(hours=24)  # 24 saat oturum
+        })
         return session_token
-    
-    def validate_session(self, session_token: str) -> Optional[str]:
+
+    async def validate_session(self, session_token: str) -> Optional[str]:
         """Validate session token and return username if valid"""
-        if not session_token or session_token not in self.sessions:
+        if not session_token:
             return None
-            
-        session = self.sessions[session_token]
-        if datetime.now(timezone.utc) > session['expires_at']:
-            # Session expired
-            del self.sessions[session_token]
+        session = await db.sessions.find_one({'token': session_token})
+        if not session:
             return None
-            
+        expires_at = session.get('expires_at')
+        # Mongo'dan gelen datetime tz-naive olabilir; UTC varsay
+        if expires_at is not None and expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at is None or datetime.now(timezone.utc) > expires_at:
+            # Session expired (TTL index normalde silmis olur; defansif)
+            await db.sessions.delete_one({'token': session_token})
+            return None
         return session['username']
-    
-    def logout(self, session_token: str) -> bool:
+
+    async def logout(self, session_token: str) -> bool:
         """Logout user by removing session"""
-        if session_token in self.sessions:
-            del self.sessions[session_token]
-            return True
-        return False
+        result = await db.sessions.delete_one({'token': session_token})
+        return result.deleted_count > 0
 
 auth_service = AuthService()
 
@@ -892,7 +903,7 @@ async def get_current_user(session_token: Optional[str] = Cookie(None)):
     if not session_token:
         raise HTTPException(status_code=401, detail="Authentication required")
     
-    username = auth_service.validate_session(session_token)
+    username = await auth_service.validate_session(session_token)
     if not username:
         raise HTTPException(status_code=401, detail="Invalid or expired session")
     
@@ -904,7 +915,7 @@ async def get_current_user_optional(session_token: Optional[str] = Cookie(None))
     if not session_token:
         return None
     
-    username = auth_service.validate_session(session_token)
+    username = await auth_service.validate_session(session_token)
     return username
 
 # Database helper function
@@ -6341,7 +6352,7 @@ async def login(login_request: LoginRequest, response: JSONResponse):
             raise HTTPException(status_code=401, detail="Hesap devre dışı")
         
         # Create session
-        session_token = auth_service.create_session(login_request.username)
+        session_token = await auth_service.create_session(login_request.username)
         
         # Set session cookie
         response = JSONResponse(
@@ -6373,7 +6384,7 @@ async def logout(session_token: Optional[str] = Cookie(None)):
     """User logout endpoint"""
     try:
         if session_token:
-            auth_service.logout(session_token)
+            await auth_service.logout(session_token)
         
         response = JSONResponse(content={"success": True, "message": "Başarıyla çıkış yapıldı"})
         response.delete_cookie("session_token")
