@@ -848,22 +848,38 @@ class AuthService:
 auth_service = AuthService()
 
 # Create default admin user
+ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "karavan_admin")
+
 async def create_default_admin():
-    """Create default admin user if not exists"""
+    """Create or sync the default admin user from the ADMIN_PASSWORD env var.
+
+    The password is no longer hardcoded. If ADMIN_PASSWORD is unset the function
+    is a no-op (existing admin, if any, is left untouched — no lockout)."""
+    admin_password = os.environ.get("ADMIN_PASSWORD")
+    if not admin_password:
+        logger.warning("ADMIN_PASSWORD not set in environment; skipping default admin setup")
+        return
     try:
-        admin_user = await db.users.find_one({"username": "karavan_admin"})
+        password_hash = auth_service.hash_password(admin_password)
+        admin_user = await db.users.find_one({"username": ADMIN_USERNAME})
         if not admin_user:
             admin_user = {
                 "id": str(uuid.uuid4()),
-                "username": "karavan_admin",
-                "password_hash": auth_service.hash_password("corlukaravan.5959"),
+                "username": ADMIN_USERNAME,
+                "password_hash": password_hash,
                 "created_at": datetime.now(timezone.utc),
                 "is_active": True
             }
             await db.users.insert_one(admin_user)
             logger.info("Default admin user created successfully")
+        elif admin_user.get("password_hash") != password_hash:
+            await db.users.update_one(
+                {"username": ADMIN_USERNAME},
+                {"$set": {"password_hash": password_hash}}
+            )
+            logger.info("Default admin password synced from environment")
         else:
-            logger.info("Default admin user already exists")
+            logger.info("Default admin user already up to date")
     except Exception as e:
         logger.error(f"Error creating default admin user: {e}")
 
