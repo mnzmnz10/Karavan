@@ -469,6 +469,14 @@ function App() {
   const [serviceDialogOpen, setServiceDialogOpen] = useState(false);
   const [serviceStatusFilter, setServiceStatusFilter] = useState('all');
   const [serviceSaving, setServiceSaving] = useState(false);
+  // AI ile Excel'den paket oluşturma (ayrı akış)
+  const [aiPkgDialogOpen, setAiPkgDialogOpen] = useState(false);
+  const [aiPkgName, setAiPkgName] = useState('');
+  const [aiPkgCompanyId, setAiPkgCompanyId] = useState('');
+  const [aiPkgFile, setAiPkgFile] = useState(null);
+  const [aiPkgAnalyzing, setAiPkgAnalyzing] = useState(false);
+  const [aiPkgItems, setAiPkgItems] = useState(null); // çözüm satırları (null = henüz analiz yok)
+  const [aiPkgBuilding, setAiPkgBuilding] = useState(false);
   const [copyPackageDialog, setCopyPackageDialog] = useState(false); // Paket kopyalama dialog'u
   const [packageToCopy, setPackageToCopy] = useState(null); // Kopyalanacak paket
   const [copyPackageName, setCopyPackageName] = useState(''); // Yeni paket adı
@@ -1728,6 +1736,65 @@ function App() {
       console.error('Durum güncellenemedi:', error);
       toast.error('Durum güncellenemedi');
     }
+  };
+
+  // ===================== AI İLE EXCEL'DEN PAKET OLUŞTURMA =====================
+  const openAiPkgDialog = () => {
+    setAiPkgName(''); setAiPkgCompanyId(''); setAiPkgFile(null); setAiPkgItems(null);
+    setAiPkgDialogOpen(true);
+  };
+
+  const aiPkgAnalyze = async () => {
+    if (!aiPkgFile) { toast.error('Lütfen bir dosya seçin (Excel / PDF / görsel)'); return; }
+    try {
+      setAiPkgAnalyzing(true);
+      const formData = new FormData();
+      formData.append('file', aiPkgFile);
+      const res = await axios.post(`${API}/packages/ai-match`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const items = (res.data.items || []).map((it) => ({
+        name: it.name, list_price: it.list_price, currency: it.currency, brand: it.brand || '',
+        candidates: it.candidates || [],
+        choice: it.matched_product_id || '__new__', // eşleşen ürün id, yoksa yeni ürün
+      }));
+      if (items.length === 0) { toast.error('Dosyadan kalem çıkarılamadı'); return; }
+      setAiPkgItems(items);
+      const matchedCount = items.filter((it) => it.choice !== '__new__').length;
+      toast.success(`${items.length} kalem bulundu, ${matchedCount} tanesi otomatik eşleşti`);
+    } catch (e) {
+      console.error('AI paket analiz hatası:', e);
+      toast.error(e.response?.data?.detail || 'Analiz başarısız');
+    } finally { setAiPkgAnalyzing(false); }
+  };
+
+  const updateAiPkgChoice = (idx, choice) => {
+    setAiPkgItems((prev) => prev.map((it, i) => (i === idx ? { ...it, choice } : it)));
+  };
+
+  const aiPkgBuild = async () => {
+    if (!aiPkgName.trim()) { toast.error('Paket adı girin'); return; }
+    const items = aiPkgItems || [];
+    const needNew = items.some((it) => it.choice === '__new__');
+    if (needNew && !aiPkgCompanyId) { toast.error('Yeni ürün oluşturulacak kalemler var; lütfen bir firma seçin'); return; }
+    const payloadItems = items
+      .filter((it) => it.choice !== '__skip__')
+      .map((it) => (it.choice === '__new__'
+        ? { name: it.name, create_new: true, list_price: it.list_price, currency: it.currency, brand: it.brand }
+        : { name: it.name, product_id: it.choice }));
+    if (payloadItems.length === 0) { toast.error('En az bir kalem seçin (hepsi atlanmış)'); return; }
+    try {
+      setAiPkgBuilding(true);
+      const res = await axios.post(`${API}/packages/ai-build`, {
+        package_name: aiPkgName.trim(),
+        company_id: aiPkgCompanyId || null,
+        items: payloadItems,
+      });
+      toast.success(`Paket oluşturuldu: ${res.data.added} ürün (${res.data.matched} eşleşti, ${res.data.created_new} yeni)`);
+      setAiPkgDialogOpen(false);
+      await loadPackages();
+    } catch (e) {
+      console.error('AI paket oluşturma hatası:', e);
+      toast.error(e.response?.data?.detail || 'Paket oluşturulamadı');
+    } finally { setAiPkgBuilding(false); }
   };
 
   const refreshPrices = async () => {
@@ -4221,10 +4288,16 @@ function App() {
                     <h2 className="text-2xl font-bold text-slate-800">Paket Yönetimi</h2>
                     <p className="text-slate-600 mt-1">Hazır paketler oluşturun ve yönetin</p>
                   </div>
-                  <Button onClick={() => setShowPackageDialog(true)} className="bg-teal-600 hover:bg-teal-700">
-                    <Plus className="w-4 h-4 mr-2" />
-                    Yeni Paket
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button onClick={openAiPkgDialog} variant="outline" className="border-indigo-300 text-indigo-700 hover:bg-indigo-50">
+                      <Upload className="w-4 h-4 mr-2" />
+                      ✨ Excel'den Paket (AI)
+                    </Button>
+                    <Button onClick={() => setShowPackageDialog(true)} className="bg-teal-600 hover:bg-teal-700">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Yeni Paket
+                    </Button>
+                  </div>
                 </div>
 
             {/* Package Cards */}
@@ -7553,6 +7626,102 @@ function App() {
                 <Button onClick={saveService} disabled={serviceSaving} className="bg-emerald-600 hover:bg-emerald-700 text-white">
                   {serviceSaving ? 'Kaydediliyor...' : (serviceEditingId ? 'Güncelle' : 'Kaydet')}
                 </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* AI ile Excel'den Paket Oluşturma dialog */}
+          <Dialog open={aiPkgDialogOpen} onOpenChange={setAiPkgDialogOpen}>
+            <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>✨ Excel'den AI ile Paket Oluştur</DialogTitle>
+                <DialogDescription>
+                  Dosyayı yapay zekâ okur, kalemleri sistemdeki ürünlerle eşleştirir. Bulamadıklarını siz çözersiniz.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-4 py-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <Label>Paket Adı</Label>
+                    <Input value={aiPkgName} onChange={(e) => setAiPkgName(e.target.value)} placeholder="Örn: Off-Grid 200W Paket" />
+                  </div>
+                  <div>
+                    <Label>Yeni ürünler için firma</Label>
+                    <select
+                      value={aiPkgCompanyId}
+                      onChange={(e) => setAiPkgCompanyId(e.target.value)}
+                      className="w-full h-10 px-3 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="">Firma seçin (eşleşmeyenler için)</option>
+                      {companies.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
+                    </select>
+                  </div>
+                </div>
+
+                {!aiPkgItems && (
+                  <div className="space-y-3">
+                    <div>
+                      <Label>Dosya (PDF / Excel / Fotoğraf)</Label>
+                      <Input type="file" accept=".pdf,.xlsx,.xls,image/*" onChange={(e) => setAiPkgFile(e.target.files[0])} />
+                    </div>
+                    <Button onClick={aiPkgAnalyze} disabled={aiPkgAnalyzing || !aiPkgFile} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white">
+                      {aiPkgAnalyzing ? 'Yapay zekâ okuyor...' : '✨ Analiz Et ve Eşleştir'}
+                    </Button>
+                  </div>
+                )}
+
+                {aiPkgItems && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-semibold text-slate-800">Kalemler ({aiPkgItems.length}) — eşleşmeleri kontrol edin</h4>
+                      <Button variant="ghost" size="sm" onClick={() => setAiPkgItems(null)} disabled={aiPkgBuilding}>Dosyayı değiştir</Button>
+                    </div>
+                    <div className="rounded-lg border divide-y max-h-[40vh] overflow-y-auto">
+                      {aiPkgItems.map((it, i) => {
+                        const isNew = it.choice === '__new__';
+                        const isSkip = it.choice === '__skip__';
+                        return (
+                          <div key={i} className="p-3 flex flex-col sm:flex-row sm:items-center gap-2">
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium text-slate-800 truncate">{it.name}</div>
+                              <div className="text-xs text-slate-400">
+                                Excel: {it.list_price ?? '—'} {it.currency}
+                                {isNew && <span className="ml-2 text-indigo-600 font-semibold">→ yeni ürün olarak eklenecek</span>}
+                                {isSkip && <span className="ml-2 text-rose-500 font-semibold">→ atlanacak</span>}
+                              </div>
+                            </div>
+                            <select
+                              value={it.choice}
+                              onChange={(e) => updateAiPkgChoice(i, e.target.value)}
+                              className={`w-full sm:w-72 h-9 px-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${isNew ? 'border-indigo-300 bg-indigo-50' : isSkip ? 'border-rose-200 bg-rose-50' : 'border-emerald-300 bg-emerald-50'}`}
+                            >
+                              {it.candidates.map((c) => (
+                                <option key={c.product_id} value={c.product_id}>
+                                  ✓ {c.name} (%{Math.round((c.score || 0) * 100)})
+                                </option>
+                              ))}
+                              <option value="__new__">➕ Yeni ürün olarak ekle</option>
+                              <option value="__skip__">⊘ Bu kalemi atla</option>
+                            </select>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      Yeşil = mevcut ürünle eşleşti · Mavi = yeni ürün oluşturulacak (firma seçili olmalı) · Kırmızı = atlanacak
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setAiPkgDialogOpen(false)} disabled={aiPkgBuilding}>İptal</Button>
+                {aiPkgItems && (
+                  <Button onClick={aiPkgBuild} disabled={aiPkgBuilding} className="bg-indigo-600 hover:bg-indigo-700 text-white">
+                    {aiPkgBuilding ? 'Oluşturuluyor...' : 'Paketi Oluştur'}
+                  </Button>
+                )}
               </DialogFooter>
             </DialogContent>
           </Dialog>

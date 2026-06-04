@@ -14,6 +14,7 @@ import os
 import uuid
 import pandas as pd
 import re
+import difflib
 import requests
 import logging
 from io import BytesIO
@@ -5493,6 +5494,159 @@ async def ai_confirm_products(company_id: str, payload: AIConfirmRequest):
     return await _save_products_smart(
         company, products_data, user_selected_currency, discount_percentage, payload.filename or "AI-import"
     )
+
+
+# ==================== AI İLE PAKET OLUŞTURMA (Excel -> eşleştir -> paket) ====================
+class AIPackageItem(BaseModel):
+    name: str
+    list_price: Optional[float] = 0
+    currency: Optional[str] = "USD"
+    brand: Optional[str] = ""
+    product_id: Optional[str] = None   # eşleştirilen mevcut ürün (varsa)
+    create_new: bool = False           # eşleşme yoksa yeni ürün olarak oluştur
+
+class AIPackageBuildRequest(BaseModel):
+    package_name: str
+    company_id: Optional[str] = None   # yeni ürünler bu firmaya eklenir
+    items: List[AIPackageItem]
+
+
+@api_router.post("/packages/ai-match")
+async def ai_match_package(file: UploadFile = File(...)):
+    """Excel/PDF/görsel yükle -> AI kalemleri çıkarsın -> her kalemi mevcut ürünlerle eşleştir.
+    KAYDETMEZ; eşleşme önerileri + adaylar döner (kullanıcı çözecek)."""
+    filename = file.filename or "dosya"
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    content_type = (file.content_type or "").lower()
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Boş dosya.")
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail=f"Dosya çok büyük (en fazla {MAX_UPLOAD_BYTES // (1024*1024)} MB).")
+
+    loop = asyncio.get_event_loop()
+    items = await loop.run_in_executor(None, _extract_products_from_file, data, filename, ext, content_type)
+    if not items:
+        raise HTTPException(status_code=422, detail="Dosyadan kalem çıkarılamadı.")
+
+    # Tüm ürünleri yükle (katalog küçük) ve isim benzerliğiyle eşleştir
+    products = await db.products.find({}, {"id": 1, "name": 1, "brand": 1, "company_id": 1, "_id": 0}).to_list(None)
+    result = []
+    for it in items:
+        item_name = (it.get("name") or "").strip()
+        if not item_name:
+            continue
+        iname = item_name.lower()
+        scored = []
+        for p in products:
+            score = difflib.SequenceMatcher(None, iname, (p.get("name") or "").lower()).ratio()
+            scored.append((score, p))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        top = scored[:5]
+        candidates = [{"product_id": p["id"], "name": p.get("name", ""), "score": round(s, 2)} for s, p in top]
+        matched_id = top[0][1]["id"] if top and top[0][0] >= 0.62 else None
+        result.append({
+            "name": item_name,
+            "list_price": it.get("list_price"),
+            "currency": it.get("currency", "USD"),
+            "brand": it.get("brand", ""),
+            "matched_product_id": matched_id,
+            "candidates": candidates,
+        })
+    return {"success": True, "count": len(result), "items": result}
+
+
+@api_router.post("/packages/ai-build")
+async def ai_build_package(payload: AIPackageBuildRequest):
+    """Çözülmüş kalemlerden paket oluştur: eşleşenleri ekle, 'create_new' olanları
+    seçilen firmaya yeni ürün olarak oluşturup ekle. Adet hep 1."""
+    if not payload.package_name.strip():
+        raise HTTPException(status_code=400, detail="Paket adı gerekli.")
+    if not payload.items:
+        raise HTTPException(status_code=400, detail="En az bir kalem gerekli.")
+
+    company = None
+    if payload.company_id:
+        company = await db.companies.find_one({"id": payload.company_id})
+
+    # Yeni ürün oluşturulacak kalem varsa firma zorunlu
+    needs_company = any(it.create_new and not it.product_id for it in payload.items)
+    if needs_company and not company:
+        raise HTTPException(status_code=400, detail="Yeni ürün oluşturmak için geçerli bir firma seçin.")
+
+    await currency_service.get_exchange_rates()
+
+    pkg = {
+        "id": str(uuid.uuid4()),
+        "name": payload.package_name.strip(),
+        "description": None,
+        "sale_price": None,
+        "discount_percentage": 0,
+        "labor_cost": 0,
+        "notes": None,
+        "image_url": None,
+        "is_pinned": False,
+        "status": "active",
+        "created_at": datetime.now(timezone.utc),
+    }
+    await db.packages.insert_one(pkg)
+
+    pkg_products = []
+    created_new = 0
+    matched = 0
+    for it in payload.items:
+        pid = it.product_id
+        if not pid and it.create_new and company:
+            try:
+                list_price = Decimal(str(it.list_price or 0))
+            except (ValueError, TypeError, InvalidOperation):
+                list_price = Decimal('0')
+            currency = (it.currency or "USD").upper()
+            if currency not in ("USD", "EUR", "TRY"):
+                currency = "USD"
+            list_price_try = await currency_service.convert_to_try(list_price, currency)
+            new_prod = {
+                "id": str(uuid.uuid4()),
+                "name": (it.name or "")[:500],
+                "company_id": company["id"],
+                "brand": (it.brand or "")[:200],
+                "description": None,
+                "image_url": None,
+                "list_price": float(list_price),
+                "discounted_price": None,
+                "currency": currency,
+                "list_price_try": float(list_price_try),
+                "discounted_price_try": None,
+                "created_at": datetime.now(timezone.utc),
+            }
+            await db.products.insert_one(new_prod)
+            pid = new_prod["id"]
+            created_new += 1
+        elif pid:
+            matched += 1
+        if not pid:
+            continue
+        pkg_products.append({
+            "id": str(uuid.uuid4()),
+            "package_id": pkg["id"],
+            "product_id": pid,
+            "quantity": 1,
+            "custom_price": None,
+            "notes": None,
+            "created_at": datetime.now(timezone.utc),
+        })
+
+    if pkg_products:
+        await db.package_products.insert_many(pkg_products)
+
+    return {
+        "success": True,
+        "package_id": pkg["id"],
+        "package_name": pkg["name"],
+        "added": len(pkg_products),
+        "matched": matched,
+        "created_new": created_new,
+    }
 
 
 @api_router.get("/products/count")
