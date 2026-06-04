@@ -461,6 +461,7 @@ function App() {
   const [aiPreviewProducts, setAiPreviewProducts] = useState(null); // çıkarılan ürünler (önizleme); null = önizleme yok
   const [aiPreviewCompanyId, setAiPreviewCompanyId] = useState(''); // önizlemenin ait olduğu firma
   const [aiSaving, setAiSaving] = useState(false); // kaydetme sürüyor mu
+  const productFileInputRef = useRef(null); // AI ürün import dosya seçici
   // Servis (tadilat/bakim) sekmesi
   const emptyServiceForm = { customer_name: '', phone: '', vehicle_brand: '', vehicle_model: '', plate: '', arrival_date: '', delivery_date: '', operations: '', notes: '', cost: '', status: 'received' };
   const [services, setServices] = useState([]);
@@ -478,6 +479,7 @@ function App() {
   const [contractUploading, setContractUploading] = useState(false);
   const [viewingContract, setViewingContract] = useState(null); // önizlenen sözleşme (sheets dahil)
   const [contractLoadingView, setContractLoadingView] = useState(false);
+  const contractFileInputRef = useRef(null);
   const [copyPackageDialog, setCopyPackageDialog] = useState(false); // Paket kopyalama dialog'u
   const [packageToCopy, setPackageToCopy] = useState(null); // Kopyalanacak paket
   const [copyPackageName, setCopyPackageName] = useState(''); // Yeni paket adı
@@ -4401,7 +4403,21 @@ function App() {
                 </div>
                 <div>
                   <Label>Excel Dosyası (.xlsx / .xls)</Label>
-                  <Input type="file" accept=".xlsx,.xls,.xlsm" onChange={(e) => setContractFile(e.target.files[0])} />
+                  <input
+                    ref={contractFileInputRef}
+                    type="file"
+                    accept=".xlsx,.xls,.xlsm"
+                    className="hidden"
+                    onChange={(e) => setContractFile(e.target.files && e.target.files[0] ? e.target.files[0] : null)}
+                  />
+                  <div className="flex items-center gap-3 mt-1">
+                    <Button type="button" variant="outline" onClick={() => contractFileInputRef.current && contractFileInputRef.current.click()}>
+                      <Upload className="w-4 h-4 mr-2" /> Dosya Seç
+                    </Button>
+                    <span className={`text-sm truncate ${contractFile ? 'text-emerald-700 font-medium' : 'text-slate-400'}`}>
+                      {contractFile ? contractFile.name : 'Henüz dosya seçilmedi'}
+                    </span>
+                  </div>
                 </div>
                 <div>
                   <Label>Not (opsiyonel)</Label>
@@ -5444,13 +5460,22 @@ function App() {
                   </div>
 
                   <div>
-                    <Label htmlFor="file-upload">Dosya (PDF / Excel / Fotoğraf)</Label>
-                    <Input
-                      id="file-upload"
+                    <Label>Dosya (PDF / Excel / Fotoğraf)</Label>
+                    <input
+                      ref={productFileInputRef}
                       type="file"
                       accept=".pdf,.xlsx,.xls,image/*"
-                      onChange={(e) => setUploadFile(e.target.files[0])}
+                      className="hidden"
+                      onChange={(e) => setUploadFile(e.target.files && e.target.files[0] ? e.target.files[0] : null)}
                     />
+                    <div className="flex items-center gap-3 mt-1">
+                      <Button type="button" variant="outline" onClick={() => productFileInputRef.current && productFileInputRef.current.click()}>
+                        <Upload className="w-4 h-4 mr-2" /> Dosya Seç
+                      </Button>
+                      <span className={`text-sm truncate ${uploadFile ? 'text-emerald-700 font-medium' : 'text-slate-400'}`}>
+                        {uploadFile ? uploadFile.name : 'Henüz dosya seçilmedi'}
+                      </span>
+                    </div>
                   </div>
 
                   <Button
