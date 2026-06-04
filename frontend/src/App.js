@@ -4448,7 +4448,7 @@ function App() {
                           </div>
                         </div>
                         <div className="text-xs text-slate-400 truncate">{c.file_name}</div>
-                        <div className="text-xs text-slate-400">{c.created_at ? new Date(c.created_at).toLocaleDateString('tr-TR') : ''}</div>
+                        <div className="text-xs text-slate-400">{(c.doc_date || c.created_at) ? new Date(c.doc_date || c.created_at).toLocaleDateString('tr-TR') : ''}</div>
                         <div className="flex items-center gap-2 pt-2 border-t border-slate-100 mt-auto">
                           <Button size="sm" className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs" onClick={() => openContract(c.id)}>
                             <Eye className="w-4 h-4 mr-1" /> Görüntüle
@@ -4516,7 +4516,7 @@ function App() {
                             <div className="text-right text-sm shrink-0 space-y-3">
                               <div>
                                 <div className="text-white/45 text-[10px] uppercase tracking-widest">Tarih</div>
-                                <div className="font-semibold tabular-nums">{viewingContract.created_at ? new Date(viewingContract.created_at).toLocaleDateString('tr-TR') : '—'}</div>
+                                <div className="font-semibold tabular-nums">{(viewingContract.doc_date || viewingContract.created_at) ? new Date(viewingContract.doc_date || viewingContract.created_at).toLocaleDateString('tr-TR') : '—'}</div>
                               </div>
                               {parsed.kur != null && (
                                 <div className="inline-flex items-center gap-2 bg-white/10 ring-1 ring-white/15 rounded-full px-3 py-1.5">

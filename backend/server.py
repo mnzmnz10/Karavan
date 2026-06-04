@@ -8114,6 +8114,24 @@ def _parse_excel_for_preview(data: bytes):
     return sheets
 
 
+def _excel_doc_date(data: bytes):
+    """Excel dosyasinin KENDI metadata tarihini dondur (degistirilme, yoksa olusturma).
+    Yukleme tarihi DEGIL; dosyanin docProps/core.xml bilgisinden okunur."""
+    try:
+        wb = openpyxl.load_workbook(BytesIO(data), read_only=True)
+        props = wb.properties
+        wb.close()
+        d = props.modified or props.created
+        if d is None:
+            return None
+        if d.tzinfo is None:
+            d = d.replace(tzinfo=timezone.utc)
+        return d
+    except Exception as e:
+        logger.warning(f"Excel belge tarihi okunamadi: {e}")
+        return None
+
+
 @api_router.post("/contracts")
 async def create_contract(
     file: UploadFile = File(...),
@@ -8144,6 +8162,7 @@ async def create_contract(
         "file_name": fname,
         "sheets": sheets,
         "file_b64": base64.b64encode(data).decode("utf-8"),  # orijinali indirebilmek icin
+        "doc_date": _excel_doc_date(data),  # Excel'in kendi tarihi (yukleme degil)
         "created_at": datetime.now(timezone.utc),
     }
     await db.contracts.insert_one(doc)
@@ -8162,9 +8181,20 @@ async def list_contracts():
 @api_router.get("/contracts/{contract_id}")
 async def get_contract(contract_id: str):
     """Tek sozlesme (onizleme verisi dahil)."""
-    doc = await db.contracts.find_one({"id": contract_id}, {"_id": 0, "file_b64": 0})
+    doc = await db.contracts.find_one({"id": contract_id})
     if not doc:
         raise HTTPException(status_code=404, detail="Sözleşme bulunamadı")
+    # Eski kayitlarda doc_date yoksa dosyadan hesapla ve kaydet (backfill)
+    if not doc.get("doc_date") and doc.get("file_b64"):
+        try:
+            dd = _excel_doc_date(base64.b64decode(doc["file_b64"]))
+            if dd:
+                await db.contracts.update_one({"id": contract_id}, {"$set": {"doc_date": dd}})
+                doc["doc_date"] = dd
+        except Exception:
+            pass
+    doc.pop("_id", None)
+    doc.pop("file_b64", None)
     return doc
 
 
