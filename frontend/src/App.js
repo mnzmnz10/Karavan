@@ -479,6 +479,7 @@ function App() {
   const [viewingContract, setViewingContract] = useState(null); // önizlenen sözleşme (sheets dahil)
   const [contractLoadingView, setContractLoadingView] = useState(false);
   const [contractRawView, setContractRawView] = useState(false); // tasarım / ham tablo
+  const [contractSimRate, setContractSimRate] = useState(''); // kur simülasyonu (boş = orijinal kur)
   const [contractEditOpen, setContractEditOpen] = useState(false);
   const [contractEditId, setContractEditId] = useState(null);
   const [contractEditForm, setContractEditForm] = useState({ title: '', customer_name: '', notes: '' });
@@ -1786,6 +1787,7 @@ function App() {
   const openContract = async (id) => {
     try {
       setContractLoadingView(true);
+      setContractSimRate(''); // simülasyonu sıfırla
       const r = await axios.get(`${API}/contracts/${id}`);
       setViewingContract(r.data);
     } catch (error) {
@@ -4475,6 +4477,11 @@ function App() {
               /* Sözleşme önizleme */
               (() => {
                 const parsed = parseContract(viewingContract.sheets);
+                const origKur = parsed && parsed.kur != null ? parsed.kur : null;
+                const simRateNum = parseFloat(contractSimRate);
+                const simActive = !!origKur && !isNaN(simRateNum) && simRateNum > 0 && Math.abs(simRateNum - origKur) > 1e-9;
+                const kurFactor = simActive ? simRateNum / origKur : 1;
+                const adj = (v) => (v == null ? null : v * kurFactor); // TL değerlerini yeni kura ölçekle
                 return (
                   <div className="space-y-4">
                     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -4534,6 +4541,36 @@ function App() {
                           )}
                         </div>
 
+                        {/* Kur simülasyonu */}
+                        {origKur != null && (
+                          <div className="px-4 sm:px-8 pt-5 bg-[#FBFCFD]">
+                            <div className={`flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 ${simActive ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 bg-white'}`}>
+                              <div className="text-sm font-bold text-[#1B3A5C] flex items-center gap-2"><Calculator className="w-4 h-4" /> Kur Simülasyonu</div>
+                              <div className="text-xs text-slate-500">Sözleşme kuru: <strong className="tabular-nums">1 € = ₺{formatPrice(origKur)}</strong></div>
+                              <div className="flex items-center gap-2 ml-auto flex-wrap">
+                                <span className="text-sm text-slate-500">1 € =</span>
+                                <input
+                                  type="number" step="0.01" min="0"
+                                  value={contractSimRate}
+                                  onChange={(e) => setContractSimRate(e.target.value)}
+                                  placeholder={String(origKur)}
+                                  className="w-24 h-9 px-2 border border-slate-300 rounded-md text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                />
+                                <span className="text-sm text-slate-500">₺</span>
+                                <Button size="sm" variant="outline" onClick={() => setContractSimRate(String(exchangeRates.EUR || ''))}>
+                                  Güncel kur{exchangeRates.EUR ? ` (₺${formatPrice(exchangeRates.EUR)})` : ''}
+                                </Button>
+                                {simActive && <Button size="sm" variant="ghost" className="text-slate-500" onClick={() => setContractSimRate('')}>Sıfırla</Button>}
+                              </div>
+                            </div>
+                            {simActive && (
+                              <div className="text-xs text-amber-700 mt-2 flex items-center gap-1.5">
+                                <AlertTriangle className="w-3.5 h-3.5" /> Tutarlar <strong>1 € = ₺{formatPrice(simRateNum)}</strong> üzerinden yeniden hesaplandı — yalnızca önizleme, <strong>kaydedilmez</strong>.
+                              </div>
+                            )}
+                          </div>
+                        )}
+
                         {/* Bölümler + kalemler */}
                         <div className="px-4 sm:px-8 py-7 space-y-7 bg-[#FBFCFD]">
                           {parsed.sections.map((sec, si) => {
@@ -4564,8 +4601,8 @@ function App() {
                                           <td className="px-2 py-2.5 text-slate-700">{it.name}</td>
                                           <td className="px-2 py-2.5 text-center text-slate-500 tabular-nums">{it.qty && it.qty !== '0' ? it.qty : '—'}</td>
                                           <td className="px-2 py-2.5 text-right text-slate-500 tabular-nums">{it.eurUnit != null ? `€ ${formatPrice(it.eurUnit)}` : ''}</td>
-                                          <td className="px-2 py-2.5 text-right text-slate-500 tabular-nums">{it.tlUnit != null ? `₺ ${formatPrice(it.tlUnit)}` : ''}</td>
-                                          <td className="px-3 py-2.5 text-right font-semibold text-[#1B3A5C] tabular-nums">{it.total != null ? `₺ ${formatPrice(it.total)}` : ''}</td>
+                                          <td className={`px-2 py-2.5 text-right tabular-nums ${simActive ? 'text-emerald-700' : 'text-slate-500'}`}>{it.tlUnit != null ? `₺ ${formatPrice(adj(it.tlUnit))}` : ''}</td>
+                                          <td className={`px-3 py-2.5 text-right font-semibold tabular-nums ${simActive ? 'text-emerald-700' : 'text-[#1B3A5C]'}`}>{it.total != null ? `₺ ${formatPrice(adj(it.total))}` : ''}</td>
                                         </tr>
                                       ))}
                                     </tbody>
@@ -4573,7 +4610,7 @@ function App() {
                                       <tfoot>
                                         <tr className="bg-slate-50/60">
                                           <td colSpan={5} className="px-3 py-2 text-right text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Ara Toplam</td>
-                                          <td className="px-3 py-2 text-right font-bold text-slate-700 tabular-nums whitespace-nowrap">₺ {formatPrice(subtotal)}</td>
+                                          <td className={`px-3 py-2 text-right font-bold tabular-nums whitespace-nowrap ${simActive ? 'text-emerald-700' : 'text-slate-700'}`}>₺ {formatPrice(adj(subtotal))}</td>
                                         </tr>
                                       </tfoot>
                                     )}
@@ -4591,12 +4628,13 @@ function App() {
                               <div className="absolute -right-8 -top-8 w-40 h-40 rounded-full bg-emerald-500/10" />
                               <div className="relative flex items-end justify-between gap-4 flex-wrap">
                                 <div>
-                                  <div className="text-white/50 text-[11px] uppercase tracking-[0.2em]">Genel Toplam</div>
+                                  <div className="text-white/50 text-[11px] uppercase tracking-[0.2em]">Genel Toplam{simActive ? ` · 1 € = ₺${formatPrice(simRateNum)}` : ''}</div>
                                   <div className="text-white/40 text-xs mt-1">KDV hariç</div>
                                 </div>
                                 <div className="text-right">
-                                  <div style={{ fontFamily: "'Fraunces', Georgia, serif" }} className="text-3xl sm:text-4xl font-semibold tabular-nums">₺ {formatPrice(parsed.grandTotal)}</div>
-                                  {parsed.eurTotal != null && <div className="text-emerald-300 text-sm font-medium tabular-nums mt-0.5">≈ € {formatPrice(parsed.eurTotal)}</div>}
+                                  <div style={{ fontFamily: "'Fraunces', Georgia, serif" }} className={`text-3xl sm:text-4xl font-semibold tabular-nums ${simActive ? 'text-emerald-300' : ''}`}>₺ {formatPrice(adj(parsed.grandTotal))}</div>
+                                  {parsed.eurTotal != null && <div className="text-emerald-300/90 text-sm font-medium tabular-nums mt-0.5">≈ € {formatPrice(parsed.eurTotal)}</div>}
+                                  {simActive && <div className="text-white/45 text-xs tabular-nums mt-1">Sözleşme kuru (₺{formatPrice(origKur)}): ₺ {formatPrice(parsed.grandTotal)}</div>}
                                 </div>
                               </div>
                             </div>
