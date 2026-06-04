@@ -478,6 +478,7 @@ function App() {
   const [contractUploading, setContractUploading] = useState(false);
   const [viewingContract, setViewingContract] = useState(null); // önizlenen sözleşme (sheets dahil)
   const [contractLoadingView, setContractLoadingView] = useState(false);
+  const [contractRawView, setContractRawView] = useState(false); // tasarım / ham tablo
   const [copyPackageDialog, setCopyPackageDialog] = useState(false); // Paket kopyalama dialog'u
   const [packageToCopy, setPackageToCopy] = useState(null); // Kopyalanacak paket
   const [copyPackageName, setCopyPackageName] = useState(''); // Yeni paket adı
@@ -1801,6 +1802,81 @@ function App() {
     } catch (error) {
       console.error('Sözleşme silinemedi:', error);
       toast.error('Sözleşme silinemedi');
+    }
+  };
+
+  // Sözleşme Excel'ini akıllıca yapıya çevir (bölüm/kalem/toplam/not). Tanınmazsa null -> ham tablo.
+  const parseContract = (sheets) => {
+    try {
+      if (!sheets || !sheets.length) return null;
+      const rows = sheets[0].rows || [];
+      const up = (s) => (s == null ? '' : s.toString()).toLocaleUpperCase('tr-TR').trim();
+      let headerIdx = -1;
+      const col = { sno: 0, qty: null, eur: null, tl: null, total: null };
+      let nameCol = 1;
+      for (let i = 0; i < Math.min(rows.length, 15); i++) {
+        const r = rows[i] || [];
+        if (r.some((c) => up(c).includes('TUTAR'))) {
+          headerIdx = i;
+          let bestLen = -1;
+          r.forEach((c, ci) => {
+            const u = up(c);
+            if (!u) return;
+            if (u === 'S.NO' || u === 'NO' || u === 'SNO' || u === 'S NO') col.sno = ci;
+            else if (u.includes('ADET')) col.qty = ci;
+            else if (u.includes('EUR')) col.eur = ci;
+            else if (u.includes('TL F') || (u.includes('TL') && u.includes('YAT'))) col.tl = ci;
+            else if (u.includes('TUTAR')) col.total = ci;
+            else if (u.includes('KUR')) col.kur = ci;
+            else if (u.length > bestLen) { bestLen = u.length; nameCol = ci; }
+          });
+          break;
+        }
+      }
+      if (headerIdx < 0 || col.total == null) return null;
+      const numOf = (v) => {
+        if (v == null || v === '') return null;
+        let s = v.toString().trim().replace(/[^\d.,-]/g, '');
+        if (s.indexOf(',') >= 0) s = s.replace(/\./g, '').replace(',', '.');
+        const n = parseFloat(s);
+        return isNaN(n) ? null : n;
+      };
+      const cellAt = (r, idx) => (idx != null && r[idx] != null ? r[idx].toString().trim() : '');
+      const subtitle = rows[headerIdx] && rows[headerIdx][nameCol] ? rows[headerIdx][nameCol].toString() : '';
+      const sections = [];
+      let cur = { name: '', items: [] };
+      const notes = [];
+      let grandTotal = null;
+      let afterTotal = false;
+      for (let i = headerIdx + 1; i < rows.length; i++) {
+        const r = rows[i] || [];
+        const name = cellAt(r, nameCol);
+        const eur = cellAt(r, col.eur);
+        const totalStr = cellAt(r, col.total);
+        const sno = cellAt(r, col.sno);
+        const qty = cellAt(r, col.qty);
+        const u = up(name);
+        if (!name && !totalStr && !eur) continue;
+        if (u.includes('GENEL TOPLAM')) { grandTotal = numOf(totalStr); afterTotal = true; continue; }
+        if (afterTotal) {
+          if (u.includes('ÇORLU KARAVAN') || u === 'MÜŞTERİ' || u.includes('ZAMKI') || u.includes('İMZA')) continue;
+          if (name) notes.push(name);
+          continue;
+        }
+        if (eur !== '') {
+          cur.items.push({ sno, name, qty, total: numOf(totalStr) });
+        } else if (name) {
+          if (cur.items.length) sections.push(cur);
+          cur = { name, items: [] };
+        }
+      }
+      if (cur.items.length) sections.push(cur);
+      if (!sections.length) return null;
+      const itemCount = sections.reduce((s, sec) => s + sec.items.length, 0);
+      return { subtitle, sections, notes, grandTotal, itemCount };
+    } catch (e) {
+      console.error('Sözleşme ayrıştırma hatası:', e);
+      return null;
     }
   };
 
@@ -4340,46 +4416,134 @@ function App() {
               </>
             ) : (
               /* Sözleşme önizleme */
-              <div className="space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                  <div className="min-w-0">
-                    <Button variant="ghost" size="sm" onClick={() => setViewingContract(null)} className="mb-1 text-slate-500">← Listeye dön</Button>
-                    <h2 className="text-xl font-black text-slate-800 truncate">{viewingContract.title}</h2>
-                    {viewingContract.customer_name && <p className="text-sm text-slate-500">{viewingContract.customer_name}</p>}
-                  </div>
-                  <Button variant="outline" onClick={() => window.open(`${API}/contracts/${viewingContract.id}/download`, '_blank')}>
-                    <Download className="w-4 h-4 mr-2" /> Excel'i İndir
-                  </Button>
-                </div>
-
-                {(viewingContract.sheets || []).map((sheet, si) => (
-                  <div key={si} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                    {(viewingContract.sheets.length > 1) && (
-                      <div className="px-4 py-2 bg-slate-50 border-b text-sm font-semibold text-slate-600">{sheet.name}</div>
-                    )}
-                    <div className="overflow-x-auto">
-                      <table className="text-sm border-collapse w-full">
-                        <tbody>
-                          {(sheet.rows || []).map((row, ri) => (
-                            <tr key={ri} className={ri === 0 ? 'bg-emerald-50 font-semibold' : (ri % 2 ? 'bg-slate-50/40' : '')}>
-                              {row.map((cell, ci) => (
-                                <td key={ci} className="border border-slate-100 px-3 py-1.5 whitespace-pre-wrap align-top text-slate-700">{cell}</td>
-                              ))}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+              (() => {
+                const parsed = parseContract(viewingContract.sheets);
+                return (
+                  <div className="space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <Button variant="ghost" size="sm" onClick={() => setViewingContract(null)} className="text-slate-500">← Listeye dön</Button>
+                      <div className="flex items-center gap-2">
+                        {parsed && (
+                          <Button variant="outline" size="sm" onClick={() => setContractRawView((v) => !v)}>
+                            {contractRawView ? 'Tasarım görünümü' : 'Tablo görünümü'}
+                          </Button>
+                        )}
+                        <Button variant="outline" size="sm" onClick={() => window.open(`${API}/contracts/${viewingContract.id}/download`, '_blank')}>
+                          <Download className="w-4 h-4 mr-2" /> Excel'i İndir
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                ))}
 
-                {viewingContract.notes && (
-                  <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
-                    <div className="font-semibold text-amber-800 mb-1 flex items-center gap-2"><StickyNote className="w-4 h-4" /> Notlar</div>
-                    <div className="text-sm text-amber-900 whitespace-pre-wrap">{viewingContract.notes}</div>
+                    {parsed && !contractRawView ? (
+                      /* ===== TASARIMLI SÖZLEŞME GÖRÜNÜMÜ ===== */
+                      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden max-w-4xl mx-auto">
+                        {/* Başlık bandı */}
+                        <div className="bg-gradient-to-r from-[#1B3A5C] to-[#2E5A86] text-white px-6 py-5">
+                          <div className="flex items-start justify-between gap-4 flex-wrap">
+                            <div className="min-w-0">
+                              <div className="text-xs uppercase tracking-widest text-white/60 mb-1">Müşteri Teklif Formu ve Sözleşme</div>
+                              <h2 className="text-2xl font-black truncate">{viewingContract.title}</h2>
+                              {parsed.subtitle && <p className="text-white/70 text-sm mt-0.5">{parsed.subtitle}</p>}
+                            </div>
+                            <div className="text-right text-sm">
+                              {viewingContract.customer_name && <div className="font-semibold">{viewingContract.customer_name}</div>}
+                              <div className="text-white/60">{viewingContract.created_at ? new Date(viewingContract.created_at).toLocaleDateString('tr-TR') : ''}</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Bölümler + kalemler */}
+                        <div className="p-4 sm:p-6 space-y-5">
+                          {parsed.sections.map((sec, si) => (
+                            <div key={si}>
+                              <div className="flex items-center gap-2 mb-2">
+                                <div className="h-5 w-1.5 rounded-full bg-emerald-500" />
+                                <h3 className="font-bold text-slate-800 uppercase text-sm tracking-wide">{sec.name}</h3>
+                              </div>
+                              <div className="rounded-xl border border-slate-100 overflow-hidden">
+                                <table className="w-full text-sm">
+                                  <tbody>
+                                    {sec.items.map((it, ii) => (
+                                      <tr key={ii} className={ii % 2 ? 'bg-slate-50/50' : 'bg-white'}>
+                                        <td className="px-2 py-2 text-slate-400 w-8 text-center">{it.sno}</td>
+                                        <td className="px-2 py-2 text-slate-700">{it.name}</td>
+                                        <td className="px-2 py-2 text-slate-500 text-center whitespace-nowrap w-16">{it.qty && it.qty !== '0' ? `${it.qty} ad.` : ''}</td>
+                                        <td className="px-3 py-2 text-right font-semibold text-slate-800 whitespace-nowrap w-28">{it.total != null ? `₺ ${formatPrice(it.total)}` : ''}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Genel toplam */}
+                        {parsed.grandTotal != null && (
+                          <div className="px-4 sm:px-6 pb-5">
+                            <div className="flex items-center justify-between bg-[#1B3A5C] text-white rounded-xl px-5 py-4">
+                              <span className="font-bold uppercase tracking-wide">Genel Toplam</span>
+                              <span className="text-2xl font-black">₺ {formatPrice(parsed.grandTotal)}</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Notlar + imza */}
+                        <div className="px-4 sm:px-6 pb-6 space-y-4">
+                          {(parsed.notes.length > 0 || viewingContract.notes) && (
+                            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900">
+                              <div className="font-semibold text-amber-800 mb-1 flex items-center gap-2"><StickyNote className="w-4 h-4" /> Notlar & Şartlar</div>
+                              <ul className="list-disc list-inside space-y-0.5">
+                                {parsed.notes.map((n, ni) => (<li key={ni}>{n}</li>))}
+                              </ul>
+                              {viewingContract.notes && <div className="mt-2 pt-2 border-t border-amber-200 whitespace-pre-wrap">{viewingContract.notes}</div>}
+                            </div>
+                          )}
+                          <div className="grid grid-cols-2 gap-6 pt-6">
+                            <div className="text-center">
+                              <div className="border-t border-slate-300 pt-2 text-sm font-semibold text-slate-700">Çorlu Karavan</div>
+                            </div>
+                            <div className="text-center">
+                              <div className="border-t border-slate-300 pt-2 text-sm font-semibold text-slate-700">Müşteri{viewingContract.customer_name ? ` · ${viewingContract.customer_name}` : ''}</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      /* ===== HAM TABLO GÖRÜNÜMÜ ===== */
+                      <>
+                        <h2 className="text-xl font-black text-slate-800">{viewingContract.title}</h2>
+                        {(viewingContract.sheets || []).map((sheet, si) => (
+                          <div key={si} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                            {viewingContract.sheets.length > 1 && (
+                              <div className="px-4 py-2 bg-slate-50 border-b text-sm font-semibold text-slate-600">{sheet.name}</div>
+                            )}
+                            <div className="overflow-x-auto">
+                              <table className="text-sm border-collapse w-full">
+                                <tbody>
+                                  {(sheet.rows || []).map((row, ri) => (
+                                    <tr key={ri} className={ri % 2 ? 'bg-slate-50/40' : ''}>
+                                      {row.map((cell, ci) => (
+                                        <td key={ci} className="border border-slate-100 px-3 py-1.5 whitespace-pre-wrap align-top text-slate-700">{cell}</td>
+                                      ))}
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        ))}
+                        {viewingContract.notes && (
+                          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
+                            <div className="font-semibold text-amber-800 mb-1 flex items-center gap-2"><StickyNote className="w-4 h-4" /> Notlar</div>
+                            <div className="text-sm text-amber-900 whitespace-pre-wrap">{viewingContract.notes}</div>
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
-                )}
-              </div>
+                );
+              })()
             )}
           </TabsContent>
 
