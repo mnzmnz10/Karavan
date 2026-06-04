@@ -150,6 +150,11 @@ async def create_indexes():
         # TTL: expires_at gecince Mongo otomatik siler (expireAfterSeconds=0 => alandaki zamani kullan)
         await db.sessions.create_index("expires_at", expireAfterSeconds=0)
 
+        # Servis (tadilat/bakim) kayitlari
+        await db.services.create_index("created_at")
+        await db.services.create_index("status")
+        await db.services.create_index("plate")
+
         logger.info("PERFORMANCE: Database indexes created successfully")
         
     except Exception as e:
@@ -518,6 +523,48 @@ class QuoteResponse(BaseModel):
     notes: Optional[str] = None
     created_at: str
     status: str = "active"
+
+# ==================== SERVIS (Tadilat/Bakim Takibi) ====================
+class ServiceRecord(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    customer_name: Optional[str] = Field(None, max_length=200)   # Müşteri adı
+    phone: Optional[str] = Field(None, max_length=40)            # Telefon
+    vehicle_brand: Optional[str] = Field(None, max_length=100)   # Araç markası
+    vehicle_model: Optional[str] = Field(None, max_length=100)   # Araç modeli
+    plate: Optional[str] = Field(None, max_length=30)            # Plaka
+    arrival_date: Optional[str] = None                           # Geliş/işlem tarihi (YYYY-MM-DD)
+    delivery_date: Optional[str] = None                          # Teslim tarihi (boş = henüz teslim edilmedi)
+    operations: Optional[str] = Field(None, max_length=5000)     # Yapılan işlemler
+    notes: Optional[str] = Field(None, max_length=5000)          # Notlar
+    cost: Optional[float] = Field(None, ge=0)                    # Ücret (opsiyonel)
+    status: str = "received"                                     # received | in_progress | delivered
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class ServiceCreate(BaseModel):
+    customer_name: Optional[str] = Field(None, max_length=200)
+    phone: Optional[str] = Field(None, max_length=40)
+    vehicle_brand: Optional[str] = Field(None, max_length=100)
+    vehicle_model: Optional[str] = Field(None, max_length=100)
+    plate: Optional[str] = Field(None, max_length=30)
+    arrival_date: Optional[str] = None
+    delivery_date: Optional[str] = None
+    operations: Optional[str] = Field(None, max_length=5000)
+    notes: Optional[str] = Field(None, max_length=5000)
+    cost: Optional[float] = Field(None, ge=0)
+    status: str = "received"
+
+class ServiceUpdate(BaseModel):
+    customer_name: Optional[str] = Field(None, max_length=200)
+    phone: Optional[str] = Field(None, max_length=40)
+    vehicle_brand: Optional[str] = Field(None, max_length=100)
+    vehicle_model: Optional[str] = Field(None, max_length=100)
+    plate: Optional[str] = Field(None, max_length=30)
+    arrival_date: Optional[str] = None
+    delivery_date: Optional[str] = None
+    operations: Optional[str] = Field(None, max_length=5000)
+    notes: Optional[str] = Field(None, max_length=5000)
+    cost: Optional[float] = Field(None, ge=0)
+    status: Optional[str] = None
 
 class ExchangeRate(BaseModel):
     currency: str
@@ -7954,6 +8001,74 @@ async def wiring_export_pdf(req: WiringPdfExportRequest):
     return _Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": cd})
 
 # ===================== /WIRING MODÜLÜ SONU =====================
+
+
+# ==================== SERVIS (Tadilat/Bakim) ENDPOINT'LERI ====================
+_SERVICE_STATUSES = {"received", "in_progress", "delivered"}
+
+
+@api_router.get("/services")
+async def list_services(status: Optional[str] = None, search: Optional[str] = None):
+    """Servis kayitlarini listele (en yeni once)."""
+    query = {}
+    if status and status in _SERVICE_STATUSES:
+        query["status"] = status
+    if search:
+        rx = {"$regex": re.escape(search), "$options": "i"}
+        query["$or"] = [
+            {"customer_name": rx}, {"plate": rx},
+            {"vehicle_brand": rx}, {"vehicle_model": rx},
+        ]
+    services = await db.services.find(query).sort("created_at", -1).to_list(1000)
+    for s in services:
+        s.pop("_id", None)
+    return services
+
+
+@api_router.post("/services")
+async def create_service(payload: ServiceCreate):
+    """Yeni servis kaydi olustur."""
+    doc = payload.dict()
+    if doc.get("status") not in _SERVICE_STATUSES:
+        doc["status"] = "received"
+    doc["id"] = str(uuid.uuid4())
+    doc["created_at"] = datetime.now(timezone.utc)
+    await db.services.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@api_router.get("/services/{service_id}")
+async def get_service(service_id: str):
+    service = await db.services.find_one({"id": service_id})
+    if not service:
+        raise HTTPException(status_code=404, detail="Servis kaydı bulunamadı")
+    service.pop("_id", None)
+    return service
+
+
+@api_router.put("/services/{service_id}")
+async def update_service(service_id: str, payload: ServiceUpdate):
+    existing = await db.services.find_one({"id": service_id})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Servis kaydı bulunamadı")
+    update_data = {k: v for k, v in payload.dict(exclude_unset=True).items()}
+    if "status" in update_data and update_data["status"] not in _SERVICE_STATUSES:
+        update_data.pop("status")
+    if update_data:
+        await db.services.update_one({"id": service_id}, {"$set": update_data})
+    service = await db.services.find_one({"id": service_id})
+    service.pop("_id", None)
+    return service
+
+
+@api_router.delete("/services/{service_id}")
+async def delete_service(service_id: str):
+    result = await db.services.delete_one({"id": service_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Servis kaydı bulunamadı")
+    return {"success": True, "message": "Servis kaydı silindi"}
+
 
 app.include_router(api_router)
 

@@ -461,6 +461,14 @@ function App() {
   const [aiPreviewProducts, setAiPreviewProducts] = useState(null); // çıkarılan ürünler (önizleme); null = önizleme yok
   const [aiPreviewCompanyId, setAiPreviewCompanyId] = useState(''); // önizlemenin ait olduğu firma
   const [aiSaving, setAiSaving] = useState(false); // kaydetme sürüyor mu
+  // Servis (tadilat/bakim) sekmesi
+  const emptyServiceForm = { customer_name: '', phone: '', vehicle_brand: '', vehicle_model: '', plate: '', arrival_date: '', delivery_date: '', operations: '', notes: '', cost: '', status: 'received' };
+  const [services, setServices] = useState([]);
+  const [serviceForm, setServiceForm] = useState(emptyServiceForm);
+  const [serviceEditingId, setServiceEditingId] = useState(null); // düzenlenen kayıt id (null = yeni)
+  const [serviceDialogOpen, setServiceDialogOpen] = useState(false);
+  const [serviceStatusFilter, setServiceStatusFilter] = useState('all');
+  const [serviceSaving, setServiceSaving] = useState(false);
   const [copyPackageDialog, setCopyPackageDialog] = useState(false); // Paket kopyalama dialog'u
   const [packageToCopy, setPackageToCopy] = useState(null); // Kopyalanacak paket
   const [copyPackageName, setCopyPackageName] = useState(''); // Yeni paket adı
@@ -736,6 +744,13 @@ function App() {
       }
     } catch (e) { /* fullscreen desteklenmiyorsa yoksay */ }
   };
+
+  // Servis sekmesi aktif olunca (veya filtre değişince) kayıtları yükle.
+  useEffect(() => {
+    if (activeTab === 'service') {
+      loadServices();
+    }
+  }, [activeTab]);
 
   // Sidebar/döviz barı yalnızca wiring sekmesi AKTİF + tam ekrandayken gizlenir.
   const hideChromeForWiring = activeTab === 'wiring-diagram' && isFullscreen;
@@ -1616,6 +1631,102 @@ function App() {
       toast.error(error.response?.data?.detail || 'Ürünler kaydedilemedi');
     } finally {
       setAiSaving(false);
+    }
+  };
+
+  // ===================== SERVİS (Tadilat/Bakım) =====================
+  const SERVICE_STATUS_META = {
+    received: { label: 'Bekliyor', badge: 'bg-amber-100 text-amber-700 border-amber-200', dot: 'bg-amber-500' },
+    in_progress: { label: 'Devam Ediyor', badge: 'bg-blue-100 text-blue-700 border-blue-200', dot: 'bg-blue-500' },
+    delivered: { label: 'Teslim Edildi', badge: 'bg-emerald-100 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500' },
+  };
+  const serviceCounts = {
+    all: services.length,
+    received: services.filter((s) => s.status === 'received').length,
+    in_progress: services.filter((s) => s.status === 'in_progress').length,
+    delivered: services.filter((s) => s.status === 'delivered').length,
+  };
+
+  const loadServices = async () => {
+    try {
+      const res = await axios.get(`${API}/services`);
+      setServices(res.data || []);
+    } catch (error) {
+      console.error('Servis kayıtları yüklenemedi:', error);
+      toast.error('Servis kayıtları yüklenemedi');
+    }
+  };
+
+  const openNewServiceDialog = () => {
+    setServiceEditingId(null);
+    setServiceForm({ ...emptyServiceForm, arrival_date: new Date().toISOString().slice(0, 10) });
+    setServiceDialogOpen(true);
+  };
+
+  const openEditServiceDialog = (svc) => {
+    setServiceEditingId(svc.id);
+    setServiceForm({
+      customer_name: svc.customer_name || '', phone: svc.phone || '',
+      vehicle_brand: svc.vehicle_brand || '', vehicle_model: svc.vehicle_model || '',
+      plate: svc.plate || '', arrival_date: svc.arrival_date || '', delivery_date: svc.delivery_date || '',
+      operations: svc.operations || '', notes: svc.notes || '',
+      cost: svc.cost != null ? String(svc.cost) : '', status: svc.status || 'received'
+    });
+    setServiceDialogOpen(true);
+  };
+
+  const saveService = async () => {
+    if (!serviceForm.vehicle_brand?.trim() && !serviceForm.plate?.trim() && !serviceForm.customer_name?.trim()) {
+      toast.error('En az müşteri, araç veya plaka bilgisi girin');
+      return;
+    }
+    const payload = {
+      ...serviceForm,
+      cost: serviceForm.cost !== '' && serviceForm.cost != null ? parseFloat(serviceForm.cost) : null,
+      arrival_date: serviceForm.arrival_date || null,
+      delivery_date: serviceForm.delivery_date || null,
+    };
+    try {
+      setServiceSaving(true);
+      if (serviceEditingId) {
+        await axios.put(`${API}/services/${serviceEditingId}`, payload);
+        toast.success('Servis kaydı güncellendi');
+      } else {
+        await axios.post(`${API}/services`, payload);
+        toast.success('Servis kaydı eklendi');
+      }
+      setServiceDialogOpen(false);
+      await loadServices();
+    } catch (error) {
+      console.error('Servis kaydedilemedi:', error);
+      toast.error(error.response?.data?.detail || 'Servis kaydedilemedi');
+    } finally {
+      setServiceSaving(false);
+    }
+  };
+
+  const deleteService = async (id) => {
+    if (!window.confirm('Bu servis kaydını silmek istediğinize emin misiniz?')) return;
+    try {
+      await axios.delete(`${API}/services/${id}`);
+      toast.success('Servis kaydı silindi');
+      await loadServices();
+    } catch (error) {
+      console.error('Servis silinemedi:', error);
+      toast.error('Servis kaydı silinemedi');
+    }
+  };
+
+  const setServiceStatus = async (id, status) => {
+    try {
+      const patch = { status };
+      if (status === 'delivered') patch.delivery_date = new Date().toISOString().slice(0, 10);
+      await axios.put(`${API}/services/${id}`, patch);
+      await loadServices();
+      toast.success(status === 'delivered' ? 'Teslim edildi olarak işaretlendi' : 'Durum güncellendi');
+    } catch (error) {
+      console.error('Durum güncellenemedi:', error);
+      toast.error('Durum güncellenemedi');
     }
   };
 
@@ -3672,6 +3783,14 @@ function App() {
                     >
                       <Cable className="w-4 h-4" />
                       <span>Kablo Şeması</span>
+                    </TabsTrigger>
+
+                    <TabsTrigger
+                      value="service"
+                      className="flex items-center justify-start gap-3 w-full h-11 px-4 text-sm font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100 rounded-xl data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
+                    >
+                      <Wrench className="w-4 h-4" />
+                      <span>Servis</span>
                     </TabsTrigger>
                   </TabsList>
                 </div>
@@ -7245,6 +7364,198 @@ function App() {
           <TabsContent value="wiring-diagram" className="m-0 p-0">
             <KabloSemasiSection fullscreen={hideChromeForWiring} />
           </TabsContent>
+
+          {/* ===================== SERVİS (Tadilat/Bakım) ===================== */}
+          <TabsContent value="service" className="space-y-6">
+            {/* Başlık + Yeni kayıt */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">
+                  <Wrench className="w-6 h-6 text-emerald-600" /> Servis Takip
+                </h2>
+                <p className="text-sm text-slate-500">Tadilata/bakıma gelen araçlar, yapılan işlemler ve teslim durumu</p>
+              </div>
+              <Button onClick={openNewServiceDialog} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl">
+                <Plus className="w-4 h-4 mr-2" /> Yeni Servis Kaydı
+              </Button>
+            </div>
+
+            {/* Durum filtre sekmeleri */}
+            <div className="flex flex-wrap gap-2">
+              {[
+                { key: 'all', label: 'Tümü' },
+                { key: 'received', label: 'Bekliyor' },
+                { key: 'in_progress', label: 'Devam Ediyor' },
+                { key: 'delivered', label: 'Teslim Edildi' },
+              ].map((f) => (
+                <button
+                  key={f.key}
+                  onClick={() => setServiceStatusFilter(f.key)}
+                  className={`px-4 py-2 rounded-full text-sm font-semibold border transition-all ${
+                    serviceStatusFilter === f.key
+                      ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  {f.label} <span className="opacity-70">({serviceCounts[f.key]})</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Kayıt listesi */}
+            {(() => {
+              const filtered = serviceStatusFilter === 'all'
+                ? services
+                : services.filter((s) => s.status === serviceStatusFilter);
+              if (filtered.length === 0) {
+                return (
+                  <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-slate-200">
+                    <Wrench className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                    <p className="text-slate-500 font-medium">Henüz servis kaydı yok</p>
+                    <p className="text-slate-400 text-sm mb-4">İlk aracını eklemek için “Yeni Servis Kaydı”na bas</p>
+                  </div>
+                );
+              }
+              return (
+                <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {filtered.map((s) => {
+                    const meta = SERVICE_STATUS_META[s.status] || SERVICE_STATUS_META.received;
+                    const vehicle = [s.vehicle_brand, s.vehicle_model].filter(Boolean).join(' ') || 'Araç belirtilmemiş';
+                    return (
+                      <div key={s.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow p-5 flex flex-col gap-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="font-bold text-slate-800 truncate">{vehicle}</div>
+                            {s.plate && <div className="inline-block mt-1 px-2 py-0.5 bg-slate-100 rounded text-xs font-mono font-bold tracking-wider text-slate-700">{s.plate}</div>}
+                          </div>
+                          <span className={`shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.badge}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} /> {meta.label}
+                          </span>
+                        </div>
+
+                        {(s.customer_name || s.phone) && (
+                          <div className="text-sm text-slate-600 space-y-0.5">
+                            {s.customer_name && <div className="flex items-center gap-1.5"><Users className="w-3.5 h-3.5 text-slate-400" /> {s.customer_name}</div>}
+                            {s.phone && <div className="flex items-center gap-1.5"><Phone className="w-3.5 h-3.5 text-slate-400" /> {s.phone}</div>}
+                          </div>
+                        )}
+
+                        {s.operations && (
+                          <div className="text-sm text-slate-700 bg-slate-50 rounded-lg p-2.5 whitespace-pre-wrap break-words line-clamp-4">
+                            {s.operations}
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-between text-xs text-slate-500 mt-auto pt-1">
+                          <span>Geliş: <strong className="text-slate-700">{s.arrival_date || '—'}</strong></span>
+                          <span>Teslim: <strong className="text-slate-700">{s.delivery_date || '—'}</strong></span>
+                        </div>
+
+                        {s.cost != null && s.cost > 0 && (
+                          <div className="text-sm font-bold text-emerald-700">Ücret: ₺ {formatPrice(s.cost)}</div>
+                        )}
+
+                        <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+                          {s.status !== 'delivered' && (
+                            <Button size="sm" variant="outline" className="flex-1 text-xs" onClick={() => setServiceStatus(s.id, s.status === 'received' ? 'in_progress' : 'delivered')}>
+                              {s.status === 'received' ? 'İşleme Al' : 'Teslim Et'}
+                            </Button>
+                          )}
+                          <Button size="sm" variant="ghost" className="text-slate-500" onClick={() => openEditServiceDialog(s)} title="Düzenle">
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-700" onClick={() => deleteService(s.id)} title="Sil">
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </TabsContent>
+
+          {/* Servis ekle/düzenle dialog */}
+          <Dialog open={serviceDialogOpen} onOpenChange={setServiceDialogOpen}>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>{serviceEditingId ? 'Servis Kaydını Düzenle' : 'Yeni Servis Kaydı'}</DialogTitle>
+                <DialogDescription>Araç ve yapılan işlem bilgilerini girin</DialogDescription>
+              </DialogHeader>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-2">
+                <div>
+                  <Label>Müşteri Adı</Label>
+                  <Input value={serviceForm.customer_name} onChange={(e) => setServiceForm({ ...serviceForm, customer_name: e.target.value })} placeholder="Ad Soyad" />
+                </div>
+                <div>
+                  <Label>Telefon</Label>
+                  <Input value={serviceForm.phone} onChange={(e) => setServiceForm({ ...serviceForm, phone: e.target.value })} placeholder="05xx ..." />
+                </div>
+                <div>
+                  <Label>Araç Markası</Label>
+                  <Input value={serviceForm.vehicle_brand} onChange={(e) => setServiceForm({ ...serviceForm, vehicle_brand: e.target.value })} placeholder="Ford, Fiat ..." />
+                </div>
+                <div>
+                  <Label>Araç Modeli</Label>
+                  <Input value={serviceForm.vehicle_model} onChange={(e) => setServiceForm({ ...serviceForm, vehicle_model: e.target.value })} placeholder="Transit, Ducato ..." />
+                </div>
+                <div>
+                  <Label>Plaka</Label>
+                  <Input value={serviceForm.plate} onChange={(e) => setServiceForm({ ...serviceForm, plate: e.target.value })} placeholder="59 ABC 123" />
+                </div>
+                <div>
+                  <Label>Durum</Label>
+                  <Select value={serviceForm.status} onValueChange={(v) => setServiceForm({ ...serviceForm, status: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="received">Bekliyor</SelectItem>
+                      <SelectItem value="in_progress">Devam Ediyor</SelectItem>
+                      <SelectItem value="delivered">Teslim Edildi</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Geliş Tarihi</Label>
+                  <Input type="date" value={serviceForm.arrival_date} onChange={(e) => setServiceForm({ ...serviceForm, arrival_date: e.target.value })} />
+                </div>
+                <div>
+                  <Label>Teslim Tarihi</Label>
+                  <Input type="date" value={serviceForm.delivery_date} onChange={(e) => setServiceForm({ ...serviceForm, delivery_date: e.target.value })} />
+                </div>
+                <div className="sm:col-span-2">
+                  <Label>Yapılan İşlemler</Label>
+                  <textarea
+                    value={serviceForm.operations}
+                    onChange={(e) => setServiceForm({ ...serviceForm, operations: e.target.value })}
+                    rows={3}
+                    placeholder="Solar panel kurulumu, akü değişimi, inverter montajı ..."
+                    className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <Label>Notlar</Label>
+                  <textarea
+                    value={serviceForm.notes}
+                    onChange={(e) => setServiceForm({ ...serviceForm, notes: e.target.value })}
+                    rows={2}
+                    placeholder="Ek notlar ..."
+                    className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <Label>Ücret (₺) — opsiyonel</Label>
+                  <Input type="number" min="0" step="0.01" value={serviceForm.cost} onChange={(e) => setServiceForm({ ...serviceForm, cost: e.target.value })} placeholder="0" />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setServiceDialogOpen(false)}>İptal</Button>
+                <Button onClick={saveService} disabled={serviceSaving} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                  {serviceSaving ? 'Kaydediliyor...' : (serviceEditingId ? 'Güncelle' : 'Kaydet')}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
               </div> {/* max-w container */}
             </div> {/* Right Main Work Area */}
