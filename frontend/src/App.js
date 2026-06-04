@@ -461,7 +461,6 @@ function App() {
   const [aiPreviewProducts, setAiPreviewProducts] = useState(null); // çıkarılan ürünler (önizleme); null = önizleme yok
   const [aiPreviewCompanyId, setAiPreviewCompanyId] = useState(''); // önizlemenin ait olduğu firma
   const [aiSaving, setAiSaving] = useState(false); // kaydetme sürüyor mu
-  const productFileInputRef = useRef(null); // AI ürün import dosya seçici
   // Servis (tadilat/bakim) sekmesi
   const emptyServiceForm = { customer_name: '', phone: '', vehicle_brand: '', vehicle_model: '', plate: '', arrival_date: '', delivery_date: '', operations: '', notes: '', cost: '', status: 'received' };
   const [services, setServices] = useState([]);
@@ -479,7 +478,6 @@ function App() {
   const [contractUploading, setContractUploading] = useState(false);
   const [viewingContract, setViewingContract] = useState(null); // önizlenen sözleşme (sheets dahil)
   const [contractLoadingView, setContractLoadingView] = useState(false);
-  const contractFileInputRef = useRef(null);
   const [copyPackageDialog, setCopyPackageDialog] = useState(false); // Paket kopyalama dialog'u
   const [packageToCopy, setPackageToCopy] = useState(null); // Kopyalanacak paket
   const [copyPackageName, setCopyPackageName] = useState(''); // Yeni paket adı
@@ -4404,16 +4402,19 @@ function App() {
                 <div>
                   <Label>Excel Dosyası (.xlsx / .xls)</Label>
                   <input
-                    ref={contractFileInputRef}
+                    id="contract-file-input"
                     type="file"
                     accept=".xlsx,.xls,.xlsm"
-                    className="hidden"
+                    className="sr-only"
                     onChange={(e) => setContractFile(e.target.files && e.target.files[0] ? e.target.files[0] : null)}
                   />
                   <div className="flex items-center gap-3 mt-1">
-                    <Button type="button" variant="outline" onClick={() => contractFileInputRef.current && contractFileInputRef.current.click()}>
+                    <label
+                      htmlFor="contract-file-input"
+                      className="inline-flex items-center justify-center h-9 px-4 rounded-md border border-slate-300 bg-white text-sm font-medium cursor-pointer hover:bg-slate-50 transition-colors"
+                    >
                       <Upload className="w-4 h-4 mr-2" /> Dosya Seç
-                    </Button>
+                    </label>
                     <span className={`text-sm truncate ${contractFile ? 'text-emerald-700 font-medium' : 'text-slate-400'}`}>
                       {contractFile ? contractFile.name : 'Henüz dosya seçilmedi'}
                     </span>
@@ -5462,16 +5463,19 @@ function App() {
                   <div>
                     <Label>Dosya (PDF / Excel / Fotoğraf)</Label>
                     <input
-                      ref={productFileInputRef}
+                      id="product-file-input"
                       type="file"
                       accept=".pdf,.xlsx,.xls,image/*"
-                      className="hidden"
+                      className="sr-only"
                       onChange={(e) => setUploadFile(e.target.files && e.target.files[0] ? e.target.files[0] : null)}
                     />
                     <div className="flex items-center gap-3 mt-1">
-                      <Button type="button" variant="outline" onClick={() => productFileInputRef.current && productFileInputRef.current.click()}>
+                      <label
+                        htmlFor="product-file-input"
+                        className="inline-flex items-center justify-center h-9 px-4 rounded-md border border-slate-300 bg-white text-sm font-medium cursor-pointer hover:bg-slate-50 transition-colors"
+                      >
                         <Upload className="w-4 h-4 mr-2" /> Dosya Seç
-                      </Button>
+                      </label>
                       <span className={`text-sm truncate ${uploadFile ? 'text-emerald-700 font-medium' : 'text-slate-400'}`}>
                         {uploadFile ? uploadFile.name : 'Henüz dosya seçilmedi'}
                       </span>
