@@ -3276,7 +3276,9 @@ function App() {
     const discountAmountDiscounted = totalListPriceDiscounted * (parseFloat(quoteDiscount) || 0) / 100;
     const laborCost = parseFloat(quoteLaborCost) || 0;
     const totalNetPrice = totalListPrice - discountAmount + laborCost;
-    const totalNetPriceDiscounted = totalListPriceDiscounted - discountAmountDiscounted + laborCost;
+    // İşçiliğin "gelişi" (maliyeti) yoktur -> geliş/maliyet toplamına EKLENMEZ.
+    // Böylece işçilik tamamen kâra yazılır (BRÜT KAZANÇ = satış net - geliş net).
+    const totalNetPriceDiscounted = totalListPriceDiscounted - discountAmountDiscounted;
     
     // Toplam ürün adedi hesapla
     const totalQuantity = selectedProductsData.reduce((sum, p) => sum + (p.quantity || 1), 0);
@@ -6711,16 +6713,18 @@ function App() {
                                 <span>- ₺ {formatPrice(calculateQuoteTotals.discountAmountDiscounted)}</span>
                               </div>
                               
-                              <div className="flex justify-between text-emerald-700">
-                                <span>İşçilik Payı (+):</span>
-                                <span>+ ₺ {formatPrice(calculateQuoteTotals.laborCost)}</span>
-                              </div>
-                              
                               <div className="flex justify-between text-purple-700 font-extrabold border-t border-purple-200/60 pt-2 text-sm">
                                 <span>NET GELİŞ TOPLAMI:</span>
                                 <span>₺ {formatPrice(calculateQuoteTotals.totalNetPriceDiscounted)}</span>
                               </div>
-                              
+
+                              {calculateQuoteTotals.laborCost > 0 && (
+                                <div className="flex justify-between text-emerald-700">
+                                  <span>İşçilik (tamamı kâr):</span>
+                                  <span>+ ₺ {formatPrice(calculateQuoteTotals.laborCost)}</span>
+                                </div>
+                              )}
+
                               <div className="flex justify-between text-emerald-800 font-black border-t border-purple-200/60 pt-1.5 text-sm select-none">
                                 <span>BRÜT KAZANÇ (KÂR):</span>
                                 <span>₺ {formatPrice(calculateQuoteTotals.totalNetPrice - calculateQuoteTotals.totalNetPriceDiscounted)}</span>
