@@ -3653,7 +3653,7 @@ function App() {
                       className="flex items-center justify-start gap-3 w-full h-11 px-4 text-sm font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100 rounded-xl data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
                     >
                       <Upload className="w-4 h-4" />
-                      <span>Excel Yükle</span>
+                      <span>Ürün Ekle (AI)</span>
                     </TabsTrigger>
 
                     <TabsTrigger 
