@@ -8199,17 +8199,104 @@ async def get_contract(contract_id: str):
     return doc
 
 
+def _contract_data_to_xlsx(doc) -> bytes:
+    """Duzenlenmis yapisal sozlesme verisinden yeni bir Excel olustur."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+    data = doc.get("data") or {}
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Sozlesme"
+    navy = "1B3A5C"
+    bold = Font(bold=True)
+    white_bold = Font(bold=True, color="FFFFFF")
+    hdr_fill = PatternFill("solid", fgColor=navy)
+    sec_fill = PatternFill("solid", fgColor="E8EEF4")
+    right = Alignment(horizontal="right")
+
+    ws.append([doc.get("title") or "Sözleşme"])
+    ws["A1"].font = Font(bold=True, size=14)
+    if doc.get("customer_name"):
+        ws.append(["Müşteri", doc["customer_name"]])
+    if data.get("subtitle"):
+        ws.append([data["subtitle"]])
+    kur = data.get("kur")
+    if kur:
+        ws.append(["Sözleşme Kuru", f"1 € = ₺{kur}"])
+    ws.append([])
+
+    headers = ["No", "İşlem", "Adet", "Birim (€)", "Birim (₺)", "Tutar (₺)"]
+    ws.append(headers)
+    hr = ws.max_row
+    for c in range(1, len(headers) + 1):
+        cell = ws.cell(row=hr, column=c)
+        cell.font = white_bold
+        cell.fill = hdr_fill
+
+    for sec in data.get("sections", []):
+        ws.append([sec.get("name", "")])
+        srow = ws.max_row
+        ws.cell(row=srow, column=1).font = bold
+        for c in range(1, len(headers) + 1):
+            ws.cell(row=srow, column=c).fill = sec_fill
+        for it in sec.get("items", []):
+            ws.append([
+                it.get("sno", ""),
+                it.get("name", ""),
+                it.get("qty", ""),
+                it.get("eurUnit"),
+                it.get("tlUnit"),
+                it.get("total"),
+            ])
+
+    ws.append([])
+    if data.get("grandTotal") is not None:
+        ws.append(["", "GENEL TOPLAM", "", "", "", data["grandTotal"]])
+        gr = ws.max_row
+        ws.cell(row=gr, column=2).font = bold
+        ws.cell(row=gr, column=6).font = bold
+    if data.get("eurTotal") is not None:
+        ws.append(["", "EUR Karşılığı", "", "", "", round(data["eurTotal"], 2)])
+
+    notes = data.get("notes") or []
+    if notes or doc.get("notes"):
+        ws.append([])
+        ws.append(["NOTLAR"])
+        ws.cell(row=ws.max_row, column=1).font = bold
+        for n in notes:
+            ws.append([n])
+        if doc.get("notes"):
+            ws.append([doc["notes"]])
+
+    for i, w in enumerate([6, 52, 8, 12, 14, 16], start=1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    out = BytesIO()
+    wb.save(out)
+    out.seek(0)
+    return out.read()
+
+
 @api_router.get("/contracts/{contract_id}/download")
 async def download_contract(contract_id: str):
-    """Orijinal Excel dosyasini indir."""
+    """Sözleşmeyi Excel olarak indir. Düzenlenmişse düzenlenmiş halini, değilse orijinali verir."""
     doc = await db.contracts.find_one({"id": contract_id})
     if not doc:
         raise HTTPException(status_code=404, detail="Sözleşme bulunamadı")
-    data = base64.b64decode(doc.get("file_b64", "") or "")
+
+    edited = bool(doc.get("data") and (doc["data"].get("sections")))
+    if edited:
+        data = _contract_data_to_xlsx(doc)
+        raw_name = (doc.get("title") or "sozlesme") + ".xlsx"
+    else:
+        data = base64.b64decode(doc.get("file_b64", "") or "")
+        raw_name = doc.get("file_name") or "sozlesme.xlsx"
     if not data:
         raise HTTPException(status_code=404, detail="Dosya bulunamadı")
-    raw_name = doc.get("file_name") or "sozlesme.xlsx"
     ascii_name = raw_name.encode("ascii", "ignore").decode("ascii") or "sozlesme.xlsx"
+    if not ascii_name.lower().endswith((".xlsx", ".xls", ".xlsm")):
+        ascii_name += ".xlsx"
     return StreamingResponse(
         BytesIO(data),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
