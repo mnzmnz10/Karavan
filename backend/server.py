@@ -155,6 +155,9 @@ async def create_indexes():
         await db.services.create_index("status")
         await db.services.create_index("plate")
 
+        # Sozlesmeler
+        await db.contracts.create_index("created_at")
+
         logger.info("PERFORMANCE: Database indexes created successfully")
         
     except Exception as e:
@@ -565,6 +568,12 @@ class ServiceUpdate(BaseModel):
     notes: Optional[str] = Field(None, max_length=5000)
     cost: Optional[float] = Field(None, ge=0)
     status: Optional[str] = None
+
+# ==================== SÖZLEŞMELER (Excel yükle + önizle) ====================
+class ContractUpdate(BaseModel):
+    title: Optional[str] = Field(None, max_length=300)
+    customer_name: Optional[str] = Field(None, max_length=200)
+    notes: Optional[str] = Field(None, max_length=10000)
 
 class ExchangeRate(BaseModel):
     currency: str
@@ -8068,6 +8077,134 @@ async def delete_service(service_id: str):
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Servis kaydı bulunamadı")
     return {"success": True, "message": "Servis kaydı silindi"}
+
+
+# ==================== SÖZLEŞMELER ENDPOINT'LERI ====================
+def _parse_excel_for_preview(data: bytes):
+    """Excel'i tarayicida onizlemek icin sayfalara/hucrelere ayir.
+    [{name, rows: [[hucre,...],...]}] doner. Satir/sutun makul sinirlanir."""
+    MAX_ROWS, MAX_COLS = 400, 40
+    sheets = []
+    try:
+        wb = openpyxl.load_workbook(BytesIO(data), data_only=True, read_only=True)
+    except Exception:
+        # Eski .xls vb. icin pandas dene
+        try:
+            dfs = pd.read_excel(BytesIO(data), sheet_name=None, header=None, dtype=str)
+        except Exception as e:
+            logger.warning(f"Sozlesme Excel parse hatasi: {e}")
+            return []
+        for name, df in dfs.items():
+            rows = df.fillna('').astype(str).values.tolist()[:MAX_ROWS]
+            sheets.append({"name": str(name), "rows": [r[:MAX_COLS] for r in rows]})
+        return sheets
+    try:
+        for ws in wb.worksheets:
+            rows = []
+            for r_i, row in enumerate(ws.iter_rows(values_only=True)):
+                if r_i >= MAX_ROWS:
+                    break
+                rows.append([("" if c is None else str(c)) for c in row][:MAX_COLS])
+            # Sondaki tamamen bos satirlari kirp
+            while rows and all(c == "" for c in rows[-1]):
+                rows.pop()
+            sheets.append({"name": ws.title, "rows": rows})
+    finally:
+        wb.close()
+    return sheets
+
+
+@api_router.post("/contracts")
+async def create_contract(
+    file: UploadFile = File(...),
+    title: str = Form(...),
+    customer_name: Optional[str] = Form(None),
+    notes: Optional[str] = Form(None),
+):
+    """Excel sozlesme yukle: tarayici onizlemesi icin ayristir ve sakla."""
+    fname = file.filename or "sozlesme.xlsx"
+    ext = fname.rsplit(".", 1)[-1].lower() if "." in fname else ""
+    if ext not in ("xlsx", "xlsm", "xls"):
+        raise HTTPException(status_code=400, detail="Sadece Excel dosyaları (.xlsx/.xls) kabul edilir.")
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Boş dosya.")
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail=f"Dosya çok büyük (en fazla {MAX_UPLOAD_BYTES // (1024*1024)} MB).")
+
+    sheets = _parse_excel_for_preview(data)
+    if not sheets:
+        raise HTTPException(status_code=422, detail="Excel içeriği okunamadı.")
+
+    doc = {
+        "id": str(uuid.uuid4()),
+        "title": (title or fname).strip()[:300],
+        "customer_name": ((customer_name or "").strip() or None),
+        "notes": ((notes or "").strip() or None),
+        "file_name": fname,
+        "sheets": sheets,
+        "file_b64": base64.b64encode(data).decode("utf-8"),  # orijinali indirebilmek icin
+        "created_at": datetime.now(timezone.utc),
+    }
+    await db.contracts.insert_one(doc)
+    doc.pop("_id", None)
+    doc.pop("file_b64", None)
+    return doc
+
+
+@api_router.get("/contracts")
+async def list_contracts():
+    """Sozlesme listesi (hafif: sheets/file_b64 haric)."""
+    docs = await db.contracts.find({}, {"sheets": 0, "file_b64": 0, "_id": 0}).sort("created_at", -1).to_list(1000)
+    return docs
+
+
+@api_router.get("/contracts/{contract_id}")
+async def get_contract(contract_id: str):
+    """Tek sozlesme (onizleme verisi dahil)."""
+    doc = await db.contracts.find_one({"id": contract_id}, {"_id": 0, "file_b64": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Sözleşme bulunamadı")
+    return doc
+
+
+@api_router.get("/contracts/{contract_id}/download")
+async def download_contract(contract_id: str):
+    """Orijinal Excel dosyasini indir."""
+    doc = await db.contracts.find_one({"id": contract_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Sözleşme bulunamadı")
+    data = base64.b64decode(doc.get("file_b64", "") or "")
+    if not data:
+        raise HTTPException(status_code=404, detail="Dosya bulunamadı")
+    raw_name = doc.get("file_name") or "sozlesme.xlsx"
+    ascii_name = raw_name.encode("ascii", "ignore").decode("ascii") or "sozlesme.xlsx"
+    return StreamingResponse(
+        BytesIO(data),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{ascii_name}"'},
+    )
+
+
+@api_router.put("/contracts/{contract_id}")
+async def update_contract(contract_id: str, payload: ContractUpdate):
+    """Sozlesme baslik/musteri/not guncelle."""
+    existing = await db.contracts.find_one({"id": contract_id})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Sözleşme bulunamadı")
+    upd = {k: v for k, v in payload.dict(exclude_unset=True).items()}
+    if upd:
+        await db.contracts.update_one({"id": contract_id}, {"$set": upd})
+    doc = await db.contracts.find_one({"id": contract_id}, {"_id": 0, "file_b64": 0, "sheets": 0})
+    return doc
+
+
+@api_router.delete("/contracts/{contract_id}")
+async def delete_contract(contract_id: str):
+    result = await db.contracts.delete_one({"id": contract_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Sözleşme bulunamadı")
+    return {"success": True, "message": "Sözleşme silindi"}
 
 
 app.include_router(api_router)

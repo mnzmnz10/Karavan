@@ -469,6 +469,15 @@ function App() {
   const [serviceDialogOpen, setServiceDialogOpen] = useState(false);
   const [serviceStatusFilter, setServiceStatusFilter] = useState('all');
   const [serviceSaving, setServiceSaving] = useState(false);
+  // Sözleşmeler (Excel yükle + tarayıcıda önizle)
+  const emptyContractForm = { title: '', customer_name: '', notes: '' };
+  const [contracts, setContracts] = useState([]);
+  const [contractFile, setContractFile] = useState(null);
+  const [contractForm, setContractForm] = useState(emptyContractForm);
+  const [contractUploadOpen, setContractUploadOpen] = useState(false);
+  const [contractUploading, setContractUploading] = useState(false);
+  const [viewingContract, setViewingContract] = useState(null); // önizlenen sözleşme (sheets dahil)
+  const [contractLoadingView, setContractLoadingView] = useState(false);
   const [copyPackageDialog, setCopyPackageDialog] = useState(false); // Paket kopyalama dialog'u
   const [packageToCopy, setPackageToCopy] = useState(null); // Kopyalanacak paket
   const [copyPackageName, setCopyPackageName] = useState(''); // Yeni paket adı
@@ -749,6 +758,10 @@ function App() {
   useEffect(() => {
     if (activeTab === 'service') {
       loadServices();
+    }
+    if (activeTab === 'contracts') {
+      loadContracts();
+      setViewingContract(null);
     }
   }, [activeTab]);
 
@@ -1727,6 +1740,67 @@ function App() {
     } catch (error) {
       console.error('Durum güncellenemedi:', error);
       toast.error('Durum güncellenemedi');
+    }
+  };
+
+  // ===================== SÖZLEŞMELER =====================
+  const loadContracts = async () => {
+    try {
+      const r = await axios.get(`${API}/contracts`);
+      setContracts(r.data || []);
+    } catch (error) {
+      console.error('Sözleşmeler yüklenemedi:', error);
+      toast.error('Sözleşmeler yüklenemedi');
+    }
+  };
+
+  const uploadContract = async () => {
+    if (!contractForm.title.trim()) { toast.error('Sözleşme başlığı girin'); return; }
+    if (!contractFile) { toast.error('Excel dosyası seçin'); return; }
+    try {
+      setContractUploading(true);
+      const fd = new FormData();
+      fd.append('file', contractFile);
+      fd.append('title', contractForm.title.trim());
+      if (contractForm.customer_name) fd.append('customer_name', contractForm.customer_name);
+      if (contractForm.notes) fd.append('notes', contractForm.notes);
+      await axios.post(`${API}/contracts`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      toast.success('Sözleşme yüklendi');
+      setContractUploadOpen(false);
+      setContractFile(null);
+      setContractForm(emptyContractForm);
+      await loadContracts();
+    } catch (error) {
+      console.error('Sözleşme yüklenemedi:', error);
+      toast.error(error.response?.data?.detail || 'Sözleşme yüklenemedi');
+    } finally {
+      setContractUploading(false);
+    }
+  };
+
+  const openContract = async (id) => {
+    try {
+      setContractLoadingView(true);
+      const r = await axios.get(`${API}/contracts/${id}`);
+      setViewingContract(r.data);
+    } catch (error) {
+      console.error('Sözleşme açılamadı:', error);
+      toast.error('Sözleşme açılamadı');
+    } finally {
+      setContractLoadingView(false);
+    }
+  };
+
+  const deleteContract = async (id) => {
+    if (!window.confirm('Bu sözleşmeyi silmek istediğinize emin misiniz?')) return;
+    try {
+      await axios.delete(`${API}/contracts/${id}`);
+      toast.success('Sözleşme silindi');
+      if (viewingContract?.id === id) setViewingContract(null);
+      await loadContracts();
+    } catch (error) {
+      console.error('Sözleşme silinemedi:', error);
+      toast.error('Sözleşme silinemedi');
     }
   };
 
@@ -3737,12 +3811,12 @@ function App() {
                       )}
                     </TabsTrigger>
 
-                    <TabsTrigger 
-                      value="packages" 
+                    <TabsTrigger
+                      value="contracts"
                       className="flex items-center justify-start gap-3 w-full h-11 px-4 text-sm font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100 rounded-xl data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
                     >
-                      <Package className="w-4 h-4" />
-                      <span>Paketler</span>
+                      <FileText className="w-4 h-4" />
+                      <span>Sözleşmeler</span>
                     </TabsTrigger>
 
                     <TabsTrigger 
@@ -4211,8 +4285,146 @@ function App() {
             </Card>
           </TabsContent>
 
+          {/* ===================== SÖZLEŞMELER ===================== */}
+          <TabsContent value="contracts" className="space-y-6">
+            {!viewingContract ? (
+              <>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div>
+                    <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">
+                      <FileText className="w-6 h-6 text-emerald-600" /> Sözleşmeler
+                    </h2>
+                    <p className="text-sm text-slate-500">Excel sözleşmelerini yükleyin, uzaktan görüntüleyin</p>
+                  </div>
+                  <Button onClick={() => { setContractForm(emptyContractForm); setContractFile(null); setContractUploadOpen(true); }} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl">
+                    <Upload className="w-4 h-4 mr-2" /> Sözleşme Yükle
+                  </Button>
+                </div>
+
+                {contracts.length === 0 ? (
+                  <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-slate-200">
+                    <FileText className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                    <p className="text-slate-500 font-medium">Henüz sözleşme yok</p>
+                    <p className="text-slate-400 text-sm">İlk sözleşmeni yüklemek için “Sözleşme Yükle”ye bas</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {contracts.map((c) => (
+                      <div key={c.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow p-5 flex flex-col gap-2">
+                        <div className="flex items-start gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
+                            <FileText className="w-5 h-5 text-emerald-600" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="font-bold text-slate-800 truncate">{c.title}</div>
+                            {c.customer_name && <div className="text-sm text-slate-500 truncate">{c.customer_name}</div>}
+                          </div>
+                        </div>
+                        <div className="text-xs text-slate-400 truncate">{c.file_name}</div>
+                        <div className="text-xs text-slate-400">{c.created_at ? new Date(c.created_at).toLocaleDateString('tr-TR') : ''}</div>
+                        <div className="flex items-center gap-2 pt-2 border-t border-slate-100 mt-auto">
+                          <Button size="sm" className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs" onClick={() => openContract(c.id)}>
+                            <Eye className="w-4 h-4 mr-1" /> Görüntüle
+                          </Button>
+                          <Button size="sm" variant="ghost" className="text-slate-500" onClick={() => window.open(`${API}/contracts/${c.id}/download`, '_blank')} title="Excel'i indir">
+                            <Download className="w-4 h-4" />
+                          </Button>
+                          <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-700" onClick={() => deleteContract(c.id)} title="Sil">
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              /* Sözleşme önizleme */
+              <div className="space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div className="min-w-0">
+                    <Button variant="ghost" size="sm" onClick={() => setViewingContract(null)} className="mb-1 text-slate-500">← Listeye dön</Button>
+                    <h2 className="text-xl font-black text-slate-800 truncate">{viewingContract.title}</h2>
+                    {viewingContract.customer_name && <p className="text-sm text-slate-500">{viewingContract.customer_name}</p>}
+                  </div>
+                  <Button variant="outline" onClick={() => window.open(`${API}/contracts/${viewingContract.id}/download`, '_blank')}>
+                    <Download className="w-4 h-4 mr-2" /> Excel'i İndir
+                  </Button>
+                </div>
+
+                {(viewingContract.sheets || []).map((sheet, si) => (
+                  <div key={si} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                    {(viewingContract.sheets.length > 1) && (
+                      <div className="px-4 py-2 bg-slate-50 border-b text-sm font-semibold text-slate-600">{sheet.name}</div>
+                    )}
+                    <div className="overflow-x-auto">
+                      <table className="text-sm border-collapse w-full">
+                        <tbody>
+                          {(sheet.rows || []).map((row, ri) => (
+                            <tr key={ri} className={ri === 0 ? 'bg-emerald-50 font-semibold' : (ri % 2 ? 'bg-slate-50/40' : '')}>
+                              {row.map((cell, ci) => (
+                                <td key={ci} className="border border-slate-100 px-3 py-1.5 whitespace-pre-wrap align-top text-slate-700">{cell}</td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
+
+                {viewingContract.notes && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
+                    <div className="font-semibold text-amber-800 mb-1 flex items-center gap-2"><StickyNote className="w-4 h-4" /> Notlar</div>
+                    <div className="text-sm text-amber-900 whitespace-pre-wrap">{viewingContract.notes}</div>
+                  </div>
+                )}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Sözleşme yükleme dialog */}
+          <Dialog open={contractUploadOpen} onOpenChange={setContractUploadOpen}>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Sözleşme Yükle</DialogTitle>
+                <DialogDescription>Excel sözleşme dosyasını yükleyin; sistemde saklanır ve uzaktan görüntülenir</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <div>
+                  <Label>Başlık</Label>
+                  <Input value={contractForm.title} onChange={(e) => setContractForm({ ...contractForm, title: e.target.value })} placeholder="Örn: Ahmet Yılmaz - Motokaravan Sözleşmesi" />
+                </div>
+                <div>
+                  <Label>Müşteri (opsiyonel)</Label>
+                  <Input value={contractForm.customer_name} onChange={(e) => setContractForm({ ...contractForm, customer_name: e.target.value })} placeholder="Müşteri adı" />
+                </div>
+                <div>
+                  <Label>Excel Dosyası (.xlsx / .xls)</Label>
+                  <Input type="file" accept=".xlsx,.xls,.xlsm" onChange={(e) => setContractFile(e.target.files[0])} />
+                </div>
+                <div>
+                  <Label>Not (opsiyonel)</Label>
+                  <textarea
+                    value={contractForm.notes}
+                    onChange={(e) => setContractForm({ ...contractForm, notes: e.target.value })}
+                    rows={3}
+                    placeholder="Sözleşmeyle ilgili notlar ..."
+                    className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setContractUploadOpen(false)} disabled={contractUploading}>İptal</Button>
+                <Button onClick={uploadContract} disabled={contractUploading} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                  {contractUploading ? 'Yükleniyor...' : 'Yükle'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
           {/* Upload Tab */}
-          {/* Packages Tab */}
+          {/* Packages Tab (artık menüde yok — Sözleşmeler ile değiştirildi; kod ölü) */}
           <TabsContent value="packages" className="space-y-6">
             {!selectedPackageForEdit ? (
               <>
