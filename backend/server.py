@@ -8199,6 +8199,23 @@ async def update_contract(contract_id: str, payload: ContractUpdate):
     return doc
 
 
+@api_router.post("/contracts/{contract_id}/copy")
+async def copy_contract(contract_id: str):
+    """Sozlesmeyi kopyala (yeni id, baslik + ' (Kopya)')."""
+    src = await db.contracts.find_one({"id": contract_id})
+    if not src:
+        raise HTTPException(status_code=404, detail="Sözleşme bulunamadı")
+    src.pop("_id", None)
+    src["id"] = str(uuid.uuid4())
+    src["title"] = ((src.get("title") or "Sözleşme") + " (Kopya)")[:300]
+    src["created_at"] = datetime.now(timezone.utc)
+    await db.contracts.insert_one(src)
+    src.pop("_id", None)
+    src.pop("file_b64", None)
+    src.pop("sheets", None)
+    return src
+
+
 @api_router.delete("/contracts/{contract_id}")
 async def delete_contract(contract_id: str):
     result = await db.contracts.delete_one({"id": contract_id})

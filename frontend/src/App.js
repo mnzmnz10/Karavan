@@ -479,6 +479,10 @@ function App() {
   const [viewingContract, setViewingContract] = useState(null); // önizlenen sözleşme (sheets dahil)
   const [contractLoadingView, setContractLoadingView] = useState(false);
   const [contractRawView, setContractRawView] = useState(false); // tasarım / ham tablo
+  const [contractEditOpen, setContractEditOpen] = useState(false);
+  const [contractEditId, setContractEditId] = useState(null);
+  const [contractEditForm, setContractEditForm] = useState({ title: '', customer_name: '', notes: '' });
+  const [contractEditSaving, setContractEditSaving] = useState(false);
   const [copyPackageDialog, setCopyPackageDialog] = useState(false); // Paket kopyalama dialog'u
   const [packageToCopy, setPackageToCopy] = useState(null); // Kopyalanacak paket
   const [copyPackageName, setCopyPackageName] = useState(''); // Yeni paket adı
@@ -1805,6 +1809,47 @@ function App() {
     }
   };
 
+  const openEditContract = (c) => {
+    setContractEditId(c.id);
+    setContractEditForm({ title: c.title || '', customer_name: c.customer_name || '', notes: c.notes || '' });
+    setContractEditOpen(true);
+  };
+
+  const saveEditContract = async () => {
+    if (!contractEditForm.title.trim()) { toast.error('Başlık boş olamaz'); return; }
+    try {
+      setContractEditSaving(true);
+      await axios.put(`${API}/contracts/${contractEditId}`, {
+        title: contractEditForm.title.trim(),
+        customer_name: contractEditForm.customer_name || null,
+        notes: contractEditForm.notes || null,
+      });
+      toast.success('Sözleşme güncellendi');
+      setContractEditOpen(false);
+      // Açık önizleme varsa onu da tazele
+      if (viewingContract?.id === contractEditId) {
+        setViewingContract({ ...viewingContract, title: contractEditForm.title.trim(), customer_name: contractEditForm.customer_name || null, notes: contractEditForm.notes || null });
+      }
+      await loadContracts();
+    } catch (error) {
+      console.error('Sözleşme güncellenemedi:', error);
+      toast.error(error.response?.data?.detail || 'Güncellenemedi');
+    } finally {
+      setContractEditSaving(false);
+    }
+  };
+
+  const copyContract = async (id) => {
+    try {
+      await axios.post(`${API}/contracts/${id}/copy`);
+      toast.success('Sözleşme kopyalandı');
+      await loadContracts();
+    } catch (error) {
+      console.error('Sözleşme kopyalanamadı:', error);
+      toast.error('Kopyalanamadı');
+    }
+  };
+
   // Sözleşme Excel'ini akıllıca yapıya çevir (bölüm/kalem/toplam/not). Tanınmazsa null -> ham tablo.
   const parseContract = (sheets) => {
     try {
@@ -1847,24 +1892,29 @@ function App() {
       let cur = { name: '', items: [] };
       const notes = [];
       let grandTotal = null;
+      let kur = null;
       let afterTotal = false;
       for (let i = headerIdx + 1; i < rows.length; i++) {
         const r = rows[i] || [];
         const name = cellAt(r, nameCol);
         const eur = cellAt(r, col.eur);
+        const tlUnitStr = cellAt(r, col.tl);
         const totalStr = cellAt(r, col.total);
         const sno = cellAt(r, col.sno);
         const qty = cellAt(r, col.qty);
+        const kurStr = cellAt(r, col.kur);
+        if (kur == null && kurStr) kur = numOf(kurStr);
         const u = up(name);
         if (!name && !totalStr && !eur) continue;
         if (u.includes('GENEL TOPLAM')) { grandTotal = numOf(totalStr); afterTotal = true; continue; }
         if (afterTotal) {
           if (u.includes('ÇORLU KARAVAN') || u === 'MÜŞTERİ' || u.includes('ZAMKI') || u.includes('İMZA')) continue;
+          if (u.includes('EURO KUR') || u.includes('KAÇ EURO') || u.includes('KARŞILIĞI')) continue; // başlıkta gösteriliyor
           if (name) notes.push(name);
           continue;
         }
         if (eur !== '') {
-          cur.items.push({ sno, name, qty, total: numOf(totalStr) });
+          cur.items.push({ sno, name, qty, eurUnit: numOf(eur), tlUnit: numOf(tlUnitStr), total: numOf(totalStr) });
         } else if (name) {
           if (cur.items.length) sections.push(cur);
           cur = { name, items: [] };
@@ -1873,7 +1923,8 @@ function App() {
       if (cur.items.length) sections.push(cur);
       if (!sections.length) return null;
       const itemCount = sections.reduce((s, sec) => s + sec.items.length, 0);
-      return { subtitle, sections, notes, grandTotal, itemCount };
+      const eurTotal = grandTotal != null && kur ? grandTotal / kur : null;
+      return { subtitle, sections, notes, grandTotal, eurTotal, kur, itemCount };
     } catch (e) {
       console.error('Sözleşme ayrıştırma hatası:', e);
       return null;
@@ -4402,6 +4453,12 @@ function App() {
                           <Button size="sm" className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs" onClick={() => openContract(c.id)}>
                             <Eye className="w-4 h-4 mr-1" /> Görüntüle
                           </Button>
+                          <Button size="sm" variant="ghost" className="text-slate-500" onClick={() => openEditContract(c)} title="Düzenle">
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          <Button size="sm" variant="ghost" className="text-slate-500" onClick={() => copyContract(c.id)} title="Kopyala">
+                            <Copy className="w-4 h-4" />
+                          </Button>
                           <Button size="sm" variant="ghost" className="text-slate-500" onClick={() => window.open(`${API}/contracts/${c.id}/download`, '_blank')} title="Excel'i indir">
                             <Download className="w-4 h-4" />
                           </Button>
@@ -4422,12 +4479,18 @@ function App() {
                   <div className="space-y-4">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <Button variant="ghost" size="sm" onClick={() => setViewingContract(null)} className="text-slate-500">← Listeye dön</Button>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         {parsed && (
                           <Button variant="outline" size="sm" onClick={() => setContractRawView((v) => !v)}>
                             {contractRawView ? 'Tasarım görünümü' : 'Tablo görünümü'}
                           </Button>
                         )}
+                        <Button variant="outline" size="sm" onClick={() => openEditContract(viewingContract)}>
+                          <Edit className="w-4 h-4 mr-2" /> Düzenle
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => copyContract(viewingContract.id)}>
+                          <Copy className="w-4 h-4 mr-2" /> Kopyala
+                        </Button>
                         <Button variant="outline" size="sm" onClick={() => window.open(`${API}/contracts/${viewingContract.id}/download`, '_blank')}>
                           <Download className="w-4 h-4 mr-2" /> Excel'i İndir
                         </Button>
@@ -4436,75 +4499,129 @@ function App() {
 
                     {parsed && !contractRawView ? (
                       /* ===== TASARIMLI SÖZLEŞME GÖRÜNÜMÜ ===== */
-                      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden max-w-4xl mx-auto">
+                      <div className="max-w-4xl mx-auto bg-white rounded-2xl ring-1 ring-slate-200/70 overflow-hidden shadow-[0_18px_50px_-20px_rgba(27,58,92,0.45)]">
                         {/* Başlık bandı */}
-                        <div className="bg-gradient-to-r from-[#1B3A5C] to-[#2E5A86] text-white px-6 py-5">
-                          <div className="flex items-start justify-between gap-4 flex-wrap">
+                        <div className="relative bg-[#1B3A5C] text-white px-6 sm:px-10 pt-8 pb-7 overflow-hidden">
+                          <div className="absolute inset-0 opacity-[0.06]" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '22px 22px' }} />
+                          <div className="absolute left-0 right-0 bottom-0 h-1 bg-gradient-to-r from-emerald-400 via-emerald-500 to-transparent" />
+                          <div className="relative flex items-start justify-between gap-6 flex-wrap">
                             <div className="min-w-0">
-                              <div className="text-xs uppercase tracking-widest text-white/60 mb-1">Müşteri Teklif Formu ve Sözleşme</div>
-                              <h2 className="text-2xl font-black truncate">{viewingContract.title}</h2>
-                              {parsed.subtitle && <p className="text-white/70 text-sm mt-0.5">{parsed.subtitle}</p>}
+                              <div className="flex items-center gap-2 text-emerald-300/90 text-[11px] font-semibold uppercase tracking-[0.25em] mb-3">
+                                <span className="inline-block w-6 h-px bg-emerald-400/60" /> Çorlu Karavan
+                              </div>
+                              <h2 style={{ fontFamily: "'Fraunces', Georgia, serif" }} className="text-3xl sm:text-4xl font-semibold leading-tight tracking-tight">{viewingContract.title}</h2>
+                              <p className="text-white/50 text-[11px] uppercase tracking-[0.2em] mt-2">Müşteri Teklif Formu ve Sözleşme</p>
+                              {parsed.subtitle && <p className="text-white/70 text-sm mt-1">{parsed.subtitle}</p>}
                             </div>
-                            <div className="text-right text-sm">
-                              {viewingContract.customer_name && <div className="font-semibold">{viewingContract.customer_name}</div>}
-                              <div className="text-white/60">{viewingContract.created_at ? new Date(viewingContract.created_at).toLocaleDateString('tr-TR') : ''}</div>
+                            <div className="text-right text-sm shrink-0 space-y-3">
+                              <div>
+                                <div className="text-white/45 text-[10px] uppercase tracking-widest">Tarih</div>
+                                <div className="font-semibold tabular-nums">{viewingContract.created_at ? new Date(viewingContract.created_at).toLocaleDateString('tr-TR') : '—'}</div>
+                              </div>
+                              {parsed.kur != null && (
+                                <div className="inline-flex items-center gap-2 bg-white/10 ring-1 ring-white/15 rounded-full px-3 py-1.5">
+                                  <span className="text-white/55 text-[10px] uppercase tracking-widest">Kur</span>
+                                  <span className="font-bold tabular-nums">1 € = ₺{formatPrice(parsed.kur)}</span>
+                                </div>
+                              )}
                             </div>
                           </div>
+                          {viewingContract.customer_name && (
+                            <div className="relative mt-5 inline-flex items-center gap-2">
+                              <span className="text-white/45 text-[10px] uppercase tracking-widest">Müşteri</span>
+                              <span className="font-semibold text-base">{viewingContract.customer_name}</span>
+                            </div>
+                          )}
                         </div>
 
                         {/* Bölümler + kalemler */}
-                        <div className="p-4 sm:p-6 space-y-5">
-                          {parsed.sections.map((sec, si) => (
-                            <div key={si}>
-                              <div className="flex items-center gap-2 mb-2">
-                                <div className="h-5 w-1.5 rounded-full bg-emerald-500" />
-                                <h3 className="font-bold text-slate-800 uppercase text-sm tracking-wide">{sec.name}</h3>
-                              </div>
-                              <div className="rounded-xl border border-slate-100 overflow-hidden">
-                                <table className="w-full text-sm">
-                                  <tbody>
-                                    {sec.items.map((it, ii) => (
-                                      <tr key={ii} className={ii % 2 ? 'bg-slate-50/50' : 'bg-white'}>
-                                        <td className="px-2 py-2 text-slate-400 w-8 text-center">{it.sno}</td>
-                                        <td className="px-2 py-2 text-slate-700">{it.name}</td>
-                                        <td className="px-2 py-2 text-slate-500 text-center whitespace-nowrap w-16">{it.qty && it.qty !== '0' ? `${it.qty} ad.` : ''}</td>
-                                        <td className="px-3 py-2 text-right font-semibold text-slate-800 whitespace-nowrap w-28">{it.total != null ? `₺ ${formatPrice(it.total)}` : ''}</td>
+                        <div className="px-4 sm:px-8 py-7 space-y-7 bg-[#FBFCFD]">
+                          {parsed.sections.map((sec, si) => {
+                            const subtotal = sec.items.reduce((s, it) => s + (it.total || 0), 0);
+                            return (
+                              <section key={si}>
+                                <div className="flex items-center gap-3 mb-3">
+                                  <span className="flex items-center justify-center w-7 h-7 rounded-lg bg-[#1B3A5C] text-white text-xs font-bold tabular-nums shrink-0">{String(si + 1).padStart(2, '0')}</span>
+                                  <h3 className="font-bold text-[#1B3A5C] uppercase text-[13px] tracking-[0.12em]">{sec.name}</h3>
+                                  <div className="flex-1 h-px bg-slate-200" />
+                                </div>
+                                <div className="rounded-xl ring-1 ring-slate-200 bg-white overflow-x-auto">
+                                  <table className="w-full text-sm min-w-[560px]">
+                                    <thead>
+                                      <tr className="text-[10px] uppercase tracking-wider text-slate-400 border-b border-slate-100">
+                                        <th className="px-3 py-2 text-left font-semibold w-8">#</th>
+                                        <th className="px-2 py-2 text-left font-semibold">İşlem</th>
+                                        <th className="px-2 py-2 text-center font-semibold w-14">Adet</th>
+                                        <th className="px-2 py-2 text-right font-semibold w-24">Birim €</th>
+                                        <th className="px-2 py-2 text-right font-semibold w-28">Birim ₺</th>
+                                        <th className="px-3 py-2 text-right font-semibold w-32">Tutar ₺</th>
                                       </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
-                            </div>
-                          ))}
+                                    </thead>
+                                    <tbody>
+                                      {sec.items.map((it, ii) => (
+                                        <tr key={ii} className="border-b border-slate-50 last:border-0 hover:bg-emerald-50/30 transition-colors">
+                                          <td className="px-3 py-2.5 text-slate-300 tabular-nums">{it.sno}</td>
+                                          <td className="px-2 py-2.5 text-slate-700">{it.name}</td>
+                                          <td className="px-2 py-2.5 text-center text-slate-500 tabular-nums">{it.qty && it.qty !== '0' ? it.qty : '—'}</td>
+                                          <td className="px-2 py-2.5 text-right text-slate-500 tabular-nums">{it.eurUnit != null ? `€ ${formatPrice(it.eurUnit)}` : ''}</td>
+                                          <td className="px-2 py-2.5 text-right text-slate-500 tabular-nums">{it.tlUnit != null ? `₺ ${formatPrice(it.tlUnit)}` : ''}</td>
+                                          <td className="px-3 py-2.5 text-right font-semibold text-[#1B3A5C] tabular-nums">{it.total != null ? `₺ ${formatPrice(it.total)}` : ''}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                    {sec.items.length > 1 && (
+                                      <tfoot>
+                                        <tr className="bg-slate-50/60">
+                                          <td colSpan={5} className="px-3 py-2 text-right text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Ara Toplam</td>
+                                          <td className="px-3 py-2 text-right font-bold text-slate-700 tabular-nums whitespace-nowrap">₺ {formatPrice(subtotal)}</td>
+                                        </tr>
+                                      </tfoot>
+                                    )}
+                                  </table>
+                                </div>
+                              </section>
+                            );
+                          })}
                         </div>
 
                         {/* Genel toplam */}
                         {parsed.grandTotal != null && (
-                          <div className="px-4 sm:px-6 pb-5">
-                            <div className="flex items-center justify-between bg-[#1B3A5C] text-white rounded-xl px-5 py-4">
-                              <span className="font-bold uppercase tracking-wide">Genel Toplam</span>
-                              <span className="text-2xl font-black">₺ {formatPrice(parsed.grandTotal)}</span>
+                          <div className="px-4 sm:px-8 pb-7 bg-[#FBFCFD]">
+                            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#1B3A5C] to-[#15293f] text-white px-6 py-5 shadow-lg">
+                              <div className="absolute -right-8 -top-8 w-40 h-40 rounded-full bg-emerald-500/10" />
+                              <div className="relative flex items-end justify-between gap-4 flex-wrap">
+                                <div>
+                                  <div className="text-white/50 text-[11px] uppercase tracking-[0.2em]">Genel Toplam</div>
+                                  <div className="text-white/40 text-xs mt-1">KDV hariç</div>
+                                </div>
+                                <div className="text-right">
+                                  <div style={{ fontFamily: "'Fraunces', Georgia, serif" }} className="text-3xl sm:text-4xl font-semibold tabular-nums">₺ {formatPrice(parsed.grandTotal)}</div>
+                                  {parsed.eurTotal != null && <div className="text-emerald-300 text-sm font-medium tabular-nums mt-0.5">≈ € {formatPrice(parsed.eurTotal)}</div>}
+                                </div>
+                              </div>
                             </div>
                           </div>
                         )}
 
                         {/* Notlar + imza */}
-                        <div className="px-4 sm:px-6 pb-6 space-y-4">
+                        <div className="px-4 sm:px-8 pb-8 bg-[#FBFCFD] space-y-6">
                           {(parsed.notes.length > 0 || viewingContract.notes) && (
-                            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900">
-                              <div className="font-semibold text-amber-800 mb-1 flex items-center gap-2"><StickyNote className="w-4 h-4" /> Notlar & Şartlar</div>
-                              <ul className="list-disc list-inside space-y-0.5">
-                                {parsed.notes.map((n, ni) => (<li key={ni}>{n}</li>))}
+                            <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4">
+                              <div className="font-bold text-amber-800 text-xs uppercase tracking-wider mb-2 flex items-center gap-2"><StickyNote className="w-3.5 h-3.5" /> Notlar & Şartlar</div>
+                              <ul className="space-y-1 text-sm text-amber-900/90">
+                                {parsed.notes.map((n, ni) => (<li key={ni} className="flex gap-2"><span className="text-amber-400 shrink-0">•</span><span>{n}</span></li>))}
                               </ul>
-                              {viewingContract.notes && <div className="mt-2 pt-2 border-t border-amber-200 whitespace-pre-wrap">{viewingContract.notes}</div>}
+                              {viewingContract.notes && <div className="mt-2 pt-2 border-t border-amber-200/70 text-sm text-amber-900/90 whitespace-pre-wrap">{viewingContract.notes}</div>}
                             </div>
                           )}
-                          <div className="grid grid-cols-2 gap-6 pt-6">
+                          <div className="grid grid-cols-2 gap-8 pt-8">
                             <div className="text-center">
-                              <div className="border-t border-slate-300 pt-2 text-sm font-semibold text-slate-700">Çorlu Karavan</div>
+                              <div className="border-t-2 border-slate-300 pt-2 text-sm font-semibold text-slate-700">Çorlu Karavan</div>
+                              <div className="text-xs text-slate-400">Yetkili İmza</div>
                             </div>
                             <div className="text-center">
-                              <div className="border-t border-slate-300 pt-2 text-sm font-semibold text-slate-700">Müşteri{viewingContract.customer_name ? ` · ${viewingContract.customer_name}` : ''}</div>
+                              <div className="border-t-2 border-slate-300 pt-2 text-sm font-semibold text-slate-700">{viewingContract.customer_name || 'Müşteri'}</div>
+                              <div className="text-xs text-slate-400">Müşteri İmza</div>
                             </div>
                           </div>
                         </div>
@@ -4599,6 +4716,42 @@ function App() {
                 <Button variant="outline" onClick={() => setContractUploadOpen(false)} disabled={contractUploading}>İptal</Button>
                 <Button onClick={uploadContract} disabled={contractUploading} className="bg-emerald-600 hover:bg-emerald-700 text-white">
                   {contractUploading ? 'Yükleniyor...' : 'Yükle'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Sözleşme düzenleme dialog (başlık/müşteri/not) */}
+          <Dialog open={contractEditOpen} onOpenChange={setContractEditOpen}>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Sözleşmeyi Düzenle</DialogTitle>
+                <DialogDescription>Başlık, müşteri ve not bilgilerini güncelleyin (Excel içeriği değişmez)</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <div>
+                  <Label>Başlık</Label>
+                  <Input value={contractEditForm.title} onChange={(e) => setContractEditForm({ ...contractEditForm, title: e.target.value })} />
+                </div>
+                <div>
+                  <Label>Müşteri</Label>
+                  <Input value={contractEditForm.customer_name} onChange={(e) => setContractEditForm({ ...contractEditForm, customer_name: e.target.value })} placeholder="Müşteri adı" />
+                </div>
+                <div>
+                  <Label>Not</Label>
+                  <textarea
+                    value={contractEditForm.notes}
+                    onChange={(e) => setContractEditForm({ ...contractEditForm, notes: e.target.value })}
+                    rows={3}
+                    placeholder="Sözleşmeyle ilgili notlar ..."
+                    className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setContractEditOpen(false)} disabled={contractEditSaving}>İptal</Button>
+                <Button onClick={saveEditContract} disabled={contractEditSaving} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                  {contractEditSaving ? 'Kaydediliyor...' : 'Kaydet'}
                 </Button>
               </DialogFooter>
             </DialogContent>
