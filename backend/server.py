@@ -574,6 +574,7 @@ class ContractUpdate(BaseModel):
     title: Optional[str] = Field(None, max_length=300)
     customer_name: Optional[str] = Field(None, max_length=200)
     notes: Optional[str] = Field(None, max_length=10000)
+    data: Optional[Dict[str, Any]] = None  # düzenlenmiş yapısal sözleşme verisi (bölüm/kalem)
 
 class ExchangeRate(BaseModel):
     currency: str

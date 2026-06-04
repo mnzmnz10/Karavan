@@ -480,6 +480,10 @@ function App() {
   const [contractLoadingView, setContractLoadingView] = useState(false);
   const [contractRawView, setContractRawView] = useState(false); // tasarım / ham tablo
   const [contractSimRate, setContractSimRate] = useState(''); // kur simülasyonu (boş = orijinal kur)
+  const [contractEditMode, setContractEditMode] = useState(false); // kalem düzenleme modu
+  const [contractDraft, setContractDraft] = useState(null); // düzenlenen taslak yapı
+  const [contractDirty, setContractDirty] = useState(false); // değişiklik yapıldı mı
+  const [contractDataSaving, setContractDataSaving] = useState(false);
   const [contractEditOpen, setContractEditOpen] = useState(false);
   const [contractEditId, setContractEditId] = useState(null);
   const [contractEditForm, setContractEditForm] = useState({ title: '', customer_name: '', notes: '' });
@@ -1788,6 +1792,7 @@ function App() {
     try {
       setContractLoadingView(true);
       setContractSimRate(''); // simülasyonu sıfırla
+      setContractEditMode(false); setContractDraft(null); setContractDirty(false);
       const r = await axios.get(`${API}/contracts/${id}`);
       setViewingContract(r.data);
     } catch (error) {
@@ -1850,6 +1855,91 @@ function App() {
       console.error('Sözleşme kopyalanamadı:', error);
       toast.error('Kopyalanamadı');
     }
+  };
+
+  // --- Sözleşme kalem düzenleme ---
+  const recalcDraftTotals = (d) => {
+    let gt = 0, et = 0;
+    (d.sections || []).forEach((sec) => (sec.items || []).forEach((it) => {
+      gt += Number(it.total) || 0;
+      et += (parseFloat(it.eurUnit) || 0) * (parseFloat(it.qty) || 0);
+    }));
+    d.grandTotal = gt;
+    d.eurTotal = d.kur ? gt / d.kur : null;
+    return d;
+  };
+
+  const enterContractEdit = (baseData) => {
+    if (!baseData) return;
+    setContractDraft(JSON.parse(JSON.stringify(baseData)));
+    setContractDirty(false);
+    setContractSimRate(''); // düzenlemede simülasyon kapalı
+    setContractEditMode(true);
+  };
+
+  const updateDraftItem = (si, ii, field, value) => {
+    setContractDraft((prev) => {
+      const d = JSON.parse(JSON.stringify(prev));
+      const it = d.sections[si].items[ii];
+      it[field] = value;
+      if (field === 'eurUnit' || field === 'qty') {
+        const eur = parseFloat(it.eurUnit) || 0;
+        const qty = parseFloat(it.qty) || 0;
+        if (d.kur != null) { it.tlUnit = eur * d.kur; it.total = eur * qty * d.kur; }
+      }
+      return recalcDraftTotals(d);
+    });
+    setContractDirty(true);
+  };
+
+  const deleteDraftItem = (si, ii) => {
+    setContractDraft((prev) => {
+      const d = JSON.parse(JSON.stringify(prev));
+      d.sections[si].items.splice(ii, 1);
+      return recalcDraftTotals(d);
+    });
+    setContractDirty(true);
+  };
+
+  const saveContractDraft = async () => {
+    if (!contractDraft) return;
+    try {
+      setContractDataSaving(true);
+      await axios.put(`${API}/contracts/${viewingContract.id}`, { data: contractDraft });
+      setViewingContract((vc) => ({ ...vc, data: contractDraft }));
+      setContractEditMode(false);
+      setContractDirty(false);
+      setContractDraft(null);
+      toast.success('Sözleşme kaydedildi');
+      await loadContracts();
+    } catch (error) {
+      console.error('Sözleşme kaydedilemedi:', error);
+      toast.error(error.response?.data?.detail || 'Kaydedilemedi');
+    } finally {
+      setContractDataSaving(false);
+    }
+  };
+
+  // Düzenleme modundan çık; değişiklik varsa kaydet/iptal sor. Returns true = çıkıldı.
+  const exitContractEdit = async () => {
+    if (contractDirty) {
+      const save = window.confirm('Değişiklikler var. Kaydetmek ister misiniz?\n\nTamam = Kaydet, İptal = Değişiklikleri sil');
+      if (save) { await saveContractDraft(); return; }
+    }
+    setContractEditMode(false);
+    setContractDraft(null);
+    setContractDirty(false);
+  };
+
+  const backFromContract = async () => {
+    if (contractEditMode && contractDirty) {
+      const save = window.confirm('Değişiklikler var. Kaydetmek ister misiniz?\n\nTamam = Kaydet, İptal = Değişiklikleri sil');
+      if (save) { await saveContractDraft(); }
+    }
+    setContractEditMode(false);
+    setContractDraft(null);
+    setContractDirty(false);
+    setViewingContract(null);
   };
 
   // Sözleşme Excel'ini akıllıca yapıya çevir (bölüm/kalem/toplam/not). Tanınmazsa null -> ham tablo.
@@ -4476,31 +4566,49 @@ function App() {
             ) : (
               /* Sözleşme önizleme */
               (() => {
-                const parsed = parseContract(viewingContract.sheets);
+                const baseData = viewingContract.data || parseContract(viewingContract.sheets);
+                const parsed = contractEditMode && contractDraft ? contractDraft : baseData;
                 const origKur = parsed && parsed.kur != null ? parsed.kur : null;
                 const simRateNum = parseFloat(contractSimRate);
-                const simActive = !!origKur && !isNaN(simRateNum) && simRateNum > 0 && Math.abs(simRateNum - origKur) > 1e-9;
+                const simActive = !contractEditMode && !!origKur && !isNaN(simRateNum) && simRateNum > 0 && Math.abs(simRateNum - origKur) > 1e-9;
                 const kurFactor = simActive ? simRateNum / origKur : 1;
                 const adj = (v) => (v == null ? null : v * kurFactor); // TL değerlerini yeni kura ölçekle
                 return (
                   <div className="space-y-4">
                     <div className="flex flex-wrap items-center justify-between gap-3">
-                      <Button variant="ghost" size="sm" onClick={() => setViewingContract(null)} className="text-slate-500">← Listeye dön</Button>
+                      <Button variant="ghost" size="sm" onClick={backFromContract} className="text-slate-500">← Listeye dön</Button>
                       <div className="flex items-center gap-2 flex-wrap">
-                        {parsed && (
-                          <Button variant="outline" size="sm" onClick={() => setContractRawView((v) => !v)}>
-                            {contractRawView ? 'Tasarım görünümü' : 'Tablo görünümü'}
-                          </Button>
+                        {contractEditMode ? (
+                          <>
+                            <span className="text-xs text-emerald-700 font-semibold mr-1">{contractDirty ? '● Kaydedilmemiş değişiklik' : 'Düzenleme modu'}</span>
+                            <Button size="sm" onClick={saveContractDraft} disabled={contractDataSaving || !contractDirty} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                              <Save className="w-4 h-4 mr-2" /> {contractDataSaving ? 'Kaydediliyor...' : 'Kaydet'}
+                            </Button>
+                            <Button variant="outline" size="sm" onClick={exitContractEdit} disabled={contractDataSaving}>Bitir</Button>
+                          </>
+                        ) : (
+                          <>
+                            {parsed && (
+                              <Button variant="outline" size="sm" onClick={() => setContractRawView((v) => !v)}>
+                                {contractRawView ? 'Tasarım görünümü' : 'Tablo görünümü'}
+                              </Button>
+                            )}
+                            {parsed && !contractRawView && (
+                              <Button variant="outline" size="sm" onClick={() => enterContractEdit(baseData)} className="border-emerald-300 text-emerald-700 hover:bg-emerald-50">
+                                <Edit className="w-4 h-4 mr-2" /> Kalemleri Düzenle
+                              </Button>
+                            )}
+                            <Button variant="outline" size="sm" onClick={() => openEditContract(viewingContract)}>
+                              <Edit className="w-4 h-4 mr-2" /> Başlık/Not
+                            </Button>
+                            <Button variant="outline" size="sm" onClick={() => copyContract(viewingContract.id)}>
+                              <Copy className="w-4 h-4 mr-2" /> Kopyala
+                            </Button>
+                            <Button variant="outline" size="sm" onClick={() => window.open(`${API}/contracts/${viewingContract.id}/download`, '_blank')}>
+                              <Download className="w-4 h-4 mr-2" /> Excel'i İndir
+                            </Button>
+                          </>
                         )}
-                        <Button variant="outline" size="sm" onClick={() => openEditContract(viewingContract)}>
-                          <Edit className="w-4 h-4 mr-2" /> Düzenle
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => copyContract(viewingContract.id)}>
-                          <Copy className="w-4 h-4 mr-2" /> Kopyala
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => window.open(`${API}/contracts/${viewingContract.id}/download`, '_blank')}>
-                          <Download className="w-4 h-4 mr-2" /> Excel'i İndir
-                        </Button>
                       </div>
                     </div>
 
@@ -4567,10 +4675,25 @@ function App() {
                                     <tbody>
                                       {sec.items.map((it, ii) => (
                                         <tr key={ii} className="border-b border-slate-50 last:border-0 hover:bg-emerald-50/30 transition-colors">
-                                          <td className="px-3 py-2.5 text-slate-300 tabular-nums">{it.sno}</td>
-                                          <td className="px-2 py-2.5 text-slate-700">{it.name}</td>
-                                          <td className="px-2 py-2.5 text-center text-slate-500 tabular-nums">{it.qty && it.qty !== '0' ? it.qty : '—'}</td>
-                                          <td className="px-2 py-2.5 text-right text-slate-500 tabular-nums">{it.eurUnit != null ? `€ ${formatPrice(it.eurUnit)}` : ''}</td>
+                                          <td className="px-3 py-2.5 text-slate-300 tabular-nums align-top">{it.sno}</td>
+                                          <td className="px-2 py-2.5 text-slate-700">
+                                            {contractEditMode ? (
+                                              <div className="flex items-center gap-1.5">
+                                                <input value={it.name || ''} onChange={(e) => updateDraftItem(si, ii, 'name', e.target.value)} className="flex-1 min-w-[150px] h-8 px-2 border border-slate-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                                                <button type="button" onClick={() => deleteDraftItem(si, ii)} className="text-red-400 hover:text-red-600 shrink-0" title="Kalemi sil"><Trash2 className="w-3.5 h-3.5" /></button>
+                                              </div>
+                                            ) : it.name}
+                                          </td>
+                                          <td className="px-2 py-2.5 text-center text-slate-500 tabular-nums">
+                                            {contractEditMode ? (
+                                              <input type="number" step="1" min="0" value={it.qty ?? ''} onChange={(e) => updateDraftItem(si, ii, 'qty', e.target.value)} className="w-14 h-8 px-1 border border-slate-200 rounded text-sm text-center tabular-nums focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                                            ) : (it.qty && it.qty !== '0' ? it.qty : '—')}
+                                          </td>
+                                          <td className="px-2 py-2.5 text-right text-slate-500 tabular-nums">
+                                            {contractEditMode ? (
+                                              <input type="number" step="0.01" min="0" value={it.eurUnit ?? ''} onChange={(e) => updateDraftItem(si, ii, 'eurUnit', e.target.value === '' ? '' : parseFloat(e.target.value))} className="w-20 h-8 px-1 border border-slate-200 rounded text-sm text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                                            ) : (it.eurUnit != null ? `€ ${formatPrice(it.eurUnit)}` : '')}
+                                          </td>
                                           <td className={`px-2 py-2.5 text-right tabular-nums ${simActive ? 'text-emerald-700' : 'text-slate-500'}`}>{it.tlUnit != null ? `₺ ${formatPrice(adj(it.tlUnit))}` : ''}</td>
                                           <td className={`px-3 py-2.5 text-right font-semibold tabular-nums ${simActive ? 'text-emerald-700' : 'text-[#1B3A5C]'}`}>{it.total != null ? `₺ ${formatPrice(adj(it.total))}` : ''}</td>
                                         </tr>
@@ -4592,7 +4715,7 @@ function App() {
                         </div>
 
                         {/* Kur simülasyonu (fiyatların hemen üstünde) */}
-                        {origKur != null && (
+                        {origKur != null && !contractEditMode && (
                           <div className="px-4 sm:px-8 pb-4 bg-[#FBFCFD]">
                             <div className={`flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 ${simActive ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 bg-white'}`}>
                               <div className="text-sm font-bold text-[#1B3A5C] flex items-center gap-2"><Calculator className="w-4 h-4" /> Kur Simülasyonu</div>
