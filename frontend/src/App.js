@@ -4541,36 +4541,6 @@ function App() {
                           )}
                         </div>
 
-                        {/* Kur simülasyonu */}
-                        {origKur != null && (
-                          <div className="px-4 sm:px-8 pt-5 bg-[#FBFCFD]">
-                            <div className={`flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 ${simActive ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 bg-white'}`}>
-                              <div className="text-sm font-bold text-[#1B3A5C] flex items-center gap-2"><Calculator className="w-4 h-4" /> Kur Simülasyonu</div>
-                              <div className="text-xs text-slate-500">Sözleşme kuru: <strong className="tabular-nums">1 € = ₺{formatPrice(origKur)}</strong></div>
-                              <div className="flex items-center gap-2 ml-auto flex-wrap">
-                                <span className="text-sm text-slate-500">1 € =</span>
-                                <input
-                                  type="number" step="0.01" min="0"
-                                  value={contractSimRate}
-                                  onChange={(e) => setContractSimRate(e.target.value)}
-                                  placeholder={String(origKur)}
-                                  className="w-24 h-9 px-2 border border-slate-300 rounded-md text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                                />
-                                <span className="text-sm text-slate-500">₺</span>
-                                <Button size="sm" variant="outline" onClick={() => setContractSimRate(String(exchangeRates.EUR || ''))}>
-                                  Güncel kur{exchangeRates.EUR ? ` (₺${formatPrice(exchangeRates.EUR)})` : ''}
-                                </Button>
-                                {simActive && <Button size="sm" variant="ghost" className="text-slate-500" onClick={() => setContractSimRate('')}>Sıfırla</Button>}
-                              </div>
-                            </div>
-                            {simActive && (
-                              <div className="text-xs text-amber-700 mt-2 flex items-center gap-1.5">
-                                <AlertTriangle className="w-3.5 h-3.5" /> Tutarlar <strong>1 € = ₺{formatPrice(simRateNum)}</strong> üzerinden yeniden hesaplandı — yalnızca önizleme, <strong>kaydedilmez</strong>.
-                              </div>
-                            )}
-                          </div>
-                        )}
-
                         {/* Bölümler + kalemler */}
                         <div className="px-4 sm:px-8 py-7 space-y-7 bg-[#FBFCFD]">
                           {parsed.sections.map((sec, si) => {
@@ -4620,6 +4590,36 @@ function App() {
                             );
                           })}
                         </div>
+
+                        {/* Kur simülasyonu (fiyatların hemen üstünde) */}
+                        {origKur != null && (
+                          <div className="px-4 sm:px-8 pb-4 bg-[#FBFCFD]">
+                            <div className={`flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 ${simActive ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 bg-white'}`}>
+                              <div className="text-sm font-bold text-[#1B3A5C] flex items-center gap-2"><Calculator className="w-4 h-4" /> Kur Simülasyonu</div>
+                              <div className="text-xs text-slate-500">Sözleşme kuru: <strong className="tabular-nums">1 € = ₺{formatPrice(origKur)}</strong></div>
+                              <div className="flex items-center gap-2 ml-auto flex-wrap">
+                                <span className="text-sm text-slate-500">1 € =</span>
+                                <input
+                                  type="number" step="0.01" min="0"
+                                  value={contractSimRate}
+                                  onChange={(e) => setContractSimRate(e.target.value)}
+                                  placeholder={String(origKur)}
+                                  className="w-24 h-9 px-2 border border-slate-300 rounded-md text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                />
+                                <span className="text-sm text-slate-500">₺</span>
+                                <Button size="sm" variant="outline" onClick={() => setContractSimRate(String(exchangeRates.EUR || ''))}>
+                                  Güncel kur{exchangeRates.EUR ? ` (₺${formatPrice(exchangeRates.EUR)})` : ''}
+                                </Button>
+                                {simActive && <Button size="sm" variant="ghost" className="text-slate-500" onClick={() => setContractSimRate('')}>Sıfırla</Button>}
+                              </div>
+                            </div>
+                            {simActive && (
+                              <div className="text-xs text-amber-700 mt-2 flex items-center gap-1.5">
+                                <AlertTriangle className="w-3.5 h-3.5" /> Tutarlar <strong>1 € = ₺{formatPrice(simRateNum)}</strong> üzerinden yeniden hesaplandı — yalnızca önizleme, <strong>kaydedilmez</strong>. (Yukarıdaki kalemler de güncellendi.)
+                              </div>
+                            )}
+                          </div>
+                        )}
 
                         {/* Genel toplam */}
                         {parsed.grandTotal != null && (
