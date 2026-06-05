@@ -5046,6 +5046,23 @@ function App() {
                 const adj = (v) => (v == null ? null : v * kurFactor);
                 return (
                   <div className="space-y-4">
+                    {/* Sabit alt-orta aksiyon çubuğu — yukarı çıkmadan düzenle/kaydet */}
+                    {(contractEditMode || (parsed && !contractRawView)) && (
+                      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 rounded-full bg-white/95 backdrop-blur shadow-[0_8px_30px_rgba(0,0,0,0.18)] ring-1 ring-slate-200 px-3 py-2">
+                        {contractEditMode ? (
+                          <>
+                            {contractDirty && <span className="text-xs text-emerald-700 font-semibold px-1 hidden sm:inline">● Kaydedilmemiş</span>}
+                            {contractHistory.length > 0 && (
+                              <Button size="sm" variant="outline" onClick={undoContractChange} className="border-slate-300 text-slate-700 hover:bg-slate-50 rounded-full"><X className="w-4 h-4 mr-1" /> Geri Al</Button>
+                            )}
+                            <Button size="sm" onClick={saveContractDraft} disabled={contractDataSaving || !contractDirty} className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-full"><Save className="w-4 h-4 mr-1.5" /> {contractDataSaving ? 'Kaydediliyor...' : 'Kaydet'}</Button>
+                            <Button size="sm" variant="outline" onClick={exitContractEdit} disabled={contractDataSaving} className="rounded-full">Bitir</Button>
+                          </>
+                        ) : (
+                          <Button size="sm" onClick={() => enterContractEdit(baseData)} className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-full"><Edit className="w-4 h-4 mr-1.5" /> Kalemleri Düzenle</Button>
+                        )}
+                      </div>
+                    )}
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <Button variant="ghost" size="sm" onClick={backFromContract} className="text-slate-500">← Listeye dön</Button>
                       <div className="flex items-center gap-2 flex-wrap">
