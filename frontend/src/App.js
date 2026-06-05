@@ -5366,39 +5366,9 @@ function App() {
                           </div>
                         )}
 
-                        {/* Genel toplam */}
-                        {parsed.grandTotal != null && (
-                          <div className="px-4 sm:px-8 pb-7 bg-[#FBFCFD]">
-                            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#1B3A5C] to-[#15293f] text-white px-6 py-5 shadow-lg">
-                              <div className="absolute -right-8 -top-8 w-40 h-40 rounded-full bg-emerald-500/10" />
-                              <div className="relative flex items-end justify-between gap-4 flex-wrap">
-                                <div>
-                                  <div className="text-white/50 text-[11px] uppercase tracking-[0.2em]">Genel Toplam{simActive ? ` · 1 € = ₺${formatPrice(simRateNum)}` : ''}</div>
-                                  <div className="text-white/40 text-xs mt-1">KDV HARİÇ</div>
-                                </div>
-                                <div className="text-right">
-                                  <div style={{ fontFamily: "'Fraunces', Georgia, serif" }} className={`text-3xl sm:text-4xl font-semibold tabular-nums ${simActive ? 'text-emerald-300' : ''}`}>₺ {formatPrice(adj(parsed.grandTotal))}</div>
-                                  {parsed.eurTotal != null && <div className="text-emerald-300/90 text-sm font-medium tabular-nums mt-0.5">≈ € {formatPrice(parsed.eurTotal)}</div>}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* ===== Finansal: Teslim / İlaveler / Ödeme Planı / Tahsilatlar / Kalan ===== */}
-                        <div className="px-4 sm:px-8 pb-6 bg-[#FBFCFD] space-y-5">
-                          {/* Teslim Tarihi */}
-                          <div className="flex items-center gap-3 flex-wrap text-sm">
-                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5"><History className="w-3.5 h-3.5" /> Teslim Tarihi</span>
-                            {contractEditMode ? (
-                              <input type="date" value={parsed.deliveryDate || ''} onChange={(e) => mutateContractDraft((d) => { d.deliveryDate = e.target.value; })} className="h-8 px-2 border border-slate-200 rounded text-sm bg-white" />
-                            ) : (
-                              <span className="font-semibold text-slate-800">{parsed.deliveryDate ? new Date(parsed.deliveryDate).toLocaleDateString('tr-TR') : '—'}</span>
-                            )}
-                          </div>
-
-                          {/* İlaveler */}
-                          {(contractEditMode || (parsed.addons || []).length > 0) && (
+                        {/* İlaveler — Genel Toplam üstünde */}
+                        {(contractEditMode || (parsed.addons || []).length > 0) && (
+                          <div className="px-4 sm:px-8 pb-4 bg-[#FBFCFD]">
                             <div className="rounded-xl border border-slate-200 bg-white p-4">
                               <div className="flex items-center justify-between mb-3">
                                 <div className="font-bold text-slate-700 text-xs uppercase tracking-wider flex items-center gap-2"><PlusCircle className="w-3.5 h-3.5 text-emerald-600" /> İlaveler</div>
@@ -5465,7 +5435,63 @@ function App() {
                                 </div>
                               )}
                             </div>
-                          )}
+                          </div>
+                        )}
+
+                        {/* Genel toplam — sözleşme + ilave ayrıntılı */}
+                        {parsed.grandTotal != null && (
+                          <div className="px-4 sm:px-8 pb-7 bg-[#FBFCFD]">
+                            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#1B3A5C] to-[#15293f] text-white px-6 py-5 shadow-lg">
+                              <div className="absolute -right-8 -top-8 w-40 h-40 rounded-full bg-emerald-500/10" />
+                              <div className="relative space-y-3">
+                                {/* Sözleşme Toplamı */}
+                                <div className="flex items-center justify-between gap-4">
+                                  <div className="text-white/60 text-sm">Sözleşme Toplamı</div>
+                                  <div className="text-right tabular-nums">
+                                    <span className="text-white/90 text-lg font-semibold">₺ {formatPrice(adj(parsed.grandTotal))}</span>
+                                    {parsed.eurTotal != null && <span className="text-emerald-300/70 text-xs ml-2">≈ € {formatPrice(parsed.eurTotal)}</span>}
+                                  </div>
+                                </div>
+                                {/* İlaveler Toplamı — yalnızca ilave varsa göster */}
+                                {fin.addonsEUR !== 0 && (
+                                  <div className="flex items-center justify-between gap-4">
+                                    <div className="text-white/60 text-sm">İlaveler Toplamı</div>
+                                    <div className="text-right tabular-nums">
+                                      <span className="text-white/90 text-lg font-semibold">₺ {formatPrice(adj(fin.addonsEUR * (currentKur || 1)))}</span>
+                                      <span className="text-emerald-300/70 text-xs ml-2">≈ € {formatPrice(fin.addonsEUR)}</span>
+                                    </div>
+                                  </div>
+                                )}
+                                {/* Ayırıcı çizgi */}
+                                <div className="border-t border-white/20" />
+                                {/* Genel Toplam */}
+                                <div className="flex items-end justify-between gap-4 flex-wrap">
+                                  <div>
+                                    <div className="text-white/50 text-[11px] uppercase tracking-[0.2em]">Genel Toplam{simActive ? ` · 1 € = ₺${formatPrice(simRateNum)}` : ''}</div>
+                                    <div className="text-white/40 text-xs mt-1">KDV HARİÇ</div>
+                                  </div>
+                                  <div className="text-right">
+                                    <div style={{ fontFamily: "'Fraunces', Georgia, serif" }} className={`text-3xl sm:text-4xl font-semibold tabular-nums ${simActive ? 'text-emerald-300' : ''}`}>₺ {formatPrice(adj(parsed.grandTotal + (fin.addonsEUR * (currentKur || 1))))}</div>
+                                    {parsed.eurTotal != null && <div className="text-emerald-300/90 text-sm font-medium tabular-nums mt-0.5">≈ € {formatPrice(parsed.eurTotal + fin.addonsEUR)}</div>}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* ===== Finansal: Teslim / İlaveler / Ödeme Planı / Tahsilatlar / Kalan ===== */}
+                        <div className="px-4 sm:px-8 pb-6 bg-[#FBFCFD] space-y-5">
+                          {/* Teslim Tarihi */}
+                          <div className="flex items-center gap-3 flex-wrap text-sm">
+                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5"><History className="w-3.5 h-3.5" /> Teslim Tarihi</span>
+                            {contractEditMode ? (
+                              <input type="date" value={parsed.deliveryDate || ''} onChange={(e) => mutateContractDraft((d) => { d.deliveryDate = e.target.value; })} className="h-8 px-2 border border-slate-200 rounded text-sm bg-white" />
+                            ) : (
+                              <span className="font-semibold text-slate-800">{parsed.deliveryDate ? new Date(parsed.deliveryDate).toLocaleDateString('tr-TR') : '—'}</span>
+                            )}
+                          </div>
+
 
                           {/* Ödeme Planı + Tahsilatlar */}
                           {(contractEditMode || (parsed.paymentPlan || []).length > 0 || (parsed.collections || []).length > 0) && (
