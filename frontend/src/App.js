@@ -475,6 +475,7 @@ function App() {
   const emptyContractForm = { title: '', customer_name: '', notes: '' };
   const [contracts, setContracts] = useState([]);
   const [contractFile, setContractFile] = useState(null);
+  const [contractDragOver, setContractDragOver] = useState(false);
   const [contractForm, setContractForm] = useState(emptyContractForm);
   const [contractUploadOpen, setContractUploadOpen] = useState(false);
   const [contractUploading, setContractUploading] = useState(false);
@@ -5429,17 +5430,30 @@ function App() {
                     className="sr-only"
                     onChange={(e) => setContractFile(e.target.files && e.target.files[0] ? e.target.files[0] : null)}
                   />
-                  <div className="flex items-center gap-3 mt-1">
-                    <label
-                      htmlFor="contract-file-input"
-                      className="inline-flex items-center justify-center h-9 px-4 rounded-md border border-slate-300 bg-white text-sm font-medium cursor-pointer hover:bg-slate-50 transition-colors"
-                    >
-                      <Upload className="w-4 h-4 mr-2" /> Dosya Seç
-                    </label>
-                    <span className={`text-sm truncate ${contractFile ? 'text-emerald-700 font-medium' : 'text-slate-400'}`}>
-                      {contractFile ? contractFile.name : 'Henüz dosya seçilmedi'}
-                    </span>
-                  </div>
+                  <label
+                    htmlFor="contract-file-input"
+                    onDragOver={(e) => { e.preventDefault(); setContractDragOver(true); }}
+                    onDragEnter={(e) => { e.preventDefault(); setContractDragOver(true); }}
+                    onDragLeave={(e) => { e.preventDefault(); setContractDragOver(false); }}
+                    onDrop={(e) => {
+                      e.preventDefault(); setContractDragOver(false);
+                      const f = e.dataTransfer.files && e.dataTransfer.files[0];
+                      if (!f) return;
+                      if (!/\.(xlsx|xls|xlsm)$/i.test(f.name)) { toast.error('Lütfen .xlsx / .xls dosyası bırakın'); return; }
+                      setContractFile(f);
+                    }}
+                    className={`mt-1 flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-7 text-center cursor-pointer transition-colors ${contractDragOver ? 'border-emerald-500 bg-emerald-50' : contractFile ? 'border-emerald-300 bg-emerald-50/40' : 'border-slate-300 bg-slate-50 hover:bg-slate-100'}`}
+                  >
+                    <Upload className={`w-7 h-7 ${contractDragOver || contractFile ? 'text-emerald-600' : 'text-slate-400'}`} />
+                    {contractFile ? (
+                      <span className="text-sm font-medium text-emerald-700 break-all">{contractFile.name}</span>
+                    ) : (
+                      <>
+                        <span className="text-sm font-medium text-slate-600">Dosyayı buraya sürükleyip bırakın</span>
+                        <span className="text-xs text-slate-400">veya tıklayıp seçin (.xlsx / .xls)</span>
+                      </>
+                    )}
+                  </label>
                 </div>
                 <div>
                   <Label>Not (opsiyonel)</Label>
