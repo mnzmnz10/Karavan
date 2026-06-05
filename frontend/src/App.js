@@ -468,6 +468,7 @@ function App() {
   const [serviceEditingId, setServiceEditingId] = useState(null); // düzenlenen kayıt id (null = yeni)
   const [serviceDialogOpen, setServiceDialogOpen] = useState(false);
   const [serviceStatusFilter, setServiceStatusFilter] = useState('all');
+  const [serviceSearch, setServiceSearch] = useState('');
   const [serviceSaving, setServiceSaving] = useState(false);
   // Sözleşmeler (Excel yükle + tarayıcıda önizle)
   const emptyContractForm = { title: '', customer_name: '', notes: '' };
@@ -8651,6 +8652,141 @@ function App() {
 
           {/* ===================== SERVİS (Tadilat/Bakım) ===================== */}
           <TabsContent value="service" className="space-y-6">
+            {serviceDialogOpen ? (
+              /* ===== INLINE FORM (popup yerine, Sözleşmeler gibi) ===== */
+              <div className="max-w-4xl mx-auto">
+                <button
+                  type="button"
+                  onClick={() => setServiceDialogOpen(false)}
+                  className="mb-4 inline-flex items-center gap-1.5 text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+                >
+                  <ChevronUp className="w-4 h-4 -rotate-90" /> Listeye dön
+                </button>
+
+                <div className="rounded-3xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                  {/* Emerald accent başlık bandı */}
+                  <div className="relative overflow-hidden bg-gradient-to-r from-emerald-700 via-emerald-600 to-teal-600 px-6 py-5">
+                    <div className="absolute right-[-50px] top-[-50px] h-36 w-36 rounded-full bg-white/10" />
+                    <div className="relative flex items-center gap-3">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/20 bg-white/10">
+                        <Wrench className="h-5 w-5 text-white" />
+                      </div>
+                      <div>
+                        <h2 className="m-0 text-lg font-black text-white">{serviceEditingId ? 'Servis Kaydını Düzenle' : 'Yeni Servis Kaydı'}</h2>
+                        <p className="m-0 text-xs font-medium text-emerald-50/80">Araç, yapılan işlemler ve teslim bilgilerini girin</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-6 space-y-7">
+                    {/* Müşteri & Araç */}
+                    <div>
+                      <div className="mb-3 flex items-center gap-2 text-[11px] font-black uppercase tracking-wider text-emerald-700">
+                        <Users className="w-3.5 h-3.5" /> Müşteri & Araç
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <Label>Müşteri Adı</Label>
+                          <Input value={serviceForm.customer_name} onChange={(e) => setServiceForm({ ...serviceForm, customer_name: e.target.value })} placeholder="Ad Soyad" />
+                        </div>
+                        <div>
+                          <Label>Telefon</Label>
+                          <Input value={serviceForm.phone} onChange={(e) => setServiceForm({ ...serviceForm, phone: e.target.value })} placeholder="05xx ..." />
+                        </div>
+                        <div>
+                          <Label>Araç Markası</Label>
+                          <Input value={serviceForm.vehicle_brand} onChange={(e) => setServiceForm({ ...serviceForm, vehicle_brand: e.target.value })} placeholder="Ford, Fiat ..." />
+                        </div>
+                        <div>
+                          <Label>Araç Modeli</Label>
+                          <Input value={serviceForm.vehicle_model} onChange={(e) => setServiceForm({ ...serviceForm, vehicle_model: e.target.value })} placeholder="Transit, Ducato ..." />
+                        </div>
+                        <div>
+                          <Label>Plaka</Label>
+                          <Input value={serviceForm.plate} onChange={(e) => setServiceForm({ ...serviceForm, plate: e.target.value })} placeholder="59 ABC 123" />
+                        </div>
+                        <div>
+                          <Label>Durum</Label>
+                          <Select value={serviceForm.status} onValueChange={(v) => setServiceForm({ ...serviceForm, status: v })}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="received">Bekliyor</SelectItem>
+                              <SelectItem value="in_progress">Devam Ediyor</SelectItem>
+                              <SelectItem value="delivered">Teslim Edildi</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Tarihler */}
+                    <div>
+                      <div className="mb-3 flex items-center gap-2 text-[11px] font-black uppercase tracking-wider text-emerald-700">
+                        <History className="w-3.5 h-3.5" /> Tarihler
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <Label>Geliş Tarihi</Label>
+                          <Input type="date" value={serviceForm.arrival_date} onChange={(e) => setServiceForm({ ...serviceForm, arrival_date: e.target.value })} />
+                        </div>
+                        <div>
+                          <Label>Teslim Tarihi</Label>
+                          <Input type="date" value={serviceForm.delivery_date} onChange={(e) => setServiceForm({ ...serviceForm, delivery_date: e.target.value })} />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* İşlemler & Notlar */}
+                    <div>
+                      <div className="mb-3 flex items-center gap-2 text-[11px] font-black uppercase tracking-wider text-emerald-700">
+                        <FileText className="w-3.5 h-3.5" /> İşlemler & Notlar
+                      </div>
+                      <div className="space-y-4">
+                        <div>
+                          <Label>Yapılan İşlemler</Label>
+                          <textarea
+                            value={serviceForm.operations}
+                            onChange={(e) => setServiceForm({ ...serviceForm, operations: e.target.value })}
+                            rows={4}
+                            placeholder="Solar panel kurulumu, akü değişimi, inverter montajı ..."
+                            className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          />
+                        </div>
+                        <div>
+                          <Label>Notlar</Label>
+                          <textarea
+                            value={serviceForm.notes}
+                            onChange={(e) => setServiceForm({ ...serviceForm, notes: e.target.value })}
+                            rows={3}
+                            placeholder="Ek notlar ..."
+                            className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Ücret */}
+                    <div>
+                      <div className="mb-3 flex items-center gap-2 text-[11px] font-black uppercase tracking-wider text-emerald-700">
+                        <DollarSign className="w-3.5 h-3.5" /> Ücret
+                      </div>
+                      <div className="max-w-xs">
+                        <Label>Ücret (₺) — opsiyonel</Label>
+                        <Input type="number" min="0" step="0.01" value={serviceForm.cost} onChange={(e) => setServiceForm({ ...serviceForm, cost: e.target.value })} placeholder="0" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-slate-100 bg-slate-50 px-6 py-4 flex items-center justify-end gap-2">
+                    <Button variant="outline" onClick={() => setServiceDialogOpen(false)}>İptal</Button>
+                    <Button onClick={saveService} disabled={serviceSaving} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold">
+                      {serviceSaving ? 'Kaydediliyor...' : (serviceEditingId ? 'Güncelle' : 'Kaydet')}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+            <>
             {/* Başlık + Yeni kayıt */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
@@ -8686,11 +8822,29 @@ function App() {
               ))}
             </div>
 
+            {/* Arama */}
+            <div className="relative max-w-md">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              <input
+                value={serviceSearch}
+                onChange={(e) => setServiceSearch(e.target.value)}
+                placeholder="Müşteri, plaka, araç veya telefon ara..."
+                className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+              />
+            </div>
+
             {/* Kayıt listesi */}
             {(() => {
-              const filtered = serviceStatusFilter === 'all'
+              const q = serviceSearch.trim().toLocaleLowerCase('tr-TR');
+              const filtered = (serviceStatusFilter === 'all'
                 ? services
-                : services.filter((s) => s.status === serviceStatusFilter);
+                : services.filter((s) => s.status === serviceStatusFilter)
+              ).filter((s) => {
+                if (!q) return true;
+                return [s.customer_name, s.plate, s.vehicle_brand, s.vehicle_model, s.phone]
+                  .filter(Boolean)
+                  .some((v) => String(v).toLocaleLowerCase('tr-TR').includes(q));
+              });
               if (filtered.length === 0) {
                 return (
                   <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-slate-200">
@@ -8706,7 +8860,7 @@ function App() {
                     const meta = SERVICE_STATUS_META[s.status] || SERVICE_STATUS_META.received;
                     const vehicle = [s.vehicle_brand, s.vehicle_model].filter(Boolean).join(' ') || 'Araç belirtilmemiş';
                     return (
-                      <div key={s.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow p-5 flex flex-col gap-3">
+                      <div key={s.id} className={`bg-white rounded-2xl border border-slate-200 border-l-4 shadow-sm hover:shadow-md transition-shadow p-5 flex flex-col gap-3 ${s.status === 'received' ? 'border-l-amber-400' : s.status === 'in_progress' ? 'border-l-blue-500' : 'border-l-emerald-500'}`}>
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
                             <div className="font-bold text-slate-800 truncate">{vehicle}</div>
@@ -8758,88 +8912,9 @@ function App() {
                 </div>
               );
             })()}
+            </>
+            )}
           </TabsContent>
-
-          {/* Servis ekle/düzenle dialog */}
-          <Dialog open={serviceDialogOpen} onOpenChange={setServiceDialogOpen}>
-            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>{serviceEditingId ? 'Servis Kaydını Düzenle' : 'Yeni Servis Kaydı'}</DialogTitle>
-                <DialogDescription>Araç ve yapılan işlem bilgilerini girin</DialogDescription>
-              </DialogHeader>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-2">
-                <div>
-                  <Label>Müşteri Adı</Label>
-                  <Input value={serviceForm.customer_name} onChange={(e) => setServiceForm({ ...serviceForm, customer_name: e.target.value })} placeholder="Ad Soyad" />
-                </div>
-                <div>
-                  <Label>Telefon</Label>
-                  <Input value={serviceForm.phone} onChange={(e) => setServiceForm({ ...serviceForm, phone: e.target.value })} placeholder="05xx ..." />
-                </div>
-                <div>
-                  <Label>Araç Markası</Label>
-                  <Input value={serviceForm.vehicle_brand} onChange={(e) => setServiceForm({ ...serviceForm, vehicle_brand: e.target.value })} placeholder="Ford, Fiat ..." />
-                </div>
-                <div>
-                  <Label>Araç Modeli</Label>
-                  <Input value={serviceForm.vehicle_model} onChange={(e) => setServiceForm({ ...serviceForm, vehicle_model: e.target.value })} placeholder="Transit, Ducato ..." />
-                </div>
-                <div>
-                  <Label>Plaka</Label>
-                  <Input value={serviceForm.plate} onChange={(e) => setServiceForm({ ...serviceForm, plate: e.target.value })} placeholder="59 ABC 123" />
-                </div>
-                <div>
-                  <Label>Durum</Label>
-                  <Select value={serviceForm.status} onValueChange={(v) => setServiceForm({ ...serviceForm, status: v })}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="received">Bekliyor</SelectItem>
-                      <SelectItem value="in_progress">Devam Ediyor</SelectItem>
-                      <SelectItem value="delivered">Teslim Edildi</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label>Geliş Tarihi</Label>
-                  <Input type="date" value={serviceForm.arrival_date} onChange={(e) => setServiceForm({ ...serviceForm, arrival_date: e.target.value })} />
-                </div>
-                <div>
-                  <Label>Teslim Tarihi</Label>
-                  <Input type="date" value={serviceForm.delivery_date} onChange={(e) => setServiceForm({ ...serviceForm, delivery_date: e.target.value })} />
-                </div>
-                <div className="sm:col-span-2">
-                  <Label>Yapılan İşlemler</Label>
-                  <textarea
-                    value={serviceForm.operations}
-                    onChange={(e) => setServiceForm({ ...serviceForm, operations: e.target.value })}
-                    rows={3}
-                    placeholder="Solar panel kurulumu, akü değişimi, inverter montajı ..."
-                    className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-                <div className="sm:col-span-2">
-                  <Label>Notlar</Label>
-                  <textarea
-                    value={serviceForm.notes}
-                    onChange={(e) => setServiceForm({ ...serviceForm, notes: e.target.value })}
-                    rows={2}
-                    placeholder="Ek notlar ..."
-                    className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-                <div>
-                  <Label>Ücret (₺) — opsiyonel</Label>
-                  <Input type="number" min="0" step="0.01" value={serviceForm.cost} onChange={(e) => setServiceForm({ ...serviceForm, cost: e.target.value })} placeholder="0" />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setServiceDialogOpen(false)}>İptal</Button>
-                <Button onClick={saveService} disabled={serviceSaving} className="bg-emerald-600 hover:bg-emerald-700 text-white">
-                  {serviceSaving ? 'Kaydediliyor...' : (serviceEditingId ? 'Güncelle' : 'Kaydet')}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
 
               </div> {/* max-w container */}
             </div> {/* Right Main Work Area */}
