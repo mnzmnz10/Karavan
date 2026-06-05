@@ -528,18 +528,30 @@ class QuoteResponse(BaseModel):
     status: str = "active"
 
 # ==================== SERVIS (Tadilat/Bakim Takibi) ====================
+class ServiceItem(BaseModel):
+    name: Optional[str] = Field("", max_length=300)              # Parça/işlem adı
+    qty: Optional[float] = Field(1, ge=0)                        # Adet
+    unit_price: Optional[float] = Field(0, ge=0)                 # Birim fiyat (₺)
+
 class ServiceRecord(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    order_no: Optional[str] = None                              # İş emri no (otomatik, İŞ-0001)
     customer_name: Optional[str] = Field(None, max_length=200)   # Müşteri adı
     phone: Optional[str] = Field(None, max_length=40)            # Telefon
     vehicle_brand: Optional[str] = Field(None, max_length=100)   # Araç markası
     vehicle_model: Optional[str] = Field(None, max_length=100)   # Araç modeli
     plate: Optional[str] = Field(None, max_length=30)            # Plaka
+    is_trailer: Optional[bool] = False                          # Çekme karavan (plakasız)
     arrival_date: Optional[str] = None                           # Geliş/işlem tarihi (YYYY-MM-DD)
     delivery_date: Optional[str] = None                          # Teslim tarihi (boş = henüz teslim edilmedi)
-    operations: Optional[str] = Field(None, max_length=5000)     # Yapılan işlemler
+    operations: Optional[str] = Field(None, max_length=5000)     # Yapılan işlemler (serbest metin)
+    items: Optional[List[ServiceItem]] = []                      # Yapılandırılmış parça/işlem kalemleri
+    photos: Optional[List[str]] = []                            # Fotoğraflar (base64 data URL)
     notes: Optional[str] = Field(None, max_length=5000)          # Notlar
-    cost: Optional[float] = Field(None, ge=0)                    # Ücret (opsiyonel)
+    cost: Optional[float] = Field(None, ge=0)                    # Toplam tutar (kalem yoksa manuel)
+    advance_amount: Optional[float] = Field(0, ge=0)            # Alınan avans (₺)
+    warranty_months: Optional[int] = Field(None, ge=0)         # Garanti süresi (ay)
+    warranty_note: Optional[str] = Field(None, max_length=1000) # Garanti kapsam notu
     status: str = "received"                                     # received | in_progress | delivered
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -549,11 +561,17 @@ class ServiceCreate(BaseModel):
     vehicle_brand: Optional[str] = Field(None, max_length=100)
     vehicle_model: Optional[str] = Field(None, max_length=100)
     plate: Optional[str] = Field(None, max_length=30)
+    is_trailer: Optional[bool] = False
     arrival_date: Optional[str] = None
     delivery_date: Optional[str] = None
     operations: Optional[str] = Field(None, max_length=5000)
+    items: Optional[List[ServiceItem]] = []
+    photos: Optional[List[str]] = []
     notes: Optional[str] = Field(None, max_length=5000)
     cost: Optional[float] = Field(None, ge=0)
+    advance_amount: Optional[float] = Field(0, ge=0)
+    warranty_months: Optional[int] = Field(None, ge=0)
+    warranty_note: Optional[str] = Field(None, max_length=1000)
     status: str = "received"
 
 class ServiceUpdate(BaseModel):
@@ -562,11 +580,17 @@ class ServiceUpdate(BaseModel):
     vehicle_brand: Optional[str] = Field(None, max_length=100)
     vehicle_model: Optional[str] = Field(None, max_length=100)
     plate: Optional[str] = Field(None, max_length=30)
+    is_trailer: Optional[bool] = None
     arrival_date: Optional[str] = None
     delivery_date: Optional[str] = None
     operations: Optional[str] = Field(None, max_length=5000)
+    items: Optional[List[ServiceItem]] = None
+    photos: Optional[List[str]] = None
     notes: Optional[str] = Field(None, max_length=5000)
     cost: Optional[float] = Field(None, ge=0)
+    advance_amount: Optional[float] = Field(None, ge=0)
+    warranty_months: Optional[int] = Field(None, ge=0)
+    warranty_note: Optional[str] = Field(None, max_length=1000)
     status: Optional[str] = None
 
 # ==================== SÖZLEŞMELER (Excel yükle + önizle) ====================
@@ -8042,6 +8066,33 @@ async def list_services(status: Optional[str] = None, search: Optional[str] = No
     return services
 
 
+def _service_items_total(items):
+    """Kalem listesinden toplam tutar (adet * birim fiyat)."""
+    total = 0.0
+    for it in (items or []):
+        try:
+            total += float(it.get("qty") or 0) * float(it.get("unit_price") or 0)
+        except (TypeError, ValueError):
+            continue
+    return round(total, 2)
+
+
+async def _next_service_order_no():
+    """Sırayla artan iş emri numarası (İŞ-0001)."""
+    from pymongo import ReturnDocument
+    try:
+        res = await db.counters.find_one_and_update(
+            {"_id": "service_order"},
+            {"$inc": {"seq": 1}},
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+        seq = (res or {}).get("seq", 1)
+    except Exception:
+        seq = await db.services.count_documents({}) + 1
+    return f"İŞ-{int(seq):04d}"
+
+
 @api_router.post("/services")
 async def create_service(payload: ServiceCreate):
     """Yeni servis kaydi olustur."""
@@ -8050,9 +8101,32 @@ async def create_service(payload: ServiceCreate):
         doc["status"] = "received"
     doc["id"] = str(uuid.uuid4())
     doc["created_at"] = datetime.now(timezone.utc)
+    doc["order_no"] = await _next_service_order_no()
+    # Kalem varsa toplam tutarı kalemlerden hesapla
+    if doc.get("items"):
+        doc["cost"] = _service_items_total(doc["items"])
     await db.services.insert_one(doc)
     doc.pop("_id", None)
     return doc
+
+
+@api_router.get("/services/history")
+async def service_history(plate: Optional[str] = None, customer_name: Optional[str] = None, exclude_id: Optional[str] = None):
+    """Aynı aracın (plaka) veya çekme karavanlarda müşterinin geçmiş servis kayıtları."""
+    query = {}
+    if plate and plate.strip():
+        query["plate"] = {"$regex": f"^{re.escape(plate.strip())}$", "$options": "i"}
+    elif customer_name and customer_name.strip():
+        query["plate"] = {"$in": [None, ""]}
+        query["customer_name"] = {"$regex": f"^{re.escape(customer_name.strip())}$", "$options": "i"}
+    else:
+        return []
+    if exclude_id:
+        query["id"] = {"$ne": exclude_id}
+    records = await db.services.find(query).sort("created_at", -1).to_list(200)
+    for r in records:
+        r.pop("_id", None)
+    return records
 
 
 @api_router.get("/services/{service_id}")
@@ -8072,6 +8146,9 @@ async def update_service(service_id: str, payload: ServiceUpdate):
     update_data = {k: v for k, v in payload.dict(exclude_unset=True).items()}
     if "status" in update_data and update_data["status"] not in _SERVICE_STATUSES:
         update_data.pop("status")
+    # Kalem güncellendiyse toplam tutarı yeniden hesapla
+    if "items" in update_data:
+        update_data["cost"] = _service_items_total(update_data.get("items"))
     if update_data:
         await db.services.update_one({"id": service_id}, {"$set": update_data})
     service = await db.services.find_one({"id": service_id})
@@ -9177,6 +9254,266 @@ class PDFContractGenerator(PDFQuoteGenerator):
         doc.build(story, onFirstPage=self._draw_page_decorations, onLaterPages=self._draw_page_decorations)
         buffer.seek(0)
         return buffer
+
+
+class PDFServiceGenerator(PDFContractGenerator):
+    """Servis / İş Emri teslim formu PDF üreticisi (sözleşme stillerini yeniden kullanır)."""
+
+    def create_service_pdf(self, svc: Dict) -> BytesIO:
+        from reportlab.platypus import Table as PDFTable, Image as PDFImage
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(
+            buffer, pagesize=A4,
+            rightMargin=1.5*cm, leftMargin=1.5*cm, topMargin=1.5*cm, bottomMargin=1.5*cm,
+            title=f"Servis Formu - {svc.get('order_no', '')}", author="Çorlu Karavan",
+        )
+        story = []
+
+        def fmt(val):
+            try:
+                return f"₺ {round(float(val)):,.0f}".replace(",", ".")
+            except (TypeError, ValueError):
+                return "₺ 0"
+
+        # ---- Logo ----
+        logo_flowable = None
+        for p in [Path("public/logo.png"), Path(__file__).parent / "public" / "logo.png", Path(__file__).parent.parent / "public" / "logo.png"]:
+            if p.exists():
+                try:
+                    logo_flowable = PDFImage(str(p), width=60, height=60)
+                except Exception:
+                    logo_flowable = None
+                break
+
+        # ---- Üst banner ----
+        eyebrow_p = Paragraph("SERVİS · İŞ EMRİ / TESLİM FORMU", self.contract_eyebrow_style)
+        title_p = Paragraph(f"<b>{upper_tr(svc.get('order_no') or 'SERVİS KAYDI')}</b>", self.contract_brand_title_style)
+        cust = svc.get("customer_name")
+        left_flowables = [eyebrow_p, title_p]
+        if cust:
+            left_flowables.append(Spacer(1, 5))
+            left_flowables.append(Paragraph(f"Müşteri  ·  <b>{upper_tr(cust)}</b>", self.contract_subtitle_style))
+
+        def _fmt_date(d):
+            if not d:
+                return "—"
+            try:
+                return datetime.fromisoformat(str(d).replace('Z', '+00:00')).strftime('%d.%m.%Y')
+            except Exception:
+                return str(d)[:10]
+
+        meta_pairs = [("TARİH", _fmt_date(svc.get("arrival_date") or svc.get("created_at")))]
+        meta_flowables = []
+        for mi, (label, value) in enumerate(meta_pairs):
+            if mi > 0:
+                meta_flowables.append(Spacer(1, 6))
+            meta_flowables.append(Paragraph(label, self.contract_meta_label_style))
+            meta_flowables.append(Paragraph(value, self.contract_meta_value_style))
+
+        header_left_cell = left_flowables
+        if logo_flowable:
+            logo_title_tbl = PDFTable([[logo_flowable, left_flowables]], colWidths=[2.5*cm, 9.8*cm])
+            logo_title_tbl.setStyle(TableStyle([
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (0,0), 12),
+                ('RIGHTPADDING', (1,0), (1,0), 0), ('TOPPADDING', (0,0), (-1,-1), 0), ('BOTTOMPADDING', (0,0), (-1,-1), 0),
+            ]))
+            header_left_cell = logo_title_tbl
+
+        header_tbl = PDFTable([[header_left_cell, meta_flowables]], colWidths=[12.3*cm, 5.7*cm])
+        header_tbl.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('TOPPADDING', (0,0), (-1,-1), 15), ('BOTTOMPADDING', (0,0), (-1,-1), 15),
+            ('LEFTPADDING', (0,0), (0,-1), 18), ('LEFTPADDING', (1,0), (1,-1), 0),
+            ('RIGHTPADDING', (0,0), (0,-1), 8), ('RIGHTPADDING', (1,0), (1,-1), 18),
+            ('LINEBEFORE', (0,0), (0,-1), 4, colors.HexColor('#10B981')),
+        ]))
+        story.append(RoundedCard([header_tbl], width=18.0*cm, bg_color=colors.HexColor('#1B3A5C'), corner_radius=8, padding=0))
+        story.append(Spacer(1, 14))
+
+        # ---- Müşteri & Araç bilgi kartı ----
+        is_trailer = svc.get("is_trailer") or not (svc.get("plate") or "").strip()
+        vehicle = " ".join([x for x in [svc.get("vehicle_brand"), svc.get("vehicle_model")] if x]).strip() or "—"
+        plate_disp = "ÇEKME KARAVAN (plakasız)" if is_trailer else (svc.get("plate") or "—")
+        info_label = ParagraphStyle('SvcInfoLabel', parent=self.styles['Normal'], fontName=self.get_font_name(is_bold=True), fontSize=7, textColor=colors.HexColor('#64748B'), leading=9)
+        info_val = ParagraphStyle('SvcInfoVal', parent=self.styles['Normal'], fontName=self.get_font_name(is_bold=True), fontSize=9.5, textColor=colors.HexColor('#1B3A5C'), leading=12)
+        def info_cell(label, value):
+            return [Paragraph(label.upper(), info_label), Paragraph(upper_tr(str(value)), info_val)]
+        info_tbl = PDFTable([[
+            info_cell("Telefon", svc.get("phone") or "—"), info_cell("Araç", vehicle),
+            info_cell("Plaka", plate_disp), info_cell("Teslim Tarihi", _fmt_date(svc.get("delivery_date"))),
+        ]], colWidths=[4.5*cm, 4.5*cm, 4.5*cm, 4.5*cm])
+        info_tbl.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#F4F6F9')),
+            ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor('#D9E0E8')),
+            ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#E5EAF0')),
+            ('TOPPADDING', (0,0), (-1,-1), 9), ('BOTTOMPADDING', (0,0), (-1,-1), 9),
+            ('LEFTPADDING', (0,0), (-1,-1), 10), ('RIGHTPADDING', (0,0), (-1,-1), 10),
+        ]))
+        story.append(info_tbl)
+        story.append(Spacer(1, 14))
+
+        # ---- Parça / İşlem kalemleri tablosu ----
+        items = svc.get("items") or []
+        if items:
+            rows = [[
+                Paragraph("<b>#</b>", self.table_header_center_style),
+                Paragraph("<b>PARÇA / İŞLEM</b>", self.table_header_style),
+                Paragraph("<b>ADET</b>", self.table_header_center_style),
+                Paragraph("<b>BİRİM (₺)</b>", self.table_header_right_style),
+                Paragraph("<b>TUTAR (₺)</b>", self.table_header_right_style),
+            ]]
+            tstyles = [
+                ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1B3A5C')),
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('LINEBELOW', (0,0), (-1,-1), 0.5, colors.HexColor('#CBD5E1')),
+                ('TOPPADDING', (0,0), (-1,-1), 5), ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+                ('LEFTPADDING', (0,0), (-1,-1), 6), ('RIGHTPADDING', (0,0), (-1,-1), 6),
+                ('ALIGN', (2,0), (2,-1), 'CENTER'), ('ALIGN', (3,0), (-1,-1), 'RIGHT'),
+            ]
+            for i, it in enumerate(items):
+                qty = float(it.get("qty") or 0)
+                unit = float(it.get("unit_price") or 0)
+                rows.append([
+                    Paragraph(str(i+1), self.table_cell_style),
+                    Paragraph(upper_tr(it.get("name") or ""), self.table_cell_style),
+                    Paragraph(f"{qty:g}", self.table_cell_right),
+                    Paragraph(fmt(unit), self.table_cell_right),
+                    Paragraph(fmt(qty*unit), self.table_cell_right_bold),
+                ])
+            items_tbl = PDFTable(rows, colWidths=[0.9*cm, 9.6*cm, 1.8*cm, 2.85*cm, 2.85*cm])
+            items_tbl.setStyle(TableStyle(tstyles))
+            story.append(items_tbl)
+            story.append(Spacer(1, 12))
+
+        # ---- Ödeme özeti (Toplam / Avans / Kalan) ----
+        total = svc.get("cost")
+        if total is None:
+            total = _service_items_total(items)
+        total = float(total or 0)
+        advance = float(svc.get("advance_amount") or 0)
+        remaining = max(total - advance, 0)
+        pay_label = ParagraphStyle('SvcPayLbl', parent=self.styles['Normal'], fontName=self.get_font_name(is_bold=True), fontSize=9, textColor=colors.HexColor('#475569'), alignment=TA_LEFT, leading=12)
+        pay_val = ParagraphStyle('SvcPayVal', parent=self.styles['Normal'], fontName=self.get_font_name(is_bold=True), fontSize=11, textColor=colors.HexColor('#1B3A5C'), alignment=TA_RIGHT, leading=14)
+        pay_rows = [
+            [Paragraph("Toplam Tutar", pay_label), Paragraph(fmt(total), pay_val)],
+            [Paragraph("Alınan Avans", pay_label), Paragraph(fmt(advance), pay_val)],
+        ]
+        pay_tbl = PDFTable(pay_rows, colWidths=[9.0*cm, 9.0*cm])
+        pay_tbl.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('LINEBELOW', (0,0), (-1,-1), 0.5, colors.HexColor('#E5EAF0')),
+            ('TOPPADDING', (0,0), (-1,-1), 7), ('BOTTOMPADDING', (0,0), (-1,-1), 7),
+            ('LEFTPADDING', (0,0), (-1,-1), 14), ('RIGHTPADDING', (0,0), (-1,-1), 14),
+        ]))
+        remaining_left = [Paragraph("KALAN TUTAR", self.gt_label_style), Paragraph("Teslimde tahsil edilecek", self.gt_sub_style)]
+        remaining_right = [Paragraph(f"<b>{fmt(remaining)}</b>", self.gt_amount_style)]
+        rem_tbl = PDFTable([[remaining_left, remaining_right]], colWidths=[8.3*cm, 9.7*cm])
+        rem_tbl.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('TOPPADDING', (0,0), (-1,-1), 14), ('BOTTOMPADDING', (0,0), (-1,-1), 14),
+            ('LEFTPADDING', (0,0), (0,-1), 18), ('LEFTPADDING', (1,0), (1,-1), 0),
+            ('RIGHTPADDING', (0,0), (0,-1), 8), ('RIGHTPADDING', (1,0), (1,-1), 18),
+            ('LINEBEFORE', (0,0), (0,-1), 4, colors.HexColor('#10B981')),
+        ]))
+        story.append(pay_tbl)
+        story.append(Spacer(1, 8))
+        story.append(RoundedCard([rem_tbl], width=18.0*cm, bg_color=colors.HexColor('#1B3A5C'), corner_radius=8, padding=0))
+        story.append(Spacer(1, 14))
+
+        # ---- Garanti ----
+        wm = svc.get("warranty_months")
+        if wm or svc.get("warranty_note"):
+            w_lines = []
+            if wm:
+                end_txt = ""
+                if svc.get("delivery_date"):
+                    try:
+                        d0 = datetime.fromisoformat(str(svc["delivery_date"]).replace('Z', '+00:00'))
+                        month = d0.month - 1 + int(wm)
+                        year = d0.year + month // 12
+                        end = d0.replace(year=year, month=month % 12 + 1, day=min(d0.day, 28))
+                        end_txt = f" (Bitiş: {end.strftime('%d.%m.%Y')})"
+                    except Exception:
+                        end_txt = ""
+                w_lines.append(f"<b>Garanti Süresi:</b> {int(wm)} ay{end_txt}")
+            if svc.get("warranty_note"):
+                w_lines.append(upper_tr(svc.get("warranty_note")))
+            w_flow = [Paragraph("<b>GARANTİ</b>", self.note_title_style)] + [Paragraph(t, self.note_text_style) for t in w_lines]
+            w_tbl = PDFTable([[w_flow]], colWidths=[18.0*cm])
+            w_tbl.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#FEF3C7')),
+                ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor('#FDE68A')),
+                ('TOPPADDING', (0,0), (-1,-1), 10), ('BOTTOMPADDING', (0,0), (-1,-1), 10),
+                ('LEFTPADDING', (0,0), (-1,-1), 12), ('RIGHTPADDING', (0,0), (-1,-1), 12),
+            ]))
+            story.append(RoundedCard([w_tbl], width=18.0*cm, bg_color=colors.HexColor('#FEF3C7'), border_color=colors.HexColor('#FDE68A'), border_width=0.5, corner_radius=8, padding=0))
+            story.append(Spacer(1, 14))
+
+        # ---- Yapılan işlemler / notlar ----
+        body_txt = []
+        if svc.get("operations"):
+            body_txt.append(Paragraph("<b>YAPILAN İŞLEMLER</b>", self.note_title_style))
+            for line in str(svc["operations"]).split("\n"):
+                if line.strip():
+                    body_txt.append(Paragraph(upper_tr(line), self.note_text_style))
+        if svc.get("notes"):
+            if body_txt:
+                body_txt.append(Spacer(1, 6))
+            body_txt.append(Paragraph("<b>NOTLAR</b>", self.note_title_style))
+            for line in str(svc["notes"]).split("\n"):
+                if line.strip():
+                    body_txt.append(Paragraph(upper_tr(line), self.note_text_style))
+        if body_txt:
+            n_tbl = PDFTable([[body_txt]], colWidths=[18.0*cm])
+            n_tbl.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#F4F6F9')),
+                ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor('#D9E0E8')),
+                ('TOPPADDING', (0,0), (-1,-1), 10), ('BOTTOMPADDING', (0,0), (-1,-1), 10),
+                ('LEFTPADDING', (0,0), (-1,-1), 12), ('RIGHTPADDING', (0,0), (-1,-1), 12),
+            ]))
+            story.append(n_tbl)
+            story.append(Spacer(1, 18))
+
+        # ---- İmza ----
+        sig_style = ParagraphStyle('SvcSig', parent=self.styles['Normal'], fontName=self.get_font_name(is_bold=True), fontSize=9, textColor=colors.HexColor('#1B3A5C'), alignment=TA_CENTER)
+        sig_sub = ParagraphStyle('SvcSigSub', parent=self.styles['Normal'], fontName=self.get_font_name(), fontSize=8, textColor=colors.HexColor('#94A3B8'), alignment=TA_CENTER, spaceBefore=22)
+        sig_tbl = PDFTable([[
+            [Paragraph("Çorlu Karavan", sig_style), Paragraph("Yetkili İmza", sig_sub)],
+            [Paragraph(upper_tr(cust or "Müşteri"), sig_style), Paragraph("Müşteri İmza", sig_sub)],
+        ]], colWidths=[9.0*cm, 9.0*cm])
+        sig_tbl.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('TOPPADDING', (0,0), (-1,-1), 10), ('LEFTPADDING', (0,0), (-1,-1), 20), ('RIGHTPADDING', (0,0), (-1,-1), 20),
+        ]))
+        story.append(sig_tbl)
+
+        doc.build(story, onFirstPage=self._draw_page_decorations, onLaterPages=self._draw_page_decorations)
+        buffer.seek(0)
+        return buffer
+
+
+@api_router.get("/services/{service_id}/pdf")
+async def download_service_pdf(service_id: str):
+    """Servis / iş emri teslim formunu PDF olarak indir."""
+    try:
+        svc = await db.services.find_one({"id": service_id})
+        if not svc:
+            raise HTTPException(status_code=404, detail="Servis kaydı bulunamadı")
+        svc.pop("_id", None)
+        pdf_buffer = PDFServiceGenerator().create_service_pdf(svc)
+        raw = (svc.get("order_no") or "servis-formu")
+        ascii_name = raw.encode("ascii", "ignore").decode("ascii").strip() or "servis-formu"
+        return StreamingResponse(
+            pdf_buffer, media_type='application/pdf',
+            headers={"Content-Disposition": f'attachment; filename="{ascii_name}.pdf"'}
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Servis PDF üretim hatası: {e}")
+        raise HTTPException(status_code=500, detail="PDF üretilirken hata oluştu")
 
 
 @app.get("/api/contracts/{contract_id}/pdf")

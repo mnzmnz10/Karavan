@@ -462,7 +462,7 @@ function App() {
   const [aiPreviewCompanyId, setAiPreviewCompanyId] = useState(''); // önizlemenin ait olduğu firma
   const [aiSaving, setAiSaving] = useState(false); // kaydetme sürüyor mu
   // Servis (tadilat/bakim) sekmesi
-  const emptyServiceForm = { customer_name: '', phone: '', vehicle_brand: '', vehicle_model: '', plate: '', arrival_date: '', delivery_date: '', operations: '', notes: '', cost: '', status: 'received' };
+  const emptyServiceForm = { customer_name: '', phone: '', vehicle_brand: '', vehicle_model: '', plate: '', is_trailer: false, arrival_date: '', delivery_date: '', operations: '', items: [], photos: [], notes: '', cost: '', advance_amount: '', warranty_months: '', warranty_note: '', status: 'received' };
   const [services, setServices] = useState([]);
   const [serviceForm, setServiceForm] = useState(emptyServiceForm);
   const [serviceEditingId, setServiceEditingId] = useState(null); // düzenlenen kayıt id (null = yeni)
@@ -470,6 +470,7 @@ function App() {
   const [serviceStatusFilter, setServiceStatusFilter] = useState('all');
   const [serviceSearch, setServiceSearch] = useState('');
   const [serviceSaving, setServiceSaving] = useState(false);
+  const [serviceHistory, setServiceHistory] = useState([]);
   // Sözleşmeler (Excel yükle + tarayıcıda önizle)
   const emptyContractForm = { title: '', customer_name: '', notes: '' };
   const [contracts, setContracts] = useState([]);
@@ -1706,18 +1707,89 @@ function App() {
   const openNewServiceDialog = () => {
     setServiceEditingId(null);
     setServiceForm({ ...emptyServiceForm, arrival_date: new Date().toISOString().slice(0, 10) });
+    setServiceHistory([]);
     setServiceDialogOpen(true);
   };
+
+  // Aynı araç/müşterinin geçmiş servis kayıtları
+  const loadServiceHistory = async (svc) => {
+    try {
+      const params = new URLSearchParams();
+      if (svc.plate && svc.plate.trim()) params.set('plate', svc.plate.trim());
+      else if (svc.customer_name && svc.customer_name.trim()) params.set('customer_name', svc.customer_name.trim());
+      else { setServiceHistory([]); return; }
+      if (svc.id) params.set('exclude_id', svc.id);
+      const res = await axios.get(`${API}/services/history?${params.toString()}`);
+      setServiceHistory(res.data || []);
+    } catch (e) {
+      setServiceHistory([]);
+    }
+  };
+
+  // ---- Servis kalem (parça/işlem) yardımcıları ----
+  const serviceItemsTotal = (items) => (items || []).reduce((sum, it) => sum + (parseFloat(it.qty) || 0) * (parseFloat(it.unit_price) || 0), 0);
+  const addServiceItem = () => setServiceForm((f) => ({ ...f, items: [...(f.items || []), { name: '', qty: 1, unit_price: 0 }] }));
+  const updateServiceItem = (idx, field, value) => setServiceForm((f) => {
+    const items = [...(f.items || [])];
+    items[idx] = { ...items[idx], [field]: value };
+    return { ...f, items };
+  });
+  const removeServiceItem = (idx) => setServiceForm((f) => ({ ...f, items: (f.items || []).filter((_, i) => i !== idx) }));
+
+  // ---- Fotoğraf ekleme (yeniden boyutlandırıp base64) ----
+  const addServicePhotos = async (fileList) => {
+    const files = Array.from(fileList || []);
+    for (const file of files) {
+      if (!file.type.startsWith('image/')) continue;
+      try {
+        const dataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+              const maxDim = 1280;
+              let { width, height } = img;
+              if (width > maxDim || height > maxDim) {
+                if (width >= height) { height = Math.round(height * maxDim / width); width = maxDim; }
+                else { width = Math.round(width * maxDim / height); height = maxDim; }
+              }
+              const canvas = document.createElement('canvas');
+              canvas.width = width; canvas.height = height;
+              canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+              resolve(canvas.toDataURL('image/jpeg', 0.7));
+            };
+            img.onerror = reject;
+            img.src = e.target.result;
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        setServiceForm((f) => ({ ...f, photos: [...(f.photos || []), dataUrl] }));
+      } catch (e) {
+        toast.error('Fotoğraf eklenemedi');
+      }
+    }
+  };
+  const removeServicePhoto = (idx) => setServiceForm((f) => ({ ...f, photos: (f.photos || []).filter((_, i) => i !== idx) }));
 
   const openEditServiceDialog = (svc) => {
     setServiceEditingId(svc.id);
     setServiceForm({
       customer_name: svc.customer_name || '', phone: svc.phone || '',
       vehicle_brand: svc.vehicle_brand || '', vehicle_model: svc.vehicle_model || '',
-      plate: svc.plate || '', arrival_date: svc.arrival_date || '', delivery_date: svc.delivery_date || '',
-      operations: svc.operations || '', notes: svc.notes || '',
-      cost: svc.cost != null ? String(svc.cost) : '', status: svc.status || 'received'
+      plate: svc.plate || '', is_trailer: !!svc.is_trailer,
+      arrival_date: svc.arrival_date || '', delivery_date: svc.delivery_date || '',
+      operations: svc.operations || '',
+      items: Array.isArray(svc.items) ? svc.items.map((it) => ({ name: it.name || '', qty: it.qty != null ? it.qty : 1, unit_price: it.unit_price != null ? it.unit_price : 0 })) : [],
+      photos: Array.isArray(svc.photos) ? svc.photos : [],
+      notes: svc.notes || '',
+      cost: svc.cost != null ? String(svc.cost) : '',
+      advance_amount: svc.advance_amount != null ? String(svc.advance_amount) : '',
+      warranty_months: svc.warranty_months != null ? String(svc.warranty_months) : '',
+      warranty_note: svc.warranty_note || '',
+      status: svc.status || 'received'
     });
+    loadServiceHistory(svc);
     setServiceDialogOpen(true);
   };
 
@@ -1726,9 +1798,21 @@ function App() {
       toast.error('En az müşteri, araç veya plaka bilgisi girin');
       return;
     }
+    const cleanItems = (serviceForm.items || [])
+      .filter((it) => (it.name || '').trim() || parseFloat(it.unit_price) > 0)
+      .map((it) => ({ name: (it.name || '').trim(), qty: parseFloat(it.qty) || 0, unit_price: parseFloat(it.unit_price) || 0 }));
+    const itemsCost = serviceItemsTotal(cleanItems);
     const payload = {
       ...serviceForm,
-      cost: serviceForm.cost !== '' && serviceForm.cost != null ? parseFloat(serviceForm.cost) : null,
+      is_trailer: !!serviceForm.is_trailer,
+      items: cleanItems,
+      photos: serviceForm.photos || [],
+      cost: cleanItems.length > 0
+        ? itemsCost
+        : (serviceForm.cost !== '' && serviceForm.cost != null ? parseFloat(serviceForm.cost) : null),
+      advance_amount: serviceForm.advance_amount !== '' && serviceForm.advance_amount != null ? parseFloat(serviceForm.advance_amount) : 0,
+      warranty_months: serviceForm.warranty_months !== '' && serviceForm.warranty_months != null ? parseInt(serviceForm.warranty_months, 10) : null,
+      warranty_note: serviceForm.warranty_note || null,
       arrival_date: serviceForm.arrival_date || null,
       delivery_date: serviceForm.delivery_date || null,
     };
@@ -8702,8 +8786,18 @@ function App() {
                           <Input value={serviceForm.vehicle_model} onChange={(e) => setServiceForm({ ...serviceForm, vehicle_model: e.target.value })} placeholder="Transit, Ducato ..." />
                         </div>
                         <div>
-                          <Label>Plaka</Label>
-                          <Input value={serviceForm.plate} onChange={(e) => setServiceForm({ ...serviceForm, plate: e.target.value })} placeholder="59 ABC 123" />
+                          <div className="flex items-center justify-between">
+                            <Label>Plaka</Label>
+                            <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 cursor-pointer select-none">
+                              <input type="checkbox" checked={!!serviceForm.is_trailer} onChange={(e) => setServiceForm({ ...serviceForm, is_trailer: e.target.checked, plate: e.target.checked ? '' : serviceForm.plate })} className="accent-emerald-600" />
+                              Çekme karavan (plakasız)
+                            </label>
+                          </div>
+                          {serviceForm.is_trailer ? (
+                            <div className="h-10 flex items-center px-3 rounded-md bg-slate-50 border border-dashed border-slate-300 text-xs text-slate-500 italic">Plakasız — müşteri adıyla takip edilir</div>
+                          ) : (
+                            <Input value={serviceForm.plate} onChange={(e) => setServiceForm({ ...serviceForm, plate: e.target.value })} placeholder="59 ABC 123" />
+                          )}
                         </div>
                         <div>
                           <Label>Durum</Label>
@@ -8765,23 +8859,173 @@ function App() {
                       </div>
                     </div>
 
-                    {/* Ücret */}
+                    {/* Parça / İşlem kalemleri */}
+                    <div>
+                      <div className="mb-3 flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-wider text-emerald-700">
+                          <Package className="w-3.5 h-3.5" /> Parça / İşlem Kalemleri
+                        </div>
+                        <Button type="button" size="sm" variant="outline" onClick={addServiceItem} className="h-8 text-xs font-bold border-emerald-200 text-emerald-700 hover:bg-emerald-50">
+                          <Plus className="w-3.5 h-3.5 mr-1" /> Kalem Ekle
+                        </Button>
+                      </div>
+                      {(serviceForm.items || []).length === 0 ? (
+                        <p className="text-xs text-slate-400 italic py-2">Henüz kalem yok. "Kalem Ekle" ile parça/işçilik ekleyin (toplam otomatik hesaplanır).</p>
+                      ) : (
+                        <div className="overflow-hidden rounded-xl border border-slate-200">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
+                                <th className="text-left font-bold px-3 py-2">Parça / İşlem</th>
+                                <th className="text-center font-bold px-2 py-2 w-16">Adet</th>
+                                <th className="text-right font-bold px-2 py-2 w-28">Birim (₺)</th>
+                                <th className="text-right font-bold px-3 py-2 w-28">Tutar (₺)</th>
+                                <th className="w-9"></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(serviceForm.items || []).map((it, idx) => (
+                                <tr key={idx} className="border-t border-slate-100">
+                                  <td className="px-2 py-1.5">
+                                    <input value={it.name} onChange={(e) => updateServiceItem(idx, 'name', e.target.value)} placeholder="Solar panel, akü, işçilik..." className="w-full h-8 px-2 border border-slate-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                                  </td>
+                                  <td className="px-1 py-1.5">
+                                    <input type="number" min="0" step="1" value={it.qty} onChange={(e) => updateServiceItem(idx, 'qty', e.target.value)} className="w-full h-8 px-1 border border-slate-200 rounded text-sm text-center tabular-nums focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                                  </td>
+                                  <td className="px-1 py-1.5">
+                                    <input type="number" min="0" step="0.01" value={it.unit_price} onChange={(e) => updateServiceItem(idx, 'unit_price', e.target.value)} className="w-full h-8 px-1 border border-slate-200 rounded text-sm text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                                  </td>
+                                  <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-slate-700">₺ {formatPrice((parseFloat(it.qty) || 0) * (parseFloat(it.unit_price) || 0))}</td>
+                                  <td className="px-1 py-1.5 text-center">
+                                    <button type="button" onClick={() => removeServiceItem(idx)} className="text-rose-400 hover:text-rose-600" title="Kalemi sil"><Trash2 className="w-4 h-4" /></button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Fotoğraflar */}
+                    <div>
+                      <div className="mb-3 flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-wider text-emerald-700">
+                          <Eye className="w-3.5 h-3.5" /> Fotoğraflar
+                        </div>
+                        <label className="inline-flex items-center gap-1 h-8 px-3 text-xs font-bold rounded-md border border-emerald-200 text-emerald-700 hover:bg-emerald-50 cursor-pointer">
+                          <Plus className="w-3.5 h-3.5" /> Fotoğraf Ekle
+                          <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => { addServicePhotos(e.target.files); e.target.value = ''; }} />
+                        </label>
+                      </div>
+                      {(serviceForm.photos || []).length === 0 ? (
+                        <p className="text-xs text-slate-400 italic py-2">Geliş/işlem fotoğrafları ekleyebilirsiniz (otomatik küçültülür).</p>
+                      ) : (
+                        <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                          {(serviceForm.photos || []).map((src, idx) => (
+                            <div key={idx} className="relative group aspect-square rounded-lg overflow-hidden border border-slate-200">
+                              <img src={src} alt={`Foto ${idx + 1}`} className="w-full h-full object-cover" />
+                              <button type="button" onClick={() => removeServicePhoto(idx)} className="absolute top-1 right-1 bg-rose-600 text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity" title="Kaldır">
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Ödeme (avans / kalan) */}
                     <div>
                       <div className="mb-3 flex items-center gap-2 text-[11px] font-black uppercase tracking-wider text-emerald-700">
-                        <DollarSign className="w-3.5 h-3.5" /> Ücret
+                        <DollarSign className="w-3.5 h-3.5" /> Ödeme
                       </div>
-                      <div className="max-w-xs">
-                        <Label>Ücret (₺) — opsiyonel</Label>
-                        <Input type="number" min="0" step="0.01" value={serviceForm.cost} onChange={(e) => setServiceForm({ ...serviceForm, cost: e.target.value })} placeholder="0" />
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <Label>{(serviceForm.items || []).length > 0 ? 'Toplam Tutar (kalemlerden)' : 'Toplam Tutar (₺)'}</Label>
+                          {(serviceForm.items || []).length > 0 ? (
+                            <div className="h-10 flex items-center px-3 rounded-md bg-slate-50 border border-slate-200 font-bold text-slate-800 tabular-nums">₺ {formatPrice(serviceItemsTotal(serviceForm.items))}</div>
+                          ) : (
+                            <Input type="number" min="0" step="0.01" value={serviceForm.cost} onChange={(e) => setServiceForm({ ...serviceForm, cost: e.target.value })} placeholder="0" />
+                          )}
+                        </div>
+                        <div>
+                          <Label>Alınan Avans (₺)</Label>
+                          <Input type="number" min="0" step="0.01" value={serviceForm.advance_amount} onChange={(e) => setServiceForm({ ...serviceForm, advance_amount: e.target.value })} placeholder="0" />
+                        </div>
+                      </div>
+                      {(() => {
+                        const total = (serviceForm.items || []).length > 0 ? serviceItemsTotal(serviceForm.items) : (parseFloat(serviceForm.cost) || 0);
+                        const adv = parseFloat(serviceForm.advance_amount) || 0;
+                        const remaining = Math.max(total - adv, 0);
+                        return (
+                          <div className="mt-3 flex items-center justify-between rounded-xl bg-gradient-to-r from-[#1B3A5C] to-[#15293f] text-white px-4 py-3">
+                            <div>
+                              <div className="text-[10px] uppercase tracking-[0.18em] text-white/50">Kalan Tutar</div>
+                              <div className="text-[11px] text-white/60">Teslimde tahsil edilecek</div>
+                            </div>
+                            <div className="text-2xl font-black tabular-nums">₺ {formatPrice(remaining)}</div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* Garanti */}
+                    <div>
+                      <div className="mb-3 flex items-center gap-2 text-[11px] font-black uppercase tracking-wider text-emerald-700">
+                        <Check className="w-3.5 h-3.5" /> Garanti
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div>
+                          <Label>Garanti Süresi (ay)</Label>
+                          <Input type="number" min="0" step="1" value={serviceForm.warranty_months} onChange={(e) => setServiceForm({ ...serviceForm, warranty_months: e.target.value })} placeholder="örn. 12" />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <Label>Garanti Kapsam Notu</Label>
+                          <Input value={serviceForm.warranty_note} onChange={(e) => setServiceForm({ ...serviceForm, warranty_note: e.target.value })} placeholder="örn. Panellere ve işçiliğe garanti" />
+                        </div>
                       </div>
                     </div>
+
+                    {/* Servis geçmişi (düzenlemede) */}
+                    {serviceEditingId && serviceHistory.length > 0 && (
+                      <div>
+                        <div className="mb-3 flex items-center gap-2 text-[11px] font-black uppercase tracking-wider text-emerald-700">
+                          <History className="w-3.5 h-3.5" /> Servis Geçmişi ({serviceHistory.length})
+                        </div>
+                        <div className="space-y-2">
+                          {serviceHistory.map((h) => (
+                            <div key={h.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm">
+                              <div className="min-w-0">
+                                <span className="font-bold text-slate-700">{h.order_no || '—'}</span>
+                                <span className="text-slate-400 mx-2">·</span>
+                                <span className="text-slate-600">{h.arrival_date || (h.created_at ? new Date(h.created_at).toLocaleDateString('tr-TR') : '')}</span>
+                                {h.operations && <span className="text-slate-400 ml-2 truncate">— {h.operations.slice(0, 40)}</span>}
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                {h.cost != null && h.cost > 0 && <span className="font-semibold text-slate-700 tabular-nums">₺ {formatPrice(h.cost)}</span>}
+                                <button type="button" onClick={() => window.open(`${API}/services/${h.id}/pdf`, '_blank')} className="text-blue-500 hover:text-blue-700" title="PDF"><Download className="w-4 h-4" /></button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
-                  <div className="border-t border-slate-100 bg-slate-50 px-6 py-4 flex items-center justify-end gap-2">
-                    <Button variant="outline" onClick={() => setServiceDialogOpen(false)}>İptal</Button>
-                    <Button onClick={saveService} disabled={serviceSaving} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold">
-                      {serviceSaving ? 'Kaydediliyor...' : (serviceEditingId ? 'Güncelle' : 'Kaydet')}
-                    </Button>
+                  <div className="border-t border-slate-100 bg-slate-50 px-6 py-4 flex items-center justify-between gap-2">
+                    <div>
+                      {serviceEditingId && (
+                        <Button variant="outline" onClick={() => window.open(`${API}/services/${serviceEditingId}/pdf`, '_blank')} className="border-blue-200 text-blue-700 hover:bg-blue-50 font-bold">
+                          <Download className="w-4 h-4 mr-2" /> Teslim Formu (PDF)
+                        </Button>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" onClick={() => setServiceDialogOpen(false)}>İptal</Button>
+                      <Button onClick={saveService} disabled={serviceSaving} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold">
+                        {serviceSaving ? 'Kaydediliyor...' : (serviceEditingId ? 'Güncelle' : 'Kaydet')}
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -8858,13 +9102,23 @@ function App() {
                 <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
                   {filtered.map((s) => {
                     const meta = SERVICE_STATUS_META[s.status] || SERVICE_STATUS_META.received;
-                    const vehicle = [s.vehicle_brand, s.vehicle_model].filter(Boolean).join(' ') || 'Araç belirtilmemiş';
+                    const isTrailer = s.is_trailer || !(s.plate || '').trim();
+                    const vehicle = [s.vehicle_brand, s.vehicle_model].filter(Boolean).join(' ') || (isTrailer ? 'Çekme Karavan' : 'Araç belirtilmemiş');
+                    const total = s.cost != null ? s.cost : 0;
+                    const advance = s.advance_amount || 0;
+                    const remaining = Math.max(total - advance, 0);
+                    const payStatus = total <= 0 ? null : (remaining <= 0 ? { label: 'Ödendi', cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' } : (advance > 0 ? { label: 'Avans Alındı', cls: 'bg-amber-100 text-amber-700 border-amber-200' } : { label: 'Ödenmedi', cls: 'bg-rose-100 text-rose-700 border-rose-200' }));
                     return (
                       <div key={s.id} className={`bg-white rounded-2xl border border-slate-200 border-l-4 shadow-sm hover:shadow-md transition-shadow p-5 flex flex-col gap-3 ${s.status === 'received' ? 'border-l-amber-400' : s.status === 'in_progress' ? 'border-l-blue-500' : 'border-l-emerald-500'}`}>
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
+                            {s.order_no && <div className="text-[10px] font-black tracking-wider text-emerald-700/80 mb-0.5">{s.order_no}</div>}
                             <div className="font-bold text-slate-800 truncate">{vehicle}</div>
-                            {s.plate && <div className="inline-block mt-1 px-2 py-0.5 bg-slate-100 rounded text-xs font-mono font-bold tracking-wider text-slate-700">{s.plate}</div>}
+                            {isTrailer ? (
+                              <div className="inline-block mt-1 px-2 py-0.5 bg-amber-50 text-amber-700 rounded text-xs font-bold border border-amber-200">Çekme Karavan</div>
+                            ) : (
+                              s.plate && <div className="inline-block mt-1 px-2 py-0.5 bg-slate-100 rounded text-xs font-mono font-bold tracking-wider text-slate-700">{s.plate}</div>
+                            )}
                           </div>
                           <span className={`shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.badge}`}>
                             <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} /> {meta.label}
@@ -8878,19 +9132,26 @@ function App() {
                           </div>
                         )}
 
-                        {s.operations && (
-                          <div className="text-sm text-slate-700 bg-slate-50 rounded-lg p-2.5 whitespace-pre-wrap break-words line-clamp-4">
+                        {Array.isArray(s.items) && s.items.length > 0 ? (
+                          <div className="text-xs text-slate-500 flex items-center gap-1.5"><Package className="w-3.5 h-3.5 text-slate-400" /> {s.items.length} kalem{Array.isArray(s.photos) && s.photos.length > 0 ? ` · ${s.photos.length} foto` : ''}</div>
+                        ) : (s.operations && (
+                          <div className="text-sm text-slate-700 bg-slate-50 rounded-lg p-2.5 whitespace-pre-wrap break-words line-clamp-3">
                             {s.operations}
                           </div>
-                        )}
+                        ))}
 
                         <div className="flex items-center justify-between text-xs text-slate-500 mt-auto pt-1">
                           <span>Geliş: <strong className="text-slate-700">{s.arrival_date || '—'}</strong></span>
                           <span>Teslim: <strong className="text-slate-700">{s.delivery_date || '—'}</strong></span>
                         </div>
 
-                        {s.cost != null && s.cost > 0 && (
-                          <div className="text-sm font-bold text-emerald-700">Ücret: ₺ {formatPrice(s.cost)}</div>
+                        {total > 0 && (
+                          <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs space-y-1">
+                            <div className="flex items-center justify-between"><span className="text-slate-500">Toplam</span><span className="font-bold text-slate-700 tabular-nums">₺ {formatPrice(total)}</span></div>
+                            {advance > 0 && <div className="flex items-center justify-between"><span className="text-slate-500">Avans</span><span className="font-semibold text-slate-600 tabular-nums">₺ {formatPrice(advance)}</span></div>}
+                            <div className="flex items-center justify-between"><span className="text-slate-500">Kalan</span><span className="font-black text-emerald-700 tabular-nums">₺ {formatPrice(remaining)}</span></div>
+                            {payStatus && <div className="pt-1"><span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-bold border ${payStatus.cls}`}>{payStatus.label}</span></div>}
+                          </div>
                         )}
 
                         <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
@@ -8899,6 +9160,9 @@ function App() {
                               {s.status === 'received' ? 'İşleme Al' : 'Teslim Et'}
                             </Button>
                           )}
+                          <Button size="sm" variant="ghost" className="text-blue-600 hover:text-blue-800" onClick={() => window.open(`${API}/services/${s.id}/pdf`, '_blank')} title="Teslim Formu (PDF)">
+                            <Download className="w-4 h-4" />
+                          </Button>
                           <Button size="sm" variant="ghost" className="text-slate-500" onClick={() => openEditServiceDialog(s)} title="Düzenle">
                             <Edit className="w-4 h-4" />
                           </Button>
