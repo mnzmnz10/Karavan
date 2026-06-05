@@ -1867,15 +1867,21 @@ function App() {
       const c = customers.find((c) => c.id === quote.customer_id);
       if (c) customerName = c.name || '';
     }
+    // Teklif net toplamı = ürünler − indirim + işçilik. Servis kalemlerine birebir yansıt:
+    const disc = parseFloat(quote?.discount_percentage) || 0;
+    const labor = parseFloat(quote?.labor_cost) || 0;
     const quoteItems = (quote?.products || []).map((p) => {
       const full = products.find((prod) => prod.id === p.id);
       const nm = full?.name || p.name || 'Ürün';
       const qty = parseFloat(p.quantity) || 1;
-      // Birim fiyat: teklifte özel fiyat varsa onu, yoksa ürünün TL liste fiyatını başlangıç al
+      // Birim fiyat (TL): teklifte özel fiyat varsa onu, yoksa ürünün TL liste fiyatı; indirimi uygula
       let unit = parseFloat(p.custom_price);
       if (!unit || isNaN(unit)) unit = parseFloat(full?.list_price_try) || 0;
+      unit = unit * (1 - disc / 100);
       return { name: nm, qty, unit_price: Math.round(unit) };
     });
+    // İşçilik ayrı kalem olarak (teklif toplamına dahildi)
+    if (labor > 0) quoteItems.push({ name: 'İşçilik', qty: 1, unit_price: Math.round(labor) });
     const baseNote = quote?.notes ? `${quote.notes}\n\n` : '';
     setServiceEditingId(null);
     setServiceForm({
