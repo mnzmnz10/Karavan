@@ -9197,17 +9197,7 @@ class PDFContractGenerator(PDFQuoteGenerator):
                 
                 table_rows.append([sno_p, name_p, qty_p, eur_p, tl_p, tot_p])
                 row_idx += 1
-                
-            subtotal = sum(float(item.get("total") or 0) for item in sec.get("items", []))
-            sub_label_p = Paragraph("<b>BÖLÜM TOPLAMI</b>", self.table_cell_bold)
-            sub_val_p = Paragraph(f"<b>{fmt(subtotal, 'TRY')}</b>", self.table_cell_right_bold)
-            
-            table_rows.append([sub_label_p, "", "", "", "", sub_val_p])
-            table_styles.append(('SPAN', (0, row_idx), (4, row_idx)))
-            table_styles.append(('BACKGROUND', (0, row_idx), (5, row_idx), colors.HexColor('#F8FAFC')))
-            table_styles.append(('ALIGN', (0, row_idx), (4, row_idx), 'RIGHT'))
-            row_idx += 1
-            
+
         contract_table = PDFTable(table_rows, colWidths=[0.8*cm, 8.2*cm, 1.2*cm, 2.3*cm, 2.5*cm, 3.0*cm])
         contract_table.setStyle(TableStyle(table_styles))
         

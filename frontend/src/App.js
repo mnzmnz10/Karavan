@@ -5146,7 +5146,6 @@ function App() {
                               </thead>
                               <tbody>
                                 {parsed.sections.map((sec, si) => {
-                                  const subtotal = sec.items.reduce((s, it) => s + (Number(it.total) || 0), 0);
                                   return (
                                     <React.Fragment key={si}>
                                       <tr className="bg-slate-100">
@@ -5265,13 +5264,6 @@ function App() {
                                           </td>
                                         </tr>
                                       )}
-                                      {/* Bölüm Ara Toplamı */}
-                                      <tr className="bg-slate-50/80 font-bold text-[12px] no-print">
-                                        <td colSpan={5} className="px-2 py-1.5 text-right text-slate-500 border border-slate-200 tracking-wider">BÖLÜM TOPLAMI</td>
-                                        <td className={`px-2 py-1.5 text-right tabular-nums border border-slate-200 ${simActive ? 'text-emerald-700' : 'text-[#1B3A5C]'}`}>
-                                          ₺ {formatPrice(adj(subtotal))}
-                                        </td>
-                                      </tr>
                                     </React.Fragment>
                                   );
                                 })}
