@@ -2331,13 +2331,15 @@ function App() {
       if (!rawSections.length) return null;
 
       // --- 1. SİNEKLİKLER - TENTE - BASAMAKLAR Bölümü & DİĞER Taşıma Kuralı ---
+      // Küçük harf ASCII kök eşleşmesi (sinek/sinekliği, basamak/basamağı vb. yakalanır)
+      const lc = (s) => (s || '').toLocaleLowerCase('tr-TR');
       const shouldMoveToDiger = (itemName) => {
         if (!itemName) return true;
-        const n = up(itemName);
-        const hasKw = n.includes('SİNEKL') || n.includes('TENTE') || n.includes('BASAMAK');
+        const n = lc(itemName);
+        const hasKw = n.includes('sinek') || n.includes('tente') || n.includes('basama');
         if (!hasKw) return true;
         // Exclude terms like PROJE etc.
-        if (n.includes('PROJE') || n.includes('MUAYENE') || n.includes('EMİSYON') || n.includes('RUHSAT') || n.includes('HİZMET BEDELİ')) {
+        if (n.includes('proje') || n.includes('muayene') || n.includes('emisyon') || n.includes('ruhsat') || n.includes('hizmet bedeli')) {
           return true;
         }
         return false;
@@ -2347,8 +2349,8 @@ function App() {
       const movedItems = [];
 
       rawSections.forEach((sec) => {
-        const secNameUp = up(sec.name);
-        const isTargetSec = secNameUp.includes('SİNEKL') || secNameUp.includes('TENTE') || secNameUp.includes('BASAMAK');
+        const secNameLc = lc(sec.name);
+        const isTargetSec = secNameLc.includes('sinek') || secNameLc.includes('tente') || secNameLc.includes('basama');
         
         if (isTargetSec) {
           const validItems = [];
