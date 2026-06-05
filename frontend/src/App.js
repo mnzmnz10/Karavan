@@ -484,6 +484,7 @@ function App() {
   const [contractDraft, setContractDraft] = useState(null); // düzenlenen taslak yapı
   const [contractDirty, setContractDirty] = useState(false); // değişiklik yapıldı mı
   const [contractDataSaving, setContractDataSaving] = useState(false);
+  const [contractTwoCol, setContractTwoCol] = useState(true); // uzun sözleşmelerde iki sütun
   const [contractEditOpen, setContractEditOpen] = useState(false);
   const [contractEditId, setContractEditId] = useState(null);
   const [contractEditForm, setContractEditForm] = useState({ title: '', customer_name: '', notes: '' });
@@ -4594,6 +4595,11 @@ function App() {
                               </Button>
                             )}
                             {parsed && !contractRawView && (
+                              <Button variant="outline" size="sm" onClick={() => setContractTwoCol((v) => !v)} className="hidden lg:inline-flex">
+                                {contractTwoCol ? 'Tek sütun' : 'İki sütun'}
+                              </Button>
+                            )}
+                            {parsed && !contractRawView && (
                               <Button variant="outline" size="sm" onClick={() => enterContractEdit(baseData)} className="border-emerald-300 text-emerald-700 hover:bg-emerald-50">
                                 <Edit className="w-4 h-4 mr-2" /> Kalemleri Düzenle
                               </Button>
@@ -4614,7 +4620,7 @@ function App() {
 
                     {parsed && !contractRawView ? (
                       /* ===== TASARIMLI SÖZLEŞME GÖRÜNÜMÜ ===== */
-                      <div className="max-w-4xl mx-auto bg-white rounded-2xl ring-1 ring-slate-200/70 overflow-hidden shadow-[0_18px_50px_-20px_rgba(27,58,92,0.45)]">
+                      <div className={`${contractTwoCol ? 'max-w-6xl' : 'max-w-4xl'} mx-auto bg-white rounded-2xl ring-1 ring-slate-200/70 overflow-hidden shadow-[0_18px_50px_-20px_rgba(27,58,92,0.45)]`}>
                         {/* Başlık bandı */}
                         <div className="relative bg-[#1B3A5C] text-white px-6 sm:px-10 pt-8 pb-7 overflow-hidden">
                           <div className="absolute inset-0 opacity-[0.06]" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '22px 22px' }} />
@@ -4650,18 +4656,18 @@ function App() {
                         </div>
 
                         {/* Bölümler + kalemler */}
-                        <div className="px-4 sm:px-8 py-7 space-y-7 bg-[#FBFCFD]">
+                        <div className={`px-4 sm:px-8 py-7 bg-[#FBFCFD] ${contractTwoCol ? 'lg:columns-2 lg:gap-8' : 'space-y-7'}`}>
                           {parsed.sections.map((sec, si) => {
                             const subtotal = sec.items.reduce((s, it) => s + (it.total || 0), 0);
                             return (
-                              <section key={si}>
+                              <section key={si} className={contractTwoCol ? 'break-inside-avoid mb-7' : ''}>
                                 <div className="flex items-center gap-3 mb-3">
                                   <span className="flex items-center justify-center w-7 h-7 rounded-lg bg-[#1B3A5C] text-white text-xs font-bold tabular-nums shrink-0">{String(si + 1).padStart(2, '0')}</span>
                                   <h3 className="font-bold text-[#1B3A5C] uppercase text-[13px] tracking-[0.12em]">{sec.name}</h3>
                                   <div className="flex-1 h-px bg-slate-200" />
                                 </div>
                                 <div className="rounded-xl ring-1 ring-slate-200 bg-white overflow-x-auto">
-                                  <table className="w-full text-sm min-w-[560px]">
+                                  <table className={`w-full text-sm ${contractTwoCol ? '' : 'min-w-[560px]'}`}>
                                     <thead>
                                       <tr className="text-[10px] uppercase tracking-wider text-slate-400 border-b border-slate-100">
                                         <th className="px-3 py-2 text-left font-semibold w-8">#</th>
