@@ -1902,6 +1902,33 @@ function App() {
     toast.success('Teklif servise aktarıldı — kalemleri/fiyatları kontrol edip kaydedin');
   };
 
+  const getContractPaymentStatus = (c) => {
+    const parsed = c.data;
+    if (!parsed) return null;
+    const liveRate = parseFloat(exchangeRates?.EUR) || (parsed && parsed.kur) || 0;
+    const cr = parseFloat(parsed?.kur) || 0;
+    const toEUR = (amount, currency, rate) => {
+      const a = parseFloat(amount); if (isNaN(a)) return 0;
+      if (currency === 'TRY') { const r = parseFloat(rate) || cr || liveRate || 1; return r ? a / r : 0; }
+      if (currency === 'USD') { const u = parseFloat(exchangeRates?.USD) || 0; const e = parseFloat(exchangeRates?.EUR) || cr || 0; return (u && e) ? a * u / e : 0; }
+      return a;
+    };
+    const productsEUR = parsed?.eurTotal != null ? (parseFloat(parsed.eurTotal) || 0) : (parsed?.grandTotal && cr ? parsed.grandTotal / cr : 0);
+    const addons = parsed?.addons || [];
+    const addonsEUR = addons.reduce((s, a) => s + ((a.amount == null || a.amount === '') ? 0 : toEUR(a.amount, a.currency, a.rate)), 0);
+    const inv = parsed?.invoiceDiff;
+    const invEUR = (inv && inv.amount != null && inv.amount !== '') ? toEUR(Math.abs(parseFloat(inv.amount) || 0), inv.currency, inv.rate) : 0;
+    const grandEUR = productsEUR + addonsEUR + invEUR;
+    const collections = parsed?.collections || [];
+    const collectedEUR = collections.reduce((s, c) => s + toEUR(c.amount, c.currency, c.rate), 0);
+    const remainingEUR = grandEUR - collectedEUR;
+    const pct = grandEUR > 0 ? Math.max(0, Math.min(100, Math.round(collectedEUR / grandEUR * 100))) : 0;
+
+    const st = grandEUR <= 0 ? null : (remainingEUR <= 0.01 ? { t: 'TAMAMLANDI', c: 'bg-emerald-500 text-white' } : (collectedEUR > 0.01 ? { t: `ÖDEME %${pct}`, c: 'bg-amber-500 text-white' } : { t: 'ÖDENMEDİ', c: 'bg-rose-500 text-white' }));
+    const over = remainingEUR < -0.01;
+    return over ? { t: 'FAZLA ÖDEME', c: 'bg-violet-500 text-white' } : st;
+  };
+
   // ===================== SÖZLEŞMELER =====================
   const loadContracts = async () => {
     try {
@@ -2152,6 +2179,10 @@ function App() {
       (draftToSave.addons || []).forEach((a) => { a.amountEUR = (a.amount == null || a.amount === '') ? null : eurOf(a.amount, a.currency, a.rate); });
       (draftToSave.collections || []).forEach((c) => { c.amountEUR = eurOf(c.amount, c.currency, c.rate); });
       if (draftToSave.invoiceDiff && draftToSave.invoiceDiff.amount != null && draftToSave.invoiceDiff.amount !== '') {
+        const amt = parseFloat(draftToSave.invoiceDiff.amount);
+        if (!isNaN(amt) && amt < 0) {
+          draftToSave.invoiceDiff.amount = Math.abs(amt).toString();
+        }
         draftToSave.invoiceDiff.amountEUR = eurOf(draftToSave.invoiceDiff.amount, draftToSave.invoiceDiff.currency, draftToSave.invoiceDiff.rate);
       }
       const payload = { data: draftToSave };
@@ -4486,6 +4517,15 @@ function App() {
 
                     <TabsTrigger
                       value="contracts"
+                      onClick={async (e) => {
+                        if (viewingContract) {
+                          e.preventDefault();
+                          await backFromContract();
+                          setActiveTab('contracts');
+                        } else {
+                          setActiveTab('contracts');
+                        }
+                      }}
                       className="flex items-center justify-start gap-3 w-full h-11 px-4 text-sm font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100 rounded-xl data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
                     >
                       <FileText className="w-4 h-4" />
@@ -4989,14 +5029,24 @@ function App() {
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {contracts.map((c) => (
                       <div key={c.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow p-5 flex flex-col gap-2">
-                        <div className="flex items-start gap-3">
-                          <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
-                            <FileText className="w-5 h-5 text-emerald-600" />
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-start gap-3 min-w-0 flex-1">
+                            <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
+                              <FileText className="w-5 h-5 text-emerald-600" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="font-bold text-slate-800 truncate" title={c.customer_name || c.title}>{c.customer_name || c.title}</div>
+                              {c.customer_name && <div className="text-sm text-slate-500 truncate" title={c.title}>{c.title}</div>}
+                            </div>
                           </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="font-bold text-slate-800 truncate" title={c.customer_name || c.title}>{c.customer_name || c.title}</div>
-                            {c.customer_name && <div className="text-sm text-slate-500 truncate" title={c.title}>{c.title}</div>}
-                          </div>
+                          {(() => {
+                            const status = getContractPaymentStatus(c);
+                            return status ? (
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${status.c}`}>
+                                {status.t}
+                              </span>
+                            ) : null;
+                          })()}
                         </div>
                         <div className="text-xs text-slate-400 truncate">{c.file_name}</div>
                         <div className="text-xs text-slate-400">{(c.doc_date || c.created_at) ? new Date(c.doc_date || c.created_at).toLocaleDateString('tr-TR') : ''}</div>
@@ -5045,7 +5095,7 @@ function App() {
                   const addons = parsed?.addons || [];
                   const addonsEUR = addons.reduce((s, a) => s + ((a.amount == null || a.amount === '') ? 0 : toEUR(a.amount, a.currency, a.rate)), 0);
                   const inv = parsed?.invoiceDiff;
-                  const invEUR = (inv && inv.amount != null && inv.amount !== '') ? toEUR(inv.amount, inv.currency, inv.rate) : 0;
+                  const invEUR = (inv && inv.amount != null && inv.amount !== '') ? toEUR(Math.abs(parseFloat(inv.amount) || 0), inv.currency, inv.rate) : 0;
                   const grandEUR = productsEUR + addonsEUR + invEUR;
                   const collections = parsed?.collections || [];
                   const collectedEUR = collections.reduce((s, c) => s + toEUR(c.amount, c.currency, c.rate), 0);
@@ -5149,7 +5199,7 @@ function App() {
                               {currentKur != null && (
                                 <div className="inline-flex items-center gap-2 bg-white/10 ring-1 ring-white/15 rounded-full px-3 py-1.5">
                                   <span className="text-white/55 text-[10px] uppercase tracking-widest">Kur</span>
-                                  <span className="font-bold tabular-nums">1 € = ₺{formatPrice(currentKur)}</span>
+                                  <span className="font-bold tabular-nums">1 € = ₺{formatExchangeRate(currentKur)}</span>
                                 </div>
                               )}
                             </div>
@@ -5326,9 +5376,9 @@ function App() {
                           <div className="px-4 sm:px-8 pb-4 bg-[#FBFCFD]">
                             <div className={`flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 ${simActive ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 bg-white'}`}>
                               <div className="text-sm font-bold text-[#1B3A5C] flex items-center gap-2"><Calculator className="w-4 h-4" /> Kur Simülasyonu</div>
-                              <div className="text-xs text-slate-500">Sözleşme orijinal kuru: <strong className="tabular-nums">1 € = ₺{formatPrice(origKur)}</strong></div>
+                              <div className="text-xs text-slate-500">Sözleşme orijinal kuru: <strong className="tabular-nums">1 € = ₺{formatExchangeRate(origKur)}</strong></div>
                               {currentKur != null && currentKur !== origKur && (
-                                <div className="text-xs text-slate-500 border-l pl-3">Sözleşme güncel kuru: <strong className="tabular-nums">1 € = ₺{formatPrice(currentKur)}</strong></div>
+                                <div className="text-xs text-slate-500 border-l pl-3">Sözleşme güncel kuru: <strong className="tabular-nums">1 € = ₺{formatExchangeRate(currentKur)}</strong></div>
                               )}
                               {!contractEditMode && (
                                 <div className="flex items-center gap-2 ml-auto flex-wrap">
@@ -5444,34 +5494,40 @@ function App() {
                             <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#1B3A5C] to-[#15293f] text-white px-6 py-5 shadow-lg">
                               <div className="absolute -right-8 -top-8 w-40 h-40 rounded-full bg-emerald-500/10" />
                               <div className="relative space-y-3">
-                                {/* Sözleşme Toplamı */}
-                                <div className="flex items-center justify-between gap-4">
-                                  <div className="text-white/60 text-sm">Sözleşme Toplamı</div>
+                                {/* Sözleşme Toplamı — mavi ton */}
+                                <div className="flex items-center justify-between gap-4 rounded-lg bg-sky-500/10 px-3 py-2">
+                                  <div className="text-sky-300 text-sm font-medium flex items-center gap-1.5">
+                                    <div className="w-2 h-2 rounded-full bg-sky-400" />
+                                    Sözleşme Toplamı
+                                  </div>
                                   <div className="text-right tabular-nums">
-                                    <span className="text-white/90 text-lg font-semibold">₺ {formatPrice(adj(parsed.grandTotal))}</span>
-                                    {parsed.eurTotal != null && <span className="text-emerald-300/70 text-xs ml-2">≈ € {formatPrice(parsed.eurTotal)}</span>}
+                                    <span className="text-sky-100 text-lg font-semibold">₺ {formatPrice(adj(parsed.grandTotal))}</span>
+                                    {parsed.eurTotal != null && <span className="text-sky-300/70 text-xs ml-2">≈ € {formatPrice(parsed.eurTotal)}</span>}
                                   </div>
                                 </div>
-                                {/* İlaveler Toplamı — yalnızca ilave varsa göster */}
+                                {/* İlaveler Toplamı — amber ton, yalnızca ilave varsa göster */}
                                 {fin.addonsEUR !== 0 && (
-                                  <div className="flex items-center justify-between gap-4">
-                                    <div className="text-white/60 text-sm">İlaveler Toplamı</div>
+                                  <div className="flex items-center justify-between gap-4 rounded-lg bg-amber-500/10 px-3 py-2">
+                                    <div className="text-amber-300 text-sm font-medium flex items-center gap-1.5">
+                                      <div className="w-2 h-2 rounded-full bg-amber-400" />
+                                      İlaveler Toplamı
+                                    </div>
                                     <div className="text-right tabular-nums">
-                                      <span className="text-white/90 text-lg font-semibold">₺ {formatPrice(adj(fin.addonsEUR * (currentKur || 1)))}</span>
-                                      <span className="text-emerald-300/70 text-xs ml-2">≈ € {formatPrice(fin.addonsEUR)}</span>
+                                      <span className="text-amber-100 text-lg font-semibold">₺ {formatPrice(adj(fin.addonsEUR * (currentKur || 1)))}</span>
+                                      <span className="text-amber-300/70 text-xs ml-2">≈ € {formatPrice(fin.addonsEUR)}</span>
                                     </div>
                                   </div>
                                 )}
                                 {/* Ayırıcı çizgi */}
                                 <div className="border-t border-white/20" />
-                                {/* Genel Toplam */}
-                                <div className="flex items-end justify-between gap-4 flex-wrap">
+                                {/* Genel Toplam — emerald vurgu */}
+                                <div className="flex items-end justify-between gap-4 flex-wrap rounded-lg bg-emerald-500/10 px-3 py-2">
                                   <div>
-                                    <div className="text-white/50 text-[11px] uppercase tracking-[0.2em]">Genel Toplam{simActive ? ` · 1 € = ₺${formatPrice(simRateNum)}` : ''}</div>
+                                    <div className="text-emerald-300 text-[11px] uppercase tracking-[0.2em] font-medium">Genel Toplam{simActive ? ` · 1 € = ₺${formatPrice(simRateNum)}` : ''}</div>
                                     <div className="text-white/40 text-xs mt-1">KDV HARİÇ</div>
                                   </div>
                                   <div className="text-right">
-                                    <div style={{ fontFamily: "'Fraunces', Georgia, serif" }} className={`text-3xl sm:text-4xl font-semibold tabular-nums ${simActive ? 'text-emerald-300' : ''}`}>₺ {formatPrice(adj(parsed.grandTotal + (fin.addonsEUR * (currentKur || 1))))}</div>
+                                    <div style={{ fontFamily: "'Fraunces', Georgia, serif" }} className={`text-3xl sm:text-4xl font-semibold tabular-nums ${simActive ? 'text-emerald-300' : 'text-emerald-200'}`}>₺ {formatPrice(adj(parsed.grandTotal + (fin.addonsEUR * (currentKur || 1))))}</div>
                                     {parsed.eurTotal != null && <div className="text-emerald-300/90 text-sm font-medium tabular-nums mt-0.5">≈ € {formatPrice(parsed.eurTotal + fin.addonsEUR)}</div>}
                                   </div>
                                 </div>
@@ -5493,53 +5549,8 @@ function App() {
                           </div>
 
 
-                          {/* Ödeme Planı + Tahsilatlar */}
-                          {(contractEditMode || (parsed.paymentPlan || []).length > 0 || (parsed.collections || []).length > 0) && (
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                              {/* Ödeme Planı */}
-                              {(contractEditMode || (parsed.paymentPlan || []).length > 0) && (
-                                <div className="rounded-xl border border-slate-200 bg-white p-4">
-                                  <div className="flex items-center justify-between mb-3">
-                                    <div className="font-bold text-slate-700 text-xs uppercase tracking-wider flex items-center gap-2"><History className="w-3.5 h-3.5 text-blue-600" /> Ödeme Planı</div>
-                                    {contractEditMode && (
-                                      <Button type="button" size="sm" variant="outline" onClick={() => mutateContractDraft((d) => { if (!d.paymentPlan) d.paymentPlan = []; d.paymentPlan.push({ id: newId(), date: '', description: '', amount: '', currency: 'EUR' }); })} className="h-8 text-xs font-bold border-blue-200 text-blue-700 hover:bg-blue-50"><Plus className="w-3.5 h-3.5 mr-1" /> Satır</Button>
-                                    )}
-                                  </div>
-                                  {(parsed.paymentPlan || []).length === 0 ? (
-                                    <p className="text-xs text-slate-400 italic">Planlanan ödeme yok.</p>
-                                  ) : (
-                                    <div className="space-y-1.5">
-                                      {(parsed.paymentPlan || []).map((p, pi) => {
-                                        const paid = (parsed.collections || []).length > 0 && fin.collectedEUR >= fin.toEUR(p.amount, p.currency, p.rate) * (pi + 1) - 0.01;
-                                        const overdue = p.date && !paid && new Date(p.date) < new Date(new Date().toDateString());
-                                        if (!contractEditMode) {
-                                          return (
-                                            <div key={p.id || pi} className="flex items-center justify-between gap-2 text-sm border-b border-slate-100 last:border-0 py-1">
-                                              <div className="min-w-0"><span className="text-slate-500 text-xs">{p.date ? new Date(p.date).toLocaleDateString('tr-TR') : ''}</span> <span className="text-slate-700">{p.description}</span></div>
-                                              <div className="flex items-center gap-2 shrink-0">
-                                                {overdue && <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded">GECİKTİ</span>}
-                                                <span className="font-semibold tabular-nums">{p.currency === 'TRY' ? '₺' : '€'} {formatPrice(p.amount)}</span>
-                                              </div>
-                                            </div>
-                                          );
-                                        }
-                                        return (
-                                          <div key={p.id || pi} className="flex items-center gap-1.5">
-                                            <input type="date" value={p.date || ''} onChange={(e) => mutateContractDraft((d) => { d.paymentPlan[pi].date = e.target.value; })} className="h-8 px-1 border border-slate-200 rounded text-xs" />
-                                            <input value={p.description || ''} onChange={(e) => mutateContractDraft((d) => { d.paymentPlan[pi].description = e.target.value.toLocaleUpperCase('tr-TR'); })} placeholder="açıklama" className="flex-1 min-w-0 h-8 px-2 border border-slate-200 rounded text-sm" />
-                                            <input type="number" value={p.amount ?? ''} onChange={(e) => mutateContractDraft((d) => { d.paymentPlan[pi].amount = e.target.value; })} placeholder="tutar" className="w-20 h-8 px-1 border border-slate-200 rounded text-sm text-right tabular-nums" />
-                                            <select value={p.currency || 'EUR'} onChange={(e) => mutateContractDraft((d) => { d.paymentPlan[pi].currency = e.target.value; })} className="h-8 px-1 border border-slate-200 rounded text-sm bg-white"><option value="EUR">€</option><option value="TRY">₺</option></select>
-                                            <button type="button" onClick={() => mutateContractDraft((d) => { d.paymentPlan.splice(pi, 1); })} className="text-rose-400 hover:text-rose-600 shrink-0"><Trash2 className="w-4 h-4" /></button>
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-
-                              {/* Tahsilatlar */}
-                              {(contractEditMode || (parsed.collections || []).length > 0) && (
+                          {/* Tahsilatlar */}
+                          {(contractEditMode || (parsed.collections || []).length > 0) && (
                                 <div className="rounded-xl border border-slate-200 bg-white p-4">
                                   <div className="flex items-center justify-between mb-3">
                                     <div className="font-bold text-slate-700 text-xs uppercase tracking-wider flex items-center gap-2"><DollarSign className="w-3.5 h-3.5 text-emerald-600" /> Tahsilatlar</div>
@@ -5556,25 +5567,22 @@ function App() {
                                         run -= cEUR;
                                         if (!contractEditMode) {
                                           return (
-                                            <div key={c.id || ci} className="text-sm border-b border-slate-100 last:border-0 py-1">
-                                              <div className="flex items-center justify-between gap-2">
-                                                <span className="text-slate-500 text-xs">{c.date ? new Date(c.date).toLocaleDateString('tr-TR') : ''} {c.description}</span>
-                                                <span className="font-semibold tabular-nums shrink-0">{c.currency === 'TRY' ? `₺ ${formatPrice(c.amount)}` : `€ ${formatPrice(c.amount)}`}</span>
-                                              </div>
-                                              <div className="flex items-center justify-between text-[11px] text-slate-400">
-                                                <span>{c.currency === 'TRY' ? `kur ${c.rate || fin.cr} → ≈€ ${formatPrice(cEUR)}` : ''}</span>
-                                                <span>kalan ≈€ {formatPrice(Math.max(run, 0))}</span>
-                                              </div>
+                                            <div key={c.id || ci} className="grid items-center gap-1.5 py-1 border-b border-slate-100 last:border-0" style={{ gridTemplateColumns: 'auto minmax(120px, 1fr) 90px 44px 76px' }}>
+                                              <span className="text-slate-500 text-xs tabular-nums">{c.date ? new Date(c.date).toLocaleDateString('tr-TR') : '—'}</span>
+                                              <span className="text-slate-700 text-sm truncate">{c.description || '—'}</span>
+                                              <span className="font-semibold tabular-nums text-sm text-right">{c.currency === 'TRY' ? `₺ ${formatPrice(c.amount)}` : `€ ${formatPrice(c.amount)}`}</span>
+                                              <span className="text-slate-400 text-xs text-center">{c.currency === 'TRY' ? '₺' : '€'}</span>
+                                              <span className="text-slate-500 text-xs tabular-nums text-right">{c.currency === 'TRY' ? (c.rate || fin.cr || '—') : ''}</span>
                                             </div>
                                           );
                                         }
                                         return (
-                                          <div key={c.id || ci} className="flex items-center gap-1.5">
+                                          <div key={c.id || ci} className="grid items-center gap-1.5" style={{ gridTemplateColumns: 'auto minmax(120px, 1fr) 90px 44px 76px 28px' }}>
                                             <input type="date" value={c.date || ''} onChange={(e) => mutateContractDraft((d) => { d.collections[ci].date = e.target.value; })} className="h-8 px-1 border border-slate-200 rounded text-xs" />
-                                            <input value={c.description || ''} onChange={(e) => mutateContractDraft((d) => { d.collections[ci].description = e.target.value.toLocaleUpperCase('tr-TR'); })} placeholder="açıklama" className="flex-1 min-w-0 h-8 px-2 border border-slate-200 rounded text-sm" />
-                                            <input type="number" value={c.amount ?? ''} onChange={(e) => mutateContractDraft((d) => { d.collections[ci].amount = e.target.value; })} placeholder="tutar" className="w-20 h-8 px-1 border border-slate-200 rounded text-sm text-right tabular-nums" />
+                                            <input value={c.description || ''} onChange={(e) => mutateContractDraft((d) => { d.collections[ci].description = e.target.value.toLocaleUpperCase('tr-TR'); })} placeholder="açıklama" className="h-8 px-2 border border-slate-200 rounded text-sm min-w-0" />
+                                            <input type="number" value={c.amount ?? ''} onChange={(e) => mutateContractDraft((d) => { d.collections[ci].amount = e.target.value; })} placeholder="tutar" className="h-8 px-1 border border-slate-200 rounded text-sm text-right tabular-nums" />
                                             <select value={c.currency || 'EUR'} onChange={(e) => mutateContractDraft((d) => { d.collections[ci].currency = e.target.value; })} className="h-8 px-1 border border-slate-200 rounded text-sm bg-white"><option value="EUR">€</option><option value="TRY">₺</option></select>
-                                            {c.currency === 'TRY' && <input type="number" value={c.rate ?? ''} onChange={(e) => mutateContractDraft((d) => { d.collections[ci].rate = e.target.value; })} placeholder="kur" title="Ödeme günü kuru" className="w-16 h-8 px-1 border border-slate-200 rounded text-sm text-right tabular-nums" />}
+                                            <input type="number" step="0.01" value={c.currency === 'TRY' ? (c.rate ?? '') : ''} onChange={(e) => mutateContractDraft((d) => { d.collections[ci].rate = e.target.value; })} placeholder="kur" title="Ödeme günü kuru" disabled={c.currency !== 'TRY'} className={`h-8 px-1 border border-slate-200 rounded text-sm text-right tabular-nums ${c.currency !== 'TRY' ? 'invisible' : ''}`} />
                                             <button type="button" onClick={() => mutateContractDraft((d) => { d.collections.splice(ci, 1); })} className="text-rose-400 hover:text-rose-600 shrink-0"><Trash2 className="w-4 h-4" /></button>
                                           </div>
                                         );
@@ -5582,27 +5590,80 @@ function App() {
                                     </div>
                                   )}
                                 </div>
-                              )}
-                            </div>
                           )}
 
                           {/* Özet / Kalan */}
                           <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#1B3A5C] to-[#15293f] text-white px-5 py-5 shadow-lg">
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                              <div className="space-y-1 text-sm">
-                                <div className="flex justify-between text-white/70"><span>Ürünler</span><span className="tabular-nums">€ {formatPrice(fin.productsEUR)}</span></div>
-                                {fin.addonsEUR !== 0 && <div className="flex justify-between text-white/70"><span>İlaveler</span><span className="tabular-nums">€ {formatPrice(fin.addonsEUR)}</span></div>}
+                              <div className="space-y-2 text-sm">
+                                <div className="flex justify-between items-center text-white/80 py-0.5">
+                                  <span>Sözleşme</span>
+                                  <span className="tabular-nums font-semibold">€ {formatPrice(fin.productsEUR)}</span>
+                                </div>
+                                {fin.addonsEUR !== 0 && (
+                                  <div className="flex justify-between items-center text-white/80 py-0.5">
+                                    <span>İlaveler</span>
+                                    <span className="tabular-nums font-semibold">€ {formatPrice(fin.addonsEUR)}</span>
+                                  </div>
+                                )}
                                 {contractEditMode ? (
-                                  <div className="flex justify-between items-center text-white/70 gap-2">
+                                  <div className="flex justify-between items-center text-white/80 py-0.5">
                                     <span>Fatura Farkı</span>
-                                    <span className="flex items-center gap-1">
-                                      <input type="number" value={(parsed.invoiceDiff && parsed.invoiceDiff.amount) ?? ''} onChange={(e) => mutateContractDraft((d) => { if (!d.invoiceDiff) d.invoiceDiff = { currency: 'EUR', rate: d.kur }; d.invoiceDiff.amount = e.target.value; })} placeholder="0" className="w-20 h-7 px-1 rounded text-slate-800 text-right tabular-nums text-xs" />
-                                      <select value={(parsed.invoiceDiff && parsed.invoiceDiff.currency) || 'EUR'} onChange={(e) => mutateContractDraft((d) => { if (!d.invoiceDiff) d.invoiceDiff = { amount: '', rate: d.kur }; d.invoiceDiff.currency = e.target.value; })} className="h-7 px-0.5 rounded text-slate-800 text-xs"><option value="EUR">€</option><option value="TRY">₺</option></select>
+                                    <span className="flex items-center gap-1.5">
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        value={(parsed.invoiceDiff && parsed.invoiceDiff.amount) ?? ''}
+                                        onChange={(e) => mutateContractDraft((d) => {
+                                          if (!d.invoiceDiff) d.invoiceDiff = { currency: 'EUR', rate: d.kur };
+                                          let val = e.target.value;
+                                          if (val !== '') {
+                                            const num = parseFloat(val);
+                                            if (!isNaN(num) && num < 0) {
+                                              val = Math.abs(num).toString();
+                                            }
+                                            val = val.replace(/-/g, '');
+                                          }
+                                          d.invoiceDiff.amount = val;
+                                        })}
+                                        onKeyDown={(e) => {
+                                          if (e.key === '-' || e.key === 'e' || e.key === 'E') {
+                                            e.preventDefault();
+                                          }
+                                        }}
+                                        placeholder="0"
+                                        className="w-20 h-7 px-1.5 rounded-lg bg-white/10 border border-white/20 focus:border-emerald-400 focus:outline-none focus:ring-1 focus:ring-emerald-400 text-white text-right tabular-nums text-xs transition-colors"
+                                      />
+                                      <select
+                                        value={(parsed.invoiceDiff && parsed.invoiceDiff.currency) || 'EUR'}
+                                        onChange={(e) => mutateContractDraft((d) => {
+                                          if (!d.invoiceDiff) d.invoiceDiff = { amount: '', rate: d.kur };
+                                          d.invoiceDiff.currency = e.target.value;
+                                        })}
+                                        className="h-7 px-1 rounded-lg bg-white/10 border border-white/20 focus:border-emerald-400 focus:outline-none focus:ring-1 focus:ring-emerald-400 text-white text-xs cursor-pointer transition-colors"
+                                      >
+                                        <option value="EUR" className="bg-[#1B3A5C] text-white">€</option>
+                                        <option value="TRY" className="bg-[#1B3A5C] text-white">₺</option>
+                                      </select>
                                     </span>
                                   </div>
-                                ) : (fin.invEUR !== 0 && <div className="flex justify-between text-white/70"><span>Fatura Farkı</span><span className="tabular-nums">€ {formatPrice(fin.invEUR)}</span></div>)}
-                                <div className="flex justify-between font-bold border-t border-white/15 pt-1 mt-1"><span>Genel Toplam</span><span className="tabular-nums">€ {formatPrice(fin.grandEUR)}</span></div>
-                                <div className="flex justify-between text-emerald-300"><span>Tahsil Edilen</span><span className="tabular-nums">€ {formatPrice(fin.collectedEUR)}</span></div>
+                                ) : (
+                                  fin.invEUR !== 0 && (
+                                    <div className="flex justify-between items-center text-white/80 py-0.5">
+                                      <span>Fatura Farkı</span>
+                                      <span className="tabular-nums font-semibold">€ {formatPrice(fin.invEUR)}</span>
+                                    </div>
+                                  )
+                                )}
+                                <div className="border-t border-white/15 my-1"></div>
+                                <div className="flex justify-between items-center font-bold text-base text-white py-0.5">
+                                  <span>Genel Toplam</span>
+                                  <span className="tabular-nums text-emerald-400 font-extrabold">€ {formatPrice(fin.grandEUR)}</span>
+                                </div>
+                                <div className="flex justify-between items-center text-emerald-300 font-medium py-0.5">
+                                  <span>Tahsil Edilen</span>
+                                  <span className="tabular-nums font-bold">€ {formatPrice(fin.collectedEUR)}</span>
+                                </div>
                               </div>
                               <div className="flex flex-col justify-center sm:items-end">
                                 <div className="text-[10px] uppercase tracking-[0.2em] text-white/50">Kalan Tutar</div>
@@ -5610,7 +5671,7 @@ function App() {
                                 <div className="text-emerald-300/90 text-xs tabular-nums mt-0.5">≈ ₺ {formatPrice(fin.remainingEUR * (fin.cr || 0))} <span className="text-white/40">(söz. kuru {fin.cr || '—'})</span></div>
                                 <div className="text-emerald-300/90 text-xs tabular-nums">≈ ₺ {formatPrice(fin.remainingEUR * (liveRate || 0))} <span className="text-white/40">(güncel {liveRate ? formatPrice(liveRate) : '—'})</span></div>
                                 {(() => {
-                                  const st = fin.grandEUR <= 0 ? null : (fin.remainingEUR <= 0.01 ? { t: 'TAMAMLANDI', c: 'bg-emerald-500' } : (fin.collectedEUR > 0.01 ? { t: `KISMİ %${fin.pct}`, c: 'bg-amber-500' } : { t: 'ÖDENMEDİ', c: 'bg-rose-500' }));
+                                  const st = fin.grandEUR <= 0 ? null : (fin.remainingEUR <= 0.01 ? { t: 'TAMAMLANDI', c: 'bg-emerald-500' } : (fin.collectedEUR > 0.01 ? { t: `ÖDEME %${fin.pct}`, c: 'bg-amber-500' } : { t: 'ÖDENMEDİ', c: 'bg-rose-500' }));
                                   const over = fin.remainingEUR < -0.01;
                                   return (<div className="mt-2 flex items-center gap-2">{over ? <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-violet-500">FAZLA ÖDEME</span> : (st && <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${st.c}`}>{st.t}</span>)}</div>);
                                 })()}

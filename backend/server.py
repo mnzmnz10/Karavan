@@ -9287,7 +9287,7 @@ class PDFContractGenerator(PDFQuoteGenerator):
                     pass
             return _to_eur(item.get("amount"), item.get("currency"), item.get("rate"))
         addons_eur = sum(_eur_of(a) for a in addons if a.get("amount") not in (None, ""))
-        inv_eur = _eur_of(inv) if inv.get("amount") not in (None, "") else 0.0
+        inv_eur = abs(_eur_of(inv)) if inv.get("amount") not in (None, "") else 0.0
         grand_eur = products_eur + addons_eur + inv_eur
         collected_eur = sum(_to_eur(c.get("amount"), c.get("currency"), c.get("rate")) for c in collections)
         remaining_eur = grand_eur - collected_eur
