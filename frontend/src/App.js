@@ -5106,7 +5106,7 @@ function App() {
                                   <span className="inline-block w-6 h-px bg-emerald-400/60" /> Çorlu Karavan
                                 </div>
                               </div>
-                              <h2 style={{ fontFamily: "'Fraunces', Georgia, serif" }} className="text-3xl sm:text-4xl font-semibold leading-tight tracking-tight">{viewingContract.title}</h2>
+                              <h2 style={{ fontFamily: "'Fraunces', Georgia, serif" }} className="text-3xl sm:text-4xl font-semibold leading-tight tracking-tight">{viewingContract.customer_name || viewingContract.title}</h2>
                               <p className="text-white/50 text-[11px] uppercase tracking-[0.2em] mt-2">Müşteri Teklif Formu ve Sözleşme</p>
                               {parsed.subtitle && <p className="text-white/70 text-sm mt-1">{parsed.subtitle}</p>}
                             </div>
@@ -5123,10 +5123,10 @@ function App() {
                               )}
                             </div>
                           </div>
-                          {viewingContract.customer_name && (
+                          {viewingContract.title && (
                             <div className="relative mt-5 inline-flex items-center gap-2">
-                              <span className="text-white/45 text-[10px] uppercase tracking-widest">Müşteri</span>
-                              <span className="font-semibold text-base">{viewingContract.customer_name}</span>
+                              <span className="text-white/45 text-[10px] uppercase tracking-widest">Araç</span>
+                              <span className="font-semibold text-base">{viewingContract.title}</span>
                             </div>
                           )}
                         </div>

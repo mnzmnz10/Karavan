@@ -9057,18 +9057,20 @@ class PDFContractGenerator(PDFQuoteGenerator):
                 logger.error(f"Error loading logo in contract PDF: {e}")
                 
         title_text = contract_data.get("title") or "SÖZLEŞME"
-        eyebrow_p = Paragraph("MÜŞTERİ TEKLİF FORMU & SÖZLEŞME", self.contract_eyebrow_style)
-        title_p = Paragraph(f"<b>{upper_tr(title_text)}</b>", self.contract_brand_title_style)
-
         customer_name = contract_data.get("customer_name")
-        customer_p = None
-        if customer_name:
-            customer_p = Paragraph(f"Müşteri  ·  <b>{upper_tr(customer_name)}</b>", self.contract_subtitle_style)
+        eyebrow_p = Paragraph("MÜŞTERİ TEKLİF FORMU & SÖZLEŞME", self.contract_eyebrow_style)
+        # Üstte büyük = müşteri adı; altta Araç · araç türü (başlık)
+        big_text = customer_name or title_text
+        title_p = Paragraph(f"<b>{upper_tr(big_text)}</b>", self.contract_brand_title_style)
+
+        sub_p = None
+        if title_text:
+            sub_p = Paragraph(f"Araç  ·  <b>{upper_tr(title_text)}</b>", self.contract_subtitle_style)
 
         left_flowables = [eyebrow_p, title_p]
-        if customer_p:
+        if sub_p:
             left_flowables.append(Spacer(1, 5))
-            left_flowables.append(customer_p)
+            left_flowables.append(sub_p)
             
         doc_date_val = contract_data.get("doc_date") or contract_data.get("created_at")
         if isinstance(doc_date_val, str):
