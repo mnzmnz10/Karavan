@@ -2333,7 +2333,7 @@ function App() {
       const shouldMoveToDiger = (itemName) => {
         if (!itemName) return true;
         const n = up(itemName);
-        const hasKw = n.includes('SİNEKLİK') || n.includes('TENTE') || n.includes('BASAMAK') || n.includes('SİNEKLIK');
+        const hasKw = n.includes('SİNEKL') || n.includes('TENTE') || n.includes('BASAMAK');
         if (!hasKw) return true;
         // Exclude terms like PROJE etc.
         if (n.includes('PROJE') || n.includes('MUAYENE') || n.includes('EMİSYON') || n.includes('RUHSAT') || n.includes('HİZMET BEDELİ')) {
@@ -2347,7 +2347,7 @@ function App() {
 
       rawSections.forEach((sec) => {
         const secNameUp = up(sec.name);
-        const isTargetSec = secNameUp.includes('SİNEKLİK') || secNameUp.includes('TENTE') || secNameUp.includes('BASAMAK');
+        const isTargetSec = secNameUp.includes('SİNEKL') || secNameUp.includes('TENTE') || secNameUp.includes('BASAMAK');
         
         if (isTargetSec) {
           const validItems = [];
