@@ -1775,6 +1775,34 @@ function App() {
     }
   };
 
+  // Müşteri teklifi onayladığında teklifi servise aktar (servis dialogunu önceden doldurup açar)
+  const sendQuoteToService = (quote) => {
+    let customerName = '';
+    if (quote?.customer_id) {
+      const c = customers.find((c) => c.id === quote.customer_id);
+      if (c) customerName = c.name || '';
+    }
+    const ops = (quote?.products || []).map((p) => {
+      const full = products.find((prod) => prod.id === p.id);
+      const nm = full?.name || p.name || 'Ürün';
+      const qty = p.quantity || 1;
+      return qty > 1 ? `• ${nm} x${qty}` : `• ${nm}`;
+    }).join('\n');
+    const baseNote = quote?.notes ? `${quote.notes}\n\n` : '';
+    setServiceEditingId(null);
+    setServiceForm({
+      ...emptyServiceForm,
+      customer_name: customerName,
+      operations: ops,
+      notes: `${baseNote}[Teklif: ${quote?.name || ''}]`,
+      cost: quote?.total_net_price != null ? String(quote.total_net_price) : '',
+      arrival_date: new Date().toISOString().slice(0, 10),
+      status: 'received',
+    });
+    setServiceDialogOpen(true);
+    toast.success('Teklif servise aktarıldı — notları ekleyip kaydedin');
+  };
+
   // ===================== SÖZLEŞMELER =====================
   const loadContracts = async () => {
     try {
@@ -7584,6 +7612,22 @@ function App() {
                       </div>
                     </div>
 
+                    {/* Yüklü teklif için belirgin KAPAT şeridi */}
+                    {loadedQuote && (
+                      <div className="mb-5 flex items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 select-none">
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-black uppercase tracking-wider text-amber-700">Teklif Düzenleniyor</p>
+                          <p className="truncate text-sm font-bold text-amber-900" title={loadedQuote.name}>{loadedQuote.name}</p>
+                        </div>
+                        <Button
+                          onClick={() => { clearSelection(); toast.success('Teklif kapatıldı — yeni teklif alanına geçildi'); }}
+                          className="shrink-0 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl flex items-center gap-1.5 px-4"
+                        >
+                          <X className="w-4 h-4" /> Teklifi Kapat
+                        </Button>
+                      </div>
+                    )}
+
                     {/* 2. Editable Title Field */}
                     <div className="mb-6 space-y-1">
                       <div className="flex items-center justify-between gap-3">
@@ -8363,6 +8407,17 @@ function App() {
                                   Sil
                                 </button>
                               </div>
+
+                              {/* Servise Gönder (müşteri teklifi onaylayınca) */}
+                              <button
+                                type="button"
+                                onClick={() => sendQuoteToService(quote)}
+                                className="flex w-full items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-500 hover:text-white hover:border-amber-500 transition-all duration-150 text-[11px] font-extrabold hover:shadow-xs"
+                                title="Müşteri teklifi onayladıysa servise aktar"
+                              >
+                                <Wrench className="w-3.5 h-3.5" />
+                                Servise Gönder
+                              </button>
                             </div>
                           );
                         })}
