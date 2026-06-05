@@ -2140,15 +2140,29 @@ function App() {
     if (!contractDraft) return;
     try {
       setContractDataSaving(true);
-      const payload = { data: contractDraft };
-      if (contractDraft.generalNotes !== undefined) {
-        payload.notes = contractDraft.generalNotes.toLocaleUpperCase('tr-TR');
+      // İlave/tahsilat/fatura farkı için EUR karşılığı snapshot'ı (TL=söz kuru, USD=güncel kur) — PDF/total tutarlılığı
+      const draftToSave = JSON.parse(JSON.stringify(contractDraft));
+      const crv = parseFloat(draftToSave.kur) || 0;
+      const eurOf = (amount, currency, rate) => {
+        const a = parseFloat(amount); if (isNaN(a)) return null;
+        if (currency === 'TRY') { const r = parseFloat(rate) || crv || 1; return r ? a / r : 0; }
+        if (currency === 'USD') { const u = parseFloat(exchangeRates?.USD) || 0; const e = parseFloat(exchangeRates?.EUR) || crv || 0; return (u && e) ? a * u / e : 0; }
+        return a;
+      };
+      (draftToSave.addons || []).forEach((a) => { a.amountEUR = (a.amount == null || a.amount === '') ? null : eurOf(a.amount, a.currency, a.rate); });
+      (draftToSave.collections || []).forEach((c) => { c.amountEUR = eurOf(c.amount, c.currency, c.rate); });
+      if (draftToSave.invoiceDiff && draftToSave.invoiceDiff.amount != null && draftToSave.invoiceDiff.amount !== '') {
+        draftToSave.invoiceDiff.amountEUR = eurOf(draftToSave.invoiceDiff.amount, draftToSave.invoiceDiff.currency, draftToSave.invoiceDiff.rate);
+      }
+      const payload = { data: draftToSave };
+      if (draftToSave.generalNotes !== undefined) {
+        payload.notes = draftToSave.generalNotes.toLocaleUpperCase('tr-TR');
       }
       await axios.put(`${API}/contracts/${viewingContract.id}`, payload);
-      setViewingContract((vc) => ({ 
-        ...vc, 
-        data: contractDraft,
-        notes: contractDraft.generalNotes !== undefined ? contractDraft.generalNotes.toLocaleUpperCase('tr-TR') : vc.notes
+      setViewingContract((vc) => ({
+        ...vc,
+        data: draftToSave,
+        notes: draftToSave.generalNotes !== undefined ? draftToSave.generalNotes.toLocaleUpperCase('tr-TR') : vc.notes
       }));
       setContractEditMode(false);
       setContractDirty(false);
@@ -5024,6 +5038,7 @@ function App() {
                   const toEUR = (amount, currency, rate) => {
                     const a = parseFloat(amount); if (isNaN(a)) return 0;
                     if (currency === 'TRY') { const r = parseFloat(rate) || cr || liveRate || 1; return r ? a / r : 0; }
+                    if (currency === 'USD') { const u = parseFloat(exchangeRates?.USD) || 0; const e = parseFloat(exchangeRates?.EUR) || cr || 0; return (u && e) ? a * u / e : 0; }
                     return a;
                   };
                   const productsEUR = parsed?.eurTotal != null ? (parseFloat(parsed.eurTotal) || 0) : (parsed?.grandTotal && cr ? parsed.grandTotal / cr : 0);
@@ -5396,12 +5411,13 @@ function App() {
                               ) : (
                                 <div className="space-y-1.5">
                                   {(parsed.addons || []).map((a, ai) => {
-                                    const aEUR = (a.amount == null || a.amount === '') ? null : fin.toEUR(a.amount, a.currency, a.rate);
+                                    const curSym = a.currency === 'TRY' ? '₺' : a.currency === 'USD' ? '$' : '€';
+                                    const hasAmt = !(a.amount == null || a.amount === '');
                                     if (!contractEditMode) {
                                       return (
                                         <div key={a.id || ai} className="flex items-center justify-between gap-2 text-sm border-b border-slate-100 last:border-0 py-1">
-                                          <span className="text-slate-700">{a.name || '—'}{(a.amount == null || a.amount === '') ? <span className="text-amber-600 text-xs italic ml-1">(fiyat belirlenecek)</span> : ''}</span>
-                                          <span className="font-semibold text-slate-800 tabular-nums shrink-0">{aEUR != null ? `€ ${formatPrice(aEUR)}` : '—'}</span>
+                                          <span className="text-slate-700">{a.name || '—'}{!hasAmt ? <span className="text-amber-600 text-xs italic ml-1">(fiyat belirlenecek)</span> : ''}</span>
+                                          <span className="font-semibold text-slate-800 tabular-nums shrink-0">{hasAmt ? `${curSym} ${formatPrice(a.amount)}` : '—'}</span>
                                         </div>
                                       );
                                     }
@@ -5440,11 +5456,8 @@ function App() {
                                         <select value={a.currency || 'EUR'} onChange={(e) => mutateContractDraft((d) => { d.addons[ai].currency = e.target.value; })} className="h-8 px-1 border border-slate-200 rounded text-sm bg-white">
                                           <option value="EUR">€</option>
                                           <option value="TRY">₺</option>
+                                          <option value="USD">$</option>
                                         </select>
-                                        {a.currency === 'TRY' && (
-                                          <input type="number" step="0.01" min="0" value={a.rate ?? ''} onChange={(e) => mutateContractDraft((d) => { d.addons[ai].rate = e.target.value; })} title="Kur" placeholder="kur" className="w-16 h-8 px-1 border border-slate-200 rounded text-sm text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-emerald-500" />
-                                        )}
-                                        <span className="text-xs text-slate-500 tabular-nums w-20 text-right">{aEUR != null ? `≈€ ${formatPrice(aEUR)}` : '—'}</span>
                                         <button type="button" onClick={() => mutateContractDraft((d) => { d.addons.splice(ai, 1); })} className="text-rose-400 hover:text-rose-600 shrink-0"><Trash2 className="w-4 h-4" /></button>
                                       </div>
                                     );

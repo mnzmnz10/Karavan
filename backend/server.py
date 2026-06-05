@@ -9279,8 +9279,15 @@ class PDFContractGenerator(PDFQuoteGenerator):
         inv = data_block.get("invoiceDiff") or {}
         delivery = data_block.get("deliveryDate")
         products_eur = float(data_block.get("eurTotal") or 0)
-        addons_eur = sum(_to_eur(a.get("amount"), a.get("currency"), a.get("rate")) for a in addons if a.get("amount") not in (None, ""))
-        inv_eur = _to_eur(inv.get("amount"), inv.get("currency"), inv.get("rate")) if inv.get("amount") not in (None, "") else 0.0
+        def _eur_of(item):
+            if item.get("amountEUR") is not None:
+                try:
+                    return float(item["amountEUR"])
+                except (TypeError, ValueError):
+                    pass
+            return _to_eur(item.get("amount"), item.get("currency"), item.get("rate"))
+        addons_eur = sum(_eur_of(a) for a in addons if a.get("amount") not in (None, ""))
+        inv_eur = _eur_of(inv) if inv.get("amount") not in (None, "") else 0.0
         grand_eur = products_eur + addons_eur + inv_eur
         collected_eur = sum(_to_eur(c.get("amount"), c.get("currency"), c.get("rate")) for c in collections)
         remaining_eur = grand_eur - collected_eur
@@ -9298,7 +9305,8 @@ class PDFContractGenerator(PDFQuoteGenerator):
                 if a.get("amount") in (None, ""):
                     val = "Fiyat belirlenecek"
                 else:
-                    val = fmt(_to_eur(a.get("amount"), a.get("currency"), a.get("rate")), "EUR")
+                    sym = "₺" if a.get("currency") == "TRY" else ("$" if a.get("currency") == "USD" else "€")
+                    val = f"{sym} {round(float(a.get('amount') or 0)):,.0f}".replace(",", ".")
                 rows.append([Paragraph(upper_tr(a.get("name") or ""), self.table_cell_style), Paragraph(val, self.table_cell_right_bold)])
             t = PDFTable(rows, colWidths=[14.0 * cm, 4.0 * cm])
             t.setStyle(TableStyle([
