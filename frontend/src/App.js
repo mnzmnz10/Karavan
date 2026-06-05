@@ -1867,25 +1867,29 @@ function App() {
       const c = customers.find((c) => c.id === quote.customer_id);
       if (c) customerName = c.name || '';
     }
-    const ops = (quote?.products || []).map((p) => {
+    const quoteItems = (quote?.products || []).map((p) => {
       const full = products.find((prod) => prod.id === p.id);
       const nm = full?.name || p.name || 'Ürün';
-      const qty = p.quantity || 1;
-      return qty > 1 ? `• ${nm} x${qty}` : `• ${nm}`;
-    }).join('\n');
+      const qty = parseFloat(p.quantity) || 1;
+      // Birim fiyat: teklifte özel fiyat varsa onu, yoksa ürünün TL liste fiyatını başlangıç al
+      let unit = parseFloat(p.custom_price);
+      if (!unit || isNaN(unit)) unit = parseFloat(full?.list_price_try) || 0;
+      return { name: nm, qty, unit_price: Math.round(unit) };
+    });
     const baseNote = quote?.notes ? `${quote.notes}\n\n` : '';
     setServiceEditingId(null);
     setServiceForm({
       ...emptyServiceForm,
       customer_name: customerName,
-      operations: ops,
+      items: quoteItems,
       notes: `${baseNote}[Teklif: ${quote?.name || ''}]`,
       cost: quote?.total_net_price != null ? String(quote.total_net_price) : '',
       arrival_date: new Date().toISOString().slice(0, 10),
       status: 'received',
     });
+    setServiceHistory([]);
     setServiceDialogOpen(true);
-    toast.success('Teklif servise aktarıldı — notları ekleyip kaydedin');
+    toast.success('Teklif servise aktarıldı — kalemleri/fiyatları kontrol edip kaydedin');
   };
 
   // ===================== SÖZLEŞMELER =====================
@@ -8830,47 +8834,18 @@ function App() {
                       </div>
                     </div>
 
-                    {/* İşlemler & Notlar */}
-                    <div>
-                      <div className="mb-3 flex items-center gap-2 text-[11px] font-black uppercase tracking-wider text-emerald-700">
-                        <FileText className="w-3.5 h-3.5" /> İşlemler & Notlar
-                      </div>
-                      <div className="space-y-4">
-                        <div>
-                          <Label>Yapılan İşlemler</Label>
-                          <textarea
-                            value={serviceForm.operations}
-                            onChange={(e) => setServiceForm({ ...serviceForm, operations: e.target.value })}
-                            rows={4}
-                            placeholder="Solar panel kurulumu, akü değişimi, inverter montajı ..."
-                            className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                          />
-                        </div>
-                        <div>
-                          <Label>Notlar</Label>
-                          <textarea
-                            value={serviceForm.notes}
-                            onChange={(e) => setServiceForm({ ...serviceForm, notes: e.target.value })}
-                            rows={3}
-                            placeholder="Ek notlar ..."
-                            className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Parça / İşlem kalemleri */}
+                    {/* Yapılan İşlemler / Parçalar (kalem listesi — sözleşmeler gibi) */}
                     <div>
                       <div className="mb-3 flex items-center justify-between">
                         <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-wider text-emerald-700">
-                          <Package className="w-3.5 h-3.5" /> Parça / İşlem Kalemleri
+                          <Package className="w-3.5 h-3.5" /> Yapılan İşlemler / Parçalar
                         </div>
                         <Button type="button" size="sm" variant="outline" onClick={addServiceItem} className="h-8 text-xs font-bold border-emerald-200 text-emerald-700 hover:bg-emerald-50">
                           <Plus className="w-3.5 h-3.5 mr-1" /> Kalem Ekle
                         </Button>
                       </div>
                       {(serviceForm.items || []).length === 0 ? (
-                        <p className="text-xs text-slate-400 italic py-2">Henüz kalem yok. "Kalem Ekle" ile parça/işçilik ekleyin (toplam otomatik hesaplanır).</p>
+                        <p className="text-xs text-slate-400 italic py-2">Henüz kalem yok. "Kalem Ekle" ile yapılan işlem / parça ekleyin (her satır ayrı; toplam otomatik hesaplanır).</p>
                       ) : (
                         <div className="overflow-hidden rounded-xl border border-slate-200">
                           <table className="w-full text-sm">
@@ -8984,6 +8959,20 @@ function App() {
                           <Input value={serviceForm.warranty_note} onChange={(e) => setServiceForm({ ...serviceForm, warranty_note: e.target.value })} placeholder="örn. Panellere ve işçiliğe garanti" />
                         </div>
                       </div>
+                    </div>
+
+                    {/* Notlar (serbest metin) */}
+                    <div>
+                      <div className="mb-3 flex items-center gap-2 text-[11px] font-black uppercase tracking-wider text-emerald-700">
+                        <FileText className="w-3.5 h-3.5" /> Notlar
+                      </div>
+                      <textarea
+                        value={serviceForm.notes}
+                        onChange={(e) => setServiceForm({ ...serviceForm, notes: e.target.value })}
+                        rows={3}
+                        placeholder="Ek notlar ..."
+                        className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
                     </div>
 
                     {/* Servis geçmişi (düzenlemede) */}
