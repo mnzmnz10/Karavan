@@ -2025,14 +2025,56 @@ function App() {
     return d;
   };
 
+  // Müşterinin seçtiği renk/malzeme etiketleri — notlardan ayrıştırılır, en üstte kutu olarak gösterilir
+  const SPEC_LABELS = ['KUMAŞ', 'MOBİLYA ANA RENK', 'DOLAP KAPAKLARI', 'KÖŞE DÖNÜŞLER', 'MİNDER', 'PARKE'];
+  const parseContractSpecs = (notesArray) => {
+    const specs = {}; SPEC_LABELS.forEach((l) => { specs[l] = ''; });
+    const remaining = [];
+    (notesArray || []).forEach((line) => {
+      if (line == null || line === '') { return; }
+      const U = String(line).toLocaleUpperCase('tr-TR');
+      const found = [];
+      SPEC_LABELS.forEach((l) => { const idx = U.indexOf(l); if (idx >= 0) found.push({ l, idx }); });
+      if (found.length === 0) { remaining.push(line); return; }
+      found.sort((a, b) => a.idx - b.idx);
+      for (let i = 0; i < found.length; i++) {
+        const start = found[i].idx + found[i].l.length;
+        const end = i + 1 < found.length ? found[i + 1].idx : String(line).length;
+        let val = String(line).substring(start, end);
+        val = val.replace(/^[\s:\-/]+/, '').replace(/[\s:\-/]+$/, '').trim();
+        if (val) specs[found[i].l] = val.toLocaleUpperCase('tr-TR');
+      }
+    });
+    return { specs, remaining };
+  };
+
   const enterContractEdit = (baseData) => {
     if (!baseData) return;
-    setContractDraft(JSON.parse(JSON.stringify(baseData)));
+    const d = JSON.parse(JSON.stringify(baseData));
+    if (!d.specs) {
+      const { specs, remaining } = parseContractSpecs(d.notes || []);
+      d.specs = specs;
+      d.notes = remaining;
+    }
+    setContractDraft(d);
     setContractDirty(false);
     setContractSimRate(''); // düzenlemede simülasyon kapalı
     setContractHistory([]);
     setContractEditMode(true);
   };
+
+  // Ctrl+Z ile sözleşme düzenlemede son değişikliği geri al
+  useEffect(() => {
+    if (!contractEditMode) return;
+    const handler = (e) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault();
+        undoContractChange();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [contractEditMode, contractHistory]);
 
   const updateDraftItem = (si, ii, field, value) => {
     const finalVal = field === 'name' ? value.toLocaleUpperCase('tr-TR') : value;
@@ -4943,6 +4985,10 @@ function App() {
               (() => {
                 const baseData = viewingContract.data || parseContract(viewingContract.sheets);
                 const parsed = contractEditMode && contractDraft ? contractDraft : baseData;
+                // Müşteri seçim/renk kutuları + kalan notlar (specs notlardan ayrıştırılır)
+                const specParse = parsed.specs ? { specs: parsed.specs, remaining: parsed.notes || [] } : parseContractSpecs(parsed.notes || []);
+                const contractSpecs = specParse.specs;
+                const contractDisplayNotes = specParse.remaining;
                 const origKur = parsed && parsed.kur != null ? parsed.originalKur != null ? parsed.originalKur : parsed.kur : null;
                 const currentKur = parsed && parsed.kur != null ? parsed.kur : null;
                 const simRateNum = parseFloat(contractSimRate);
@@ -5269,63 +5315,56 @@ function App() {
 
                         {/* Notlar + imza */}
                         <div className="px-4 sm:px-8 pb-8 bg-[#FBFCFD] space-y-6">
+                          {/* Müşteri Seçimleri (renk/malzeme) — notların en üstünde kutular */}
+                          <div className="rounded-xl border border-slate-200 bg-white p-4">
+                            <div className="font-bold text-slate-700 text-xs uppercase tracking-wider mb-3 flex items-center gap-2">
+                              <Tags className="w-3.5 h-3.5 text-emerald-600" /> Müşteri Seçimleri (Renk / Malzeme)
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                              {SPEC_LABELS.map((label) => (
+                                <div key={label} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2">
+                                  <span className="text-[11px] font-bold text-slate-600 uppercase shrink-0 w-32">{label}</span>
+                                  {contractEditMode ? (
+                                    <input
+                                      value={(contractDraft.specs && contractDraft.specs[label]) || ''}
+                                      onChange={(e) => {
+                                        setContractHistory(prev => [...prev, JSON.parse(JSON.stringify(contractDraft))]);
+                                        setContractDraft(prev => { const d = JSON.parse(JSON.stringify(prev)); if (!d.specs) d.specs = {}; d.specs[label] = e.target.value.toLocaleUpperCase('tr-TR'); return d; });
+                                        setContractDirty(true);
+                                      }}
+                                      placeholder="Elle yazın..."
+                                      className="flex-1 h-8 px-2 border border-slate-200 rounded text-sm bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                                    />
+                                  ) : (
+                                    <span className="flex-1 text-sm font-semibold text-slate-800 border-b border-dashed border-slate-300 min-h-[20px]">{(contractSpecs && contractSpecs[label]) || ' '}</span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
                           {contractEditMode ? (
                             <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4 space-y-3">
                               <div className="font-bold text-amber-800 text-xs uppercase tracking-wider flex items-center gap-2">
                                 <StickyNote className="w-3.5 h-3.5" /> Notlar & Şartları Düzenle
                               </div>
-                              <div className="space-y-2">
-                                {parsed.notes.map((n, ni) => (
-                                  <div key={ni} className="flex items-center gap-2">
-                                    <span className="text-amber-400 font-bold">•</span>
-                                    <input
-                                      value={n || ''}
-                                      onChange={(e) => {
-                                        setContractHistory(prev => [...prev, JSON.parse(JSON.stringify(contractDraft))]);
-                                        setContractDraft(prev => {
-                                          const d = JSON.parse(JSON.stringify(prev));
-                                          d.notes[ni] = e.target.value.toLocaleUpperCase('tr-TR');
-                                          return d;
-                                        });
-                                        setContractDirty(true);
-                                      }}
-                                      className="flex-1 h-8 px-2 border border-amber-200 rounded text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
-                                    />
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setContractHistory(prev => [...prev, JSON.parse(JSON.stringify(contractDraft))]);
-                                        setContractDraft(prev => {
-                                          const d = JSON.parse(JSON.stringify(prev));
-                                          d.notes.splice(ni, 1);
-                                          return d;
-                                        });
-                                        setContractDirty(true);
-                                      }}
-                                      className="text-red-400 hover:text-red-600 shrink-0"
-                                      title="Satırı Sil"
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </button>
-                                  </div>
-                                ))}
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => {
+                              <div>
+                                <label className="block text-xs font-semibold text-amber-800 mb-1">Notlar & Şartlar (her satır ayrı madde)</label>
+                                <textarea
+                                  value={(parsed.notes || []).join('\n')}
+                                  onChange={(e) => {
                                     setContractHistory(prev => [...prev, JSON.parse(JSON.stringify(contractDraft))]);
                                     setContractDraft(prev => {
                                       const d = JSON.parse(JSON.stringify(prev));
-                                      d.notes.push('');
+                                      d.notes = e.target.value.toLocaleUpperCase('tr-TR').split('\n');
                                       return d;
                                     });
                                     setContractDirty(true);
                                   }}
-                                  className="border-amber-300 text-amber-800 hover:bg-amber-100/50 text-xs font-bold"
-                                >
-                                  + Yeni Not Satırı Ekle
-                                </Button>
+                                  rows={5}
+                                  className="w-full p-2 border border-amber-200 rounded text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                  placeholder="Her satıra bir not / şart yazın..."
+                                />
                               </div>
                               <div className="pt-2 border-t border-amber-200/50">
                                 <label className="block text-xs font-semibold text-amber-800 mb-1">Genel Sözleşme Notu (Serbest Metin)</label>
@@ -5347,11 +5386,11 @@ function App() {
                               </div>
                             </div>
                           ) : (
-                            (parsed.notes.length > 0 || viewingContract.notes) && (
+                            (contractDisplayNotes.filter((n) => n && String(n).trim()).length > 0 || viewingContract.notes) && (
                               <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4">
                                 <div className="font-bold text-amber-800 text-xs uppercase tracking-wider mb-2 flex items-center gap-2"><StickyNote className="w-3.5 h-3.5" /> Notlar & Şartlar</div>
                                 <ul className="space-y-1 text-sm text-amber-900/90">
-                                  {parsed.notes.map((n, ni) => (<li key={ni} className="flex gap-2"><span className="text-amber-400 shrink-0">•</span><span>{n}</span></li>))}
+                                  {contractDisplayNotes.filter((n) => n && String(n).trim()).map((n, ni) => (<li key={ni} className="flex gap-2"><span className="text-amber-400 shrink-0">•</span><span>{n}</span></li>))}
                                 </ul>
                                 {viewingContract.notes && <div className="mt-2 pt-2 border-t border-amber-200/70 text-sm text-amber-900/90 whitespace-pre-wrap">{viewingContract.notes}</div>}
                               </div>

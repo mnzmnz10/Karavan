@@ -9233,9 +9233,57 @@ class PDFContractGenerator(PDFQuoteGenerator):
             story.append(gt_card)
             story.append(Spacer(1, 14))
             
+        # --- Müşteri Seçimleri (renk/malzeme) kutuları — notlardan ayrıştırılır, en üstte ---
+        SPEC_LABELS = ['KUMAŞ', 'MOBİLYA ANA RENK', 'DOLAP KAPAKLARI', 'KÖŞE DÖNÜŞLER', 'MİNDER', 'PARKE']
+        def _parse_specs(arr):
+            sp = {l: '' for l in SPEC_LABELS}
+            rem = []
+            for line in (arr or []):
+                if not line:
+                    continue
+                s = str(line); U = upper_tr(s)
+                found = sorted([(U.find(l), l) for l in SPEC_LABELS if U.find(l) >= 0])
+                if not found:
+                    rem.append(s); continue
+                for i, (idx, l) in enumerate(found):
+                    start = idx + len(l)
+                    end = found[i + 1][0] if i + 1 < len(found) else len(s)
+                    val = s[start:end].strip(' :-/').strip()
+                    if val:
+                        sp[l] = upper_tr(val)
+            return sp, rem
+
+        specs = data_block.get("specs")
         notes_list = data_block.get("notes") or []
+        if not specs:
+            specs, notes_list = _parse_specs(notes_list)
+
+        spec_lbl_style = ParagraphStyle('SpecLbl', parent=self.styles['Normal'], fontName=self.get_font_name(is_bold=True), fontSize=7, textColor=colors.HexColor('#64748B'), leading=10)
+        spec_val_style = ParagraphStyle('SpecVal', parent=self.styles['Normal'], fontName=self.get_font_name(is_bold=True), fontSize=9, textColor=colors.HexColor('#1B3A5C'), leading=12)
+        spec_title_style = ParagraphStyle('SpecTitle', parent=self.styles['Normal'], fontName=self.get_font_name(is_bold=True), fontSize=9, textColor=colors.HexColor('#1B3A5C'), spaceAfter=4)
+        spec_cells = []
+        for l in SPEC_LABELS:
+            v = (specs.get(l, '') if specs else '') or '________________'
+            spec_cells.append([Paragraph(l, spec_lbl_style), Paragraph(v, spec_val_style)])
+        spec_rows = []
+        for i in range(0, len(spec_cells), 2):
+            right = spec_cells[i + 1] if i + 1 < len(spec_cells) else [Paragraph('', spec_lbl_style)]
+            spec_rows.append([spec_cells[i], right])
+        spec_tbl = PDFTable(spec_rows, colWidths=[9.0 * cm, 9.0 * cm])
+        spec_tbl.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F4F6F9')),
+            ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#D9E0E8')),
+            ('INNERGRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#E5EAF0')),
+            ('TOPPADDING', (0, 0), (-1, -1), 8), ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('LEFTPADDING', (0, 0), (-1, -1), 10), ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+        ]))
+        story.append(Paragraph("<b>MÜŞTERİ SEÇİMLERİ (RENK / MALZEME)</b>", spec_title_style))
+        story.append(spec_tbl)
+        story.append(Spacer(1, 12))
+
         general_note = contract_data.get("notes")
-        
+
         if notes_list or general_note:
             note_flowables = [Paragraph("<b>NOTLAR & ŞARTLAR</b>", self.note_title_style)]
             for n in notes_list:
