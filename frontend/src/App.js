@@ -8907,7 +8907,7 @@ function App() {
                         <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
                           {(serviceForm.photos || []).map((src, idx) => (
                             <div key={idx} className="relative group aspect-square rounded-lg overflow-hidden border border-slate-200">
-                              <img src={src} alt={`Foto ${idx + 1}`} className="w-full h-full object-cover" />
+                              <img src={src} alt={`Foto ${idx + 1}`} onClick={() => openImagePreview(src, `Servis Fotoğrafı ${idx + 1}`)} className="w-full h-full object-cover cursor-zoom-in hover:opacity-90 transition-opacity" title="Görüntülemek için tıklayın" />
                               <button type="button" onClick={() => removeServicePhoto(idx)} className="absolute top-1 right-1 bg-rose-600 text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity" title="Kaldır">
                                 <X className="w-3 h-3" />
                               </button>
@@ -8956,7 +8956,7 @@ function App() {
                           value={serviceForm.payment_account}
                           onChange={(e) => setServiceForm({ ...serviceForm, payment_account: e.target.value })}
                           rows={2}
-                          placeholder="örn. Mehmet Garanti hesabı, Nakit, IBAN ..."
+                          placeholder="Nakit veya X Hesaba İban"
                           className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                         />
                         <p className="mt-1 text-[11px] text-slate-400">Avans ve ödeme hesabı bilgisi teslim formuna (PDF) yansımaz.</p>
