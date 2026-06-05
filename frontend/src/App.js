@@ -5414,23 +5414,24 @@ function App() {
               </DialogHeader>
               <div className="space-y-4 py-2">
                 <div>
+                  <Label>Müşteri (opsiyonel)</Label>
+                  <Input value={contractForm.customer_name} onChange={(e) => setContractForm({ ...contractForm, customer_name: e.target.value })} placeholder="Müşteri adı" />
+                </div>
+                <div>
                   <Label>Araç Türü</Label>
                   {(() => {
-                    const VEHICLE_TYPES = ['15M3 PSA', '17M3 PSA', 'MERCEDES', 'IVECO', 'VOLKSWAGEN', 'MAN', 'FORD', 'SEMİENTEGRE', 'OTOBÜS'];
-                    const selected = contractForm.title ? contractForm.title.split(' / ').filter(Boolean) : [];
-                    const toggle = (v) => {
-                      const next = selected.includes(v) ? selected.filter((x) => x !== v) : [...selected, v];
-                      setContractForm({ ...contractForm, title: next.join(' / ') });
-                    };
+                    const VEHICLE_TYPES = ['15M³ PSA', '17M³ PSA', 'MERCEDES', 'IVECO', 'VOLKSWAGEN', 'MAN', 'FORD', 'SEMİ ENTEGRE', 'OTOBÜS', 'ÇEKME KARAVAN'];
+                    const selected = contractForm.title || '';
+                    const choose = (v) => setContractForm({ ...contractForm, title: selected === v ? '' : v });
                     return (
                       <div className="mt-1 flex flex-wrap gap-2">
                         {VEHICLE_TYPES.map((v) => {
-                          const on = selected.includes(v);
+                          const on = selected === v;
                           return (
                             <button
                               key={v}
                               type="button"
-                              onClick={() => toggle(v)}
+                              onClick={() => choose(v)}
                               className={`px-3 py-1.5 rounded-lg text-sm font-semibold border transition-colors cursor-pointer ${on ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
                             >
                               {v}
@@ -5440,10 +5441,6 @@ function App() {
                       </div>
                     );
                   })()}
-                </div>
-                <div>
-                  <Label>Müşteri (opsiyonel)</Label>
-                  <Input value={contractForm.customer_name} onChange={(e) => setContractForm({ ...contractForm, customer_name: e.target.value })} placeholder="Müşteri adı" />
                 </div>
                 <div>
                   <Label>Excel Dosyası (.xlsx / .xls)</Label>
