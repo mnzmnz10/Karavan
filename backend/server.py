@@ -9341,55 +9341,20 @@ class PDFContractGenerator(PDFQuoteGenerator):
             story.append(t)
             story.append(Spacer(1, 12))
 
-        # Tahsilatlar tablosu (kur + EUR + çalışan kalan)
-        if collections:
-            rows = [[
-                Paragraph("<b>TARİH</b>", self.table_header_style), Paragraph("<b>AÇIKLAMA</b>", self.table_header_style),
-                Paragraph("<b>TUTAR</b>", self.table_header_right_style), Paragraph("<b>KUR</b>", self.table_header_center_style),
-                Paragraph("<b>≈ EUR</b>", self.table_header_right_style), Paragraph("<b>KALAN €</b>", self.table_header_right_style),
-            ]]
-            run = grand_eur
-            for c in collections:
-                c_eur = _to_eur(c.get("amount"), c.get("currency"), c.get("rate"))
-                run -= c_eur
-                cur = "₺" if c.get("currency") == "TRY" else "€"
-                amt = f"{cur} {round(float(c.get('amount') or 0)):,.0f}".replace(",", ".")
-                kur_disp = (f"{float(c.get('rate') or cr):g}" if c.get("currency") == "TRY" else "—")
-                rows.append([
-                    Paragraph(_fmt_d(c.get("date")), self.table_cell_style), Paragraph(upper_tr(c.get("description") or ""), self.table_cell_style),
-                    Paragraph(amt, self.table_cell_right), Paragraph(kur_disp, self.table_cell_style),
-                    Paragraph(fmt(c_eur, "EUR"), self.table_cell_right), Paragraph(fmt(max(run, 0), "EUR"), self.table_cell_right_bold),
-                ])
-            t = PDFTable(rows, colWidths=[2.4 * cm, 6.2 * cm, 2.7 * cm, 1.7 * cm, 2.5 * cm, 2.5 * cm])
-            t.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0E7C5A')),
-                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                ('LINEBELOW', (0, 0), (-1, -1), 0.5, colors.HexColor('#E5EAF0')),
-                ('TOPPADDING', (0, 0), (-1, -1), 5), ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
-                ('LEFTPADDING', (0, 0), (-1, -1), 6), ('RIGHTPADDING', (0, 0), (-1, -1), 6),
-                ('ALIGN', (2, 0), (2, -1), 'RIGHT'), ('ALIGN', (3, 0), (3, -1), 'CENTER'), ('ALIGN', (4, 0), (-1, -1), 'RIGHT'),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ]))
-            story.append(Paragraph("<b>TAHSİLATLAR</b>", self.note_title_style))
-            story.append(Spacer(1, 3))
-            story.append(t)
-            story.append(Spacer(1, 12))
-
-        # Ödeme özeti / Kalan paneli
-        if has_fin:
+        # NOT: Ödeme durumu (tahsilatlar + kalan + tahsil edilen) PDF'te GÖSTERİLMEZ — sadece sistemde.
+        # İlaveler/fatura farkı varsa nihai genel toplamı göster (ödeme durumu olmadan)
+        if (abs(addons_eur) > 0.001) or (abs(inv_eur) > 0.001):
             sum_lines = [f"Ürünler: <b>{fmt(products_eur, 'EUR')}</b>"]
             if abs(addons_eur) > 0.001:
                 sum_lines.append(f"İlaveler: <b>{fmt(addons_eur, 'EUR')}</b>")
             if abs(inv_eur) > 0.001:
                 sum_lines.append(f"Fatura Farkı: <b>{fmt(inv_eur, 'EUR')}</b>")
-            sum_lines.append(f"Genel Toplam: <b>{fmt(grand_eur, 'EUR')}</b>")
-            sum_lines.append(f"Tahsil Edilen: <b>{fmt(collected_eur, 'EUR')}</b>")
             left_p = Paragraph("<br/>".join(sum_lines), self.gt_sub_style)
-            kalan_tl = remaining_eur * (cr or 0)
+            gt_tl = grand_eur * (cr or 0)
             right_flow = [
-                Paragraph("KALAN TUTAR", self.gt_label_style),
-                Paragraph(f"<b>{fmt(remaining_eur, 'EUR')}</b>", self.gt_amount_style),
-                Paragraph(f"≈ {fmt(kalan_tl, 'TRY')} (kur {cr:g})" if cr else "", self.gt_eur_style),
+                Paragraph("GENEL TOPLAM", self.gt_label_style),
+                Paragraph(f"<b>{fmt(grand_eur, 'EUR')}</b>", self.gt_amount_style),
+                Paragraph(f"≈ {fmt(gt_tl, 'TRY')} (kur {cr:g})" if cr else "", self.gt_eur_style),
             ]
             sum_tbl = PDFTable([[left_p, right_flow]], colWidths=[9.0 * cm, 9.0 * cm])
             sum_tbl.setStyle(TableStyle([
