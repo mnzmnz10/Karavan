@@ -8303,23 +8303,27 @@ def parse_contract_data(sheets):
         return None
         
     # --- Auto-categorization: SİNEKLİKLER - TENTE - BASAMAKLAR ---
+    # Küçük harf ASCII kök eşleşmesi: sinek/sinekliği, basamak/basamağı vb. yakalanır
+    def _lc_tr(s):
+        return (s or "").replace("I", "ı").replace("İ", "i").lower()
+
     def should_move_to_diger(item_name):
         if not item_name:
             return True
-        n = upper_tr(item_name)
-        has_kw = "SİNEKLİK" in n or "TENTE" in n or "BASAMAK" in n or "SİNEKLIK" in n
+        n = _lc_tr(item_name)
+        has_kw = "sinek" in n or "tente" in n or "basama" in n
         if not has_kw:
             return True
-        if any(w in n for w in ("PROJE", "MUAYENE", "EMİSYON", "RUHSAT", "HİZMET BEDELİ")):
+        if any(w in n for w in ("proje", "muayene", "emisyon", "ruhsat", "hizmet bedeli")):
             return True
         return False
-        
+
     processed_sections = []
     moved_items = []
-    
+
     for sec in raw_sections:
-        sec_name_up = upper_tr(sec["name"])
-        is_target_sec = "SİNEKLİK" in sec_name_up or "TENTE" in sec_name_up or "BASAMAK" in sec_name_up
+        sec_name_lc = _lc_tr(sec["name"])
+        is_target_sec = "sinek" in sec_name_lc or "tente" in sec_name_lc or "basama" in sec_name_lc
         
         if is_target_sec:
             valid_items = []
