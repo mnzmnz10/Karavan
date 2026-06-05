@@ -2200,7 +2200,7 @@ function App() {
   };
 
   const createNewContract = async () => {
-    if (!newContractForm.title.trim()) { toast.error('Sözleşme başlığı girin'); return; }
+    if (!newContractForm.title.trim()) { toast.error('Araç türü seçin'); return; }
     const rate = parseFloat(newContractForm.kur);
     if (isNaN(rate) || rate <= 0) { toast.error('Lütfen geçerli bir kur girin'); return; }
     try {
@@ -5543,20 +5543,37 @@ function App() {
               </DialogHeader>
               <div className="space-y-4 py-2">
                 <div>
-                  <Label>Sözleşme Başlığı *</Label>
+                  <Label>Müşteri Adı</Label>
                   <Input
-                    value={newContractForm.title}
-                    onChange={(e) => setNewContractForm({ ...newContractForm, title: e.target.value })}
-                    placeholder="Örn: 15M3 - 17M3 DUCATO VEYA IVECO SEMIENTEGRE"
+                    value={newContractForm.customer_name}
+                    onChange={(e) => setNewContractForm({ ...newContractForm, customer_name: e.target.value })}
+                    placeholder="Müşteri adı ve soyadı"
                   />
                 </div>
                 <div>
-                  <Label>Müşteri Adı</Label>
-                  <Input 
-                    value={newContractForm.customer_name} 
-                    onChange={(e) => setNewContractForm({ ...newContractForm, customer_name: e.target.value })} 
-                    placeholder="Müşteri adı ve soyadı"
-                  />
+                  <Label>Araç Türü *</Label>
+                  {(() => {
+                    const VEHICLE_TYPES = ['15M³ PSA', '17M³ PSA', 'MERCEDES', 'IVECO', 'VOLKSWAGEN', 'MAN', 'FORD', 'SEMİ ENTEGRE', 'OTOBÜS', 'ÇEKME KARAVAN'];
+                    const selected = newContractForm.title || '';
+                    const choose = (v) => setNewContractForm({ ...newContractForm, title: selected === v ? '' : v });
+                    return (
+                      <div className="mt-1 flex flex-wrap gap-2">
+                        {VEHICLE_TYPES.map((v) => {
+                          const on = selected === v;
+                          return (
+                            <button
+                              key={v}
+                              type="button"
+                              onClick={() => choose(v)}
+                              className={`px-3 py-1.5 rounded-lg text-sm font-semibold border transition-colors cursor-pointer ${on ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                            >
+                              {v}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div>
                   <Label>Sözleşme Euro Kuru (₺) *</Label>
