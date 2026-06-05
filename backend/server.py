@@ -8691,6 +8691,82 @@ class PDFContractGenerator(PDFQuoteGenerator):
             alignment=TA_RIGHT,
             leading=12
         )
+        # --- Banner / GENEL TOPLAM premium stilleri ---
+        self.contract_eyebrow_style = ParagraphStyle(
+            'ContractEyebrow',
+            parent=self.styles['Normal'],
+            fontName=self.get_font_name(is_bold=True),
+            fontSize=7,
+            textColor=colors.HexColor('#9FB7D1'),
+            alignment=TA_LEFT,
+            leading=10,
+            spaceAfter=3
+        )
+        self.contract_brand_title_style = ParagraphStyle(
+            'ContractBrandTitle',
+            parent=self.styles['Normal'],
+            fontName=self.get_font_name(is_bold=True),
+            fontSize=18,
+            textColor=colors.white,
+            alignment=TA_LEFT,
+            leading=21
+        )
+        self.contract_meta_label_style = ParagraphStyle(
+            'ContractMetaLabel',
+            parent=self.styles['Normal'],
+            fontName=self.get_font_name(is_bold=True),
+            fontSize=6.5,
+            textColor=colors.HexColor('#8AA6C4'),
+            alignment=TA_RIGHT,
+            leading=8
+        )
+        self.contract_meta_value_style = ParagraphStyle(
+            'ContractMetaValue',
+            parent=self.styles['Normal'],
+            fontName=self.get_font_name(is_bold=True),
+            fontSize=10,
+            textColor=colors.white,
+            alignment=TA_RIGHT,
+            leading=13
+        )
+        self.gt_label_style = ParagraphStyle(
+            'ContractGTLabel',
+            parent=self.styles['Normal'],
+            fontName=self.get_font_name(is_bold=True),
+            fontSize=10,
+            textColor=colors.white,
+            alignment=TA_LEFT,
+            leading=13
+        )
+        self.gt_sub_style = ParagraphStyle(
+            'ContractGTSub',
+            parent=self.styles['Normal'],
+            fontName=self.get_font_name(),
+            fontSize=7.5,
+            textColor=colors.HexColor('#9FB7D1'),
+            alignment=TA_LEFT,
+            leading=10,
+            spaceBefore=2
+        )
+        self.gt_amount_style = ParagraphStyle(
+            'ContractGTAmount',
+            parent=self.styles['Normal'],
+            fontName=self.get_font_name(is_bold=True),
+            fontSize=23,
+            textColor=colors.white,
+            alignment=TA_RIGHT,
+            leading=25
+        )
+        self.gt_eur_style = ParagraphStyle(
+            'ContractGTEur',
+            parent=self.styles['Normal'],
+            fontName=self.get_font_name(is_bold=True),
+            fontSize=10.5,
+            textColor=colors.HexColor('#9FE7C8'),
+            alignment=TA_RIGHT,
+            leading=13,
+            spaceBefore=3
+        )
         self.table_header_style = ParagraphStyle(
             'ContractTableHeader',
             parent=self.styles['Normal'],
@@ -8827,22 +8903,23 @@ class PDFContractGenerator(PDFQuoteGenerator):
         if logo_path:
             try:
                 from reportlab.platypus import Image as PDFImage
-                logo_flowable = PDFImage(str(logo_path), width=45, height=38)
+                # Logo kare (375x375); bozulmaması için kare oran, banner yüksekliğini doldursun
+                logo_flowable = PDFImage(str(logo_path), width=60, height=60)
             except Exception as e:
                 logger.error(f"Error loading logo in contract PDF: {e}")
                 
         title_text = contract_data.get("title") or "SÖZLEŞME"
-        title_p = Paragraph(f"<b>{upper_tr(title_text)}</b>", self.contract_title_style)
-        sub_p = Paragraph("Müşteri Teklif Formu ve Sözleşme", self.contract_subtitle_style)
-        
+        eyebrow_p = Paragraph("MÜŞTERİ TEKLİF FORMU & SÖZLEŞME", self.contract_eyebrow_style)
+        title_p = Paragraph(f"<b>{upper_tr(title_text)}</b>", self.contract_brand_title_style)
+
         customer_name = contract_data.get("customer_name")
         customer_p = None
         if customer_name:
-            customer_p = Paragraph(f"Müşteri: <b>{upper_tr(customer_name)}</b>", self.contract_subtitle_style)
-            
-        left_flowables = [title_p, sub_p]
+            customer_p = Paragraph(f"Müşteri  ·  <b>{upper_tr(customer_name)}</b>", self.contract_subtitle_style)
+
+        left_flowables = [eyebrow_p, title_p]
         if customer_p:
-            left_flowables.append(Spacer(1, 4))
+            left_flowables.append(Spacer(1, 5))
             left_flowables.append(customer_p)
             
         doc_date_val = contract_data.get("doc_date") or contract_data.get("created_at")
@@ -8857,37 +8934,46 @@ class PDFContractGenerator(PDFQuoteGenerator):
         else:
             date_str = datetime.now().strftime('%d.%m.%Y')
             
-        meta_lines = [f"TARİH: {date_str}"]
-        
         data_block = contract_data.get("data") or {}
+        meta_pairs = [("TARİH", date_str)]
         kur = data_block.get("kur")
         if kur:
-            kur_str = f"{kur:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            meta_lines.append(f"KUR: 1 € = ₺{kur_str}")
-            
-        meta_p = Paragraph("<br/>".join(meta_lines), self.contract_meta_style)
-        
+            kur_str = f"{round(float(kur)):,.0f}".replace(",", ".")
+            meta_pairs.append(("DÖVİZ KURU", f"1 € = ₺{kur_str}"))
+
+        meta_flowables = []
+        for mi, (label, value) in enumerate(meta_pairs):
+            if mi > 0:
+                meta_flowables.append(Spacer(1, 6))
+            meta_flowables.append(Paragraph(label, self.contract_meta_label_style))
+            meta_flowables.append(Paragraph(value, self.contract_meta_value_style))
+        meta_p = meta_flowables
+
         header_left_cell = left_flowables
         if logo_flowable:
             from reportlab.platypus import Table as PDFTable
-            logo_title_tbl = PDFTable([[logo_flowable, left_flowables]], colWidths=[1.8*cm, 10.7*cm])
+            logo_title_tbl = PDFTable([[logo_flowable, left_flowables]], colWidths=[2.5*cm, 9.8*cm])
             logo_title_tbl.setStyle(TableStyle([
                 ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
                 ('LEFTPADDING', (0,0), (-1,-1), 0),
-                ('RIGHTPADDING', (0,0), (-1,-1), 0),
+                ('RIGHTPADDING', (0,0), (0,0), 12),
+                ('RIGHTPADDING', (1,0), (1,0), 0),
                 ('TOPPADDING', (0,0), (-1,-1), 0),
                 ('BOTTOMPADDING', (0,0), (-1,-1), 0),
             ]))
             header_left_cell = logo_title_tbl
             
-        header_tbl = PDFTable([[header_left_cell, meta_p]], colWidths=[12.5*cm, 5.5*cm])
+        header_tbl = PDFTable([[header_left_cell, meta_p]], colWidths=[12.3*cm, 5.7*cm])
         header_tbl.setStyle(TableStyle([
             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('TOPPADDING', (0,0), (-1,-1), 12),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 12),
-            ('LEFTPADDING', (0,0), (-1,-1), 14),
-            ('RIGHTPADDING', (0,0), (-1,-1), 14),
-            ('LINEBELOW', (0,-1), (-1,-1), 3, colors.HexColor('#10B981')),
+            ('TOPPADDING', (0,0), (-1,-1), 15),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 15),
+            ('LEFTPADDING', (0,0), (0,-1), 18),
+            ('LEFTPADDING', (1,0), (1,-1), 0),
+            ('RIGHTPADDING', (0,0), (0,-1), 8),
+            ('RIGHTPADDING', (1,0), (1,-1), 18),
+            # İmza yeşili sol dikey accent (bölüm bantlarıyla aynı dil)
+            ('LINEBEFORE', (0,0), (0,-1), 4, colors.HexColor('#10B981')),
         ]))
         
         # Sitedeki gibi üst banner köşelerini yuvarla
@@ -8931,7 +9017,8 @@ class PDFContractGenerator(PDFQuoteGenerator):
         def fmt(val, currency=""):
             if val is None:
                 return ""
-            v_str = f"{val:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            # Kuruş gösterme: tam sayıya yuvarla (frontend formatPrice ile tutarlı)
+            v_str = f"{round(float(val)):,.0f}".replace(",", ".")
             if currency == "EUR":
                 return f"€ {v_str}"
             elif currency == "TRY":
@@ -8994,24 +9081,27 @@ class PDFContractGenerator(PDFQuoteGenerator):
         gt = data_block.get("grandTotal")
         et = data_block.get("eurTotal")
         if gt is not None:
-            gt_lines = [
-                f"GENEL TOPLAM (KDV HARİÇ): <b>{fmt(gt, 'TRY')}</b>"
+            # Sol: etiket + alt açıklama  |  Sağ: büyük tutar + EUR karşılığı
+            gt_left = [
+                Paragraph("GENEL TOPLAM", self.gt_label_style),
+                Paragraph("KDV HARİÇ  ·  Net Ödenecek Tutar", self.gt_sub_style),
             ]
+            gt_right = [Paragraph(f"<b>{fmt(gt, 'TRY')}</b>", self.gt_amount_style)]
             if et is not None:
-                gt_lines.append(f"EUR Karşılığı: <b>{fmt(et, 'EUR')}</b>")
-                
-            gt_p = Paragraph("<br/>".join(gt_lines), self.contract_title_style)
-            
-            gt_tbl = PDFTable([[gt_p]], colWidths=[18.0*cm])
+                gt_right.append(Paragraph(f"≈ {fmt(et, 'EUR')}", self.gt_eur_style))
+
+            gt_tbl = PDFTable([[gt_left, gt_right]], colWidths=[8.3*cm, 9.7*cm])
             gt_tbl.setStyle(TableStyle([
                 ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-                ('TOPPADDING', (0,0), (-1,-1), 10),
-                ('BOTTOMPADDING', (0,0), (-1,-1), 10),
-                ('LEFTPADDING', (0,0), (-1,-1), 14),
-                ('RIGHTPADDING', (0,0), (-1,-1), 14),
-                ('LINELEFT', (0,0), (0,-1), 4, colors.HexColor('#10B981')),
+                ('TOPPADDING', (0,0), (-1,-1), 16),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 16),
+                ('LEFTPADDING', (0,0), (0,-1), 18),
+                ('LEFTPADDING', (1,0), (1,-1), 0),
+                ('RIGHTPADDING', (0,0), (0,-1), 8),
+                ('RIGHTPADDING', (1,0), (1,-1), 18),
+                ('LINEBEFORE', (0,0), (0,-1), 4, colors.HexColor('#10B981')),
             ]))
-            
+
             # Sitedeki gibi genel toplam köşelerini yuvarla
             gt_card = RoundedCard(
                 [gt_tbl],

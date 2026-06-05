@@ -4956,24 +4956,27 @@ function App() {
                                                   />
                                                   {activeSearchCell.si === si && activeSearchCell.ii === ii && (
                                                     (() => {
-                                                      const queryLower = activeSearchCell.query.toLocaleLowerCase('tr-TR').trim();
-                                                      const suggestions = products.filter(p => 
-                                                        p.name.toLocaleLowerCase('tr-TR').includes(queryLower) ||
-                                                        (p.brand && p.brand.toLocaleLowerCase('tr-TR').includes(queryLower))
-                                                      ).slice(0, 5);
+                                                      const queryLower = (activeSearchCell.query || '').toLocaleLowerCase('tr-TR').trim();
+                                                      if (!queryLower) return null;
+                                                      const suggestions = (products || []).filter(p => {
+                                                        const pName = (p.name || '').toLocaleLowerCase('tr-TR');
+                                                        const pBrand = (p.brand || '').toLocaleLowerCase('tr-TR');
+                                                        return pName.includes(queryLower) || pBrand.includes(queryLower);
+                                                      }).slice(0, 100);
                                                       if (suggestions.length === 0) return null;
                                                       return (
-                                                        <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto text-left">
+                                                        <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-50 max-h-72 overflow-y-auto text-left">
                                                           {suggestions.map((p) => {
+                                                            const listPrice = parseFloat(p.list_price) || 0;
                                                             let priceEur = 0;
                                                             if (p.currency === 'EUR') {
-                                                              priceEur = p.list_price;
+                                                              priceEur = listPrice;
                                                             } else if (p.currency === 'TRY') {
-                                                              priceEur = p.list_price / (parsed.kur || 35.0);
+                                                              priceEur = listPrice / (parsed.kur || 35.0);
                                                             } else if (p.currency === 'USD') {
-                                                              priceEur = p.list_price * 0.92;
+                                                              priceEur = listPrice * 0.92;
                                                             }
-                                                            const finalPriceEur = parseFloat(priceEur.toFixed(2));
+                                                            const finalPriceEur = parseFloat(priceEur.toFixed(2)) || 0;
                                                             return (
                                                               <button
                                                                 key={p.id}
@@ -4983,7 +4986,7 @@ function App() {
                                                                   setContractDraft(prev => {
                                                                     const d = JSON.parse(JSON.stringify(prev));
                                                                     const item = d.sections[si].items[ii];
-                                                                    item.name = p.name.toLocaleUpperCase('tr-TR');
+                                                                    item.name = (p.name || '').toLocaleUpperCase('tr-TR');
                                                                     item.eurUnit = finalPriceEur;
                                                                     if (d.kur != null) {
                                                                       item.tlUnit = finalPriceEur * d.kur;
@@ -5125,7 +5128,7 @@ function App() {
                               <div className="relative flex items-end justify-between gap-4 flex-wrap">
                                 <div>
                                   <div className="text-white/50 text-[11px] uppercase tracking-[0.2em]">Genel Toplam{simActive ? ` · 1 € = ₺${formatPrice(simRateNum)}` : ''}</div>
-                                  <div className="text-white/40 text-xs mt-1">KDV hariç</div>
+                                  <div className="text-white/40 text-xs mt-1">KDV HARİÇ</div>
                                 </div>
                                 <div className="text-right">
                                   <div style={{ fontFamily: "'Fraunces', Georgia, serif" }} className={`text-3xl sm:text-4xl font-semibold tabular-nums ${simActive ? 'text-emerald-300' : ''}`}>₺ {formatPrice(adj(parsed.grandTotal))}</div>
