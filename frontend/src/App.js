@@ -5108,7 +5108,6 @@ function App() {
                               </div>
                               <h2 style={{ fontFamily: "'Fraunces', Georgia, serif" }} className="text-3xl sm:text-4xl font-semibold leading-tight tracking-tight">{viewingContract.customer_name || viewingContract.title}</h2>
                               <p className="text-white/50 text-[11px] uppercase tracking-[0.2em] mt-2">Müşteri Teklif Formu ve Sözleşme</p>
-                              {parsed.subtitle && <p className="text-white/70 text-sm mt-1">{parsed.subtitle}</p>}
                             </div>
                             <div className="text-right text-sm shrink-0 space-y-3">
                               <div>
