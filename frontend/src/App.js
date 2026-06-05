@@ -2025,6 +2025,25 @@ function App() {
     return d;
   };
 
+  // Her sözleşmede standart bulunması gereken alt maddeler (silinebilir)
+  const STANDARD_CONTRACT_NOTES = [
+    ['KDV', 'FİYATLARA KDV DAHİL DEĞİLDİR.'],
+    ['GARANTİ', 'GARANTİ SÜRESİ CİHAZLARDA 2 YIL MOBİLYADA 5 YILDIR.'],
+    ['GÜNCELLENİR', 'FİYATLAR KUR DURUMUNA GÖRE GÜNCELLENİR.'],
+  ];
+  const injectStandardContractNotes = (notes) => {
+    const arr = (notes || []).map((n) => (n == null ? '' : String(n)));
+    const used = new Array(arr.length).fill(false);
+    const result = [];
+    STANDARD_CONTRACT_NOTES.forEach(([kw, text]) => {
+      const idx = arr.findIndex((n, i) => !used[i] && n.toLocaleUpperCase('tr-TR').includes(kw));
+      if (idx >= 0) { result.push(arr[idx]); used[idx] = true; }
+      else { result.push(text); }
+    });
+    arr.forEach((n, i) => { if (!used[i]) result.push(n); });
+    return result;
+  };
+
   // Müşterinin seçtiği renk/malzeme etiketleri — notlardan ayrıştırılır, en üstte kutu olarak gösterilir
   const SPEC_LABELS = ['KUMAŞ', 'MOBİLYA ANA RENK', 'DOLAP KAPAKLARI', 'KÖŞE DÖNÜŞLER', 'MİNDER', 'PARKE'];
   const parseContractSpecs = (notesArray) => {
@@ -2428,7 +2447,7 @@ function App() {
 
       const itemCount = processedSections.reduce((s, sec) => s + sec.items.length, 0);
       const eurTotal = grandTotal != null && kur ? grandTotal / kur : null;
-      return { subtitle: up(subtitle), sections: processedSections, notes, grandTotal, eurTotal, kur, originalKur: kur, itemCount };
+      return { subtitle: up(subtitle), sections: processedSections, notes: injectStandardContractNotes(notes), grandTotal, eurTotal, kur, originalKur: kur, itemCount };
     } catch (e) {
       console.error('Sözleşme ayrıştırma hatası:', e);
       return null;
@@ -5348,23 +5367,59 @@ function App() {
                               <div className="font-bold text-amber-800 text-xs uppercase tracking-wider flex items-center gap-2">
                                 <StickyNote className="w-3.5 h-3.5" /> Notlar & Şartları Düzenle
                               </div>
-                              <div>
-                                <label className="block text-xs font-semibold text-amber-800 mb-1">Notlar & Şartlar (her satır ayrı madde)</label>
-                                <textarea
-                                  value={(parsed.notes || []).join('\n')}
-                                  onChange={(e) => {
+                              <div className="space-y-2">
+                                {(parsed.notes || []).map((n, ni) => (
+                                  <div key={ni} className="flex items-center gap-2">
+                                    <span className="text-amber-400 font-bold">•</span>
+                                    <input
+                                      value={n || ''}
+                                      onChange={(e) => {
+                                        setContractHistory(prev => [...prev, JSON.parse(JSON.stringify(contractDraft))]);
+                                        setContractDraft(prev => {
+                                          const d = JSON.parse(JSON.stringify(prev));
+                                          d.notes[ni] = e.target.value.toLocaleUpperCase('tr-TR');
+                                          return d;
+                                        });
+                                        setContractDirty(true);
+                                      }}
+                                      className="flex-1 h-8 px-2 border border-amber-200 rounded text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setContractHistory(prev => [...prev, JSON.parse(JSON.stringify(contractDraft))]);
+                                        setContractDraft(prev => {
+                                          const d = JSON.parse(JSON.stringify(prev));
+                                          d.notes.splice(ni, 1);
+                                          return d;
+                                        });
+                                        setContractDirty(true);
+                                      }}
+                                      className="text-red-400 hover:text-red-600 shrink-0"
+                                      title="Satırı Sil"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                ))}
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
                                     setContractHistory(prev => [...prev, JSON.parse(JSON.stringify(contractDraft))]);
                                     setContractDraft(prev => {
                                       const d = JSON.parse(JSON.stringify(prev));
-                                      d.notes = e.target.value.toLocaleUpperCase('tr-TR').split('\n');
+                                      if (!Array.isArray(d.notes)) d.notes = [];
+                                      d.notes.push('');
                                       return d;
                                     });
                                     setContractDirty(true);
                                   }}
-                                  rows={5}
-                                  className="w-full p-2 border border-amber-200 rounded text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
-                                  placeholder="Her satıra bir not / şart yazın..."
-                                />
+                                  className="border-amber-300 text-amber-800 hover:bg-amber-100/50 text-xs font-bold"
+                                >
+                                  + Yeni Not Satırı Ekle
+                                </Button>
                               </div>
                               <div className="pt-2 border-t border-amber-200/50">
                                 <label className="block text-xs font-semibold text-amber-800 mb-1">Genel Sözleşme Notu (Serbest Metin)</label>

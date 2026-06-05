@@ -8179,6 +8179,30 @@ def upper_tr(s):
         s = s.replace(k, v)
     return s.upper().strip()
 
+# Her sözleşmede standart olarak bulunması gereken alt maddeler (kw, metin)
+_STANDARD_CONTRACT_NOTES = [
+    ("KDV", "FİYATLARA KDV DAHİL DEĞİLDİR."),
+    ("GARANTİ", "GARANTİ SÜRESİ CİHAZLARDA 2 YIL MOBİLYADA 5 YILDIR."),
+    ("GÜNCELLENİR", "FİYATLAR KUR DURUMUNA GÖRE GÜNCELLENİR."),
+]
+
+def _inject_standard_notes(notes):
+    """Standart alt maddeleri notların en başına ekler (varsa mevcut metni korur, dedup)."""
+    notes = [str(n) for n in (notes or [])]
+    used = [False] * len(notes)
+    result = []
+    for kw, text in _STANDARD_CONTRACT_NOTES:
+        idx = next((i for i, n in enumerate(notes) if not used[i] and kw in upper_tr(n)), -1)
+        if idx >= 0:
+            result.append(notes[idx]); used[idx] = True
+        else:
+            result.append(text)
+    for i, n in enumerate(notes):
+        if not used[i]:
+            result.append(n)
+    return result
+
+
 def parse_contract_data(sheets):
     if not sheets or not isinstance(sheets, list) or len(sheets) == 0:
         return None
@@ -8359,7 +8383,8 @@ def parse_contract_data(sheets):
             counter += 1
             
     eur_total = grand_total / kur if grand_total is not None and kur else None
-    
+    notes = _inject_standard_notes(notes)
+
     return {
         "subtitle": subtitle,
         "sections": processed_sections,
@@ -8677,7 +8702,7 @@ def _seed_contract_data_from_catalog(kur: float):
     return {
         "subtitle": cat.get("subtitle") or "Müşteri Teklif Formu ve Sözleşme",
         "sections": sections,
-        "notes": list(cat.get("notes", [])),
+        "notes": _inject_standard_notes(cat.get("notes", [])),
         "grandTotal": grand_total,
         "eurTotal": round(grand_total / kur, 2) if kur else 0,
         "kur": kur,
