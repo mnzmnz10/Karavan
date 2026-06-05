@@ -8630,10 +8630,63 @@ async def delete_contract(contract_id: str):
     return {"success": True, "message": "Sözleşme silindi"}
 
 
+_CONTRACT_CATALOG_CACHE = None
+
+def _load_contract_catalog():
+    """Sıfırdan sözleşmede önyüklenecek ürün kataloğu (KARAVAN GENEL FİYATLANDIRMA)."""
+    global _CONTRACT_CATALOG_CACHE
+    if _CONTRACT_CATALOG_CACHE is None:
+        try:
+            p = Path(__file__).parent / "data" / "contract_catalog.json"
+            with open(p, "r", encoding="utf-8") as f:
+                _CONTRACT_CATALOG_CACHE = json.load(f)
+        except Exception as e:
+            logger.error(f"Sözleşme kataloğu yüklenemedi: {e}")
+            _CONTRACT_CATALOG_CACHE = {"subtitle": "", "sections": [], "notes": []}
+    return _CONTRACT_CATALOG_CACHE
+
+
+def _seed_contract_data_from_catalog(kur: float):
+    """Katalogdan, verilen kura göre tlUnit/total hesaplanmış sözleşme data'sı üret."""
+    cat = _load_contract_catalog()
+    kur = kur or 35.0
+    sections = []
+    grand_total = 0.0
+    for sec in cat.get("sections", []):
+        items = []
+        for it in sec.get("items", []):
+            eur = float(it.get("eurUnit") or 0)
+            qty = float(it.get("qty") or 0)
+            tl_unit = round(eur * kur, 2)
+            total = round(qty * eur * kur, 2)
+            grand_total += total
+            items.append({
+                "sno": it.get("sno", ""),
+                "name": it.get("name", ""),
+                "qty": it.get("qty", 0),
+                "eurUnit": eur,
+                "tlUnit": tl_unit,
+                "total": total,
+            })
+        sections.append({"name": sec.get("name", ""), "items": items})
+    grand_total = round(grand_total, 2)
+    return {
+        "subtitle": cat.get("subtitle") or "Müşteri Teklif Formu ve Sözleşme",
+        "sections": sections,
+        "notes": list(cat.get("notes", [])),
+        "grandTotal": grand_total,
+        "eurTotal": round(grand_total / kur, 2) if kur else 0,
+        "kur": kur,
+        "originalKur": kur,
+    }
+
+
 @api_router.post("/contracts/new")
 async def create_blank_contract(payload: NewContractPayload):
-    """Sıfırdan boş sözleşme oluştur."""
+    """Sıfırdan sözleşme oluştur — KARAVAN GENEL FİYATLANDIRMA kataloğu önyüklenir."""
     now = datetime.now(timezone.utc)
+    kur = payload.kur or 35.0
+    data = _seed_contract_data_from_catalog(kur)
     doc = {
         "id": str(uuid.uuid4()),
         "title": upper_tr(payload.title)[:300],
@@ -8644,15 +8697,7 @@ async def create_blank_contract(payload: NewContractPayload):
         "file_b64": "",
         "doc_date": now,
         "created_at": now,
-        "data": {
-            "subtitle": "Müşteri Teklif Formu ve Sözleşme",
-            "sections": [],
-            "notes": [],
-            "grandTotal": 0,
-            "eurTotal": 0,
-            "kur": payload.kur or 35.0,
-            "originalKur": payload.kur or 35.0
-        }
+        "data": data,
     }
     await db.contracts.insert_one(doc)
     doc.pop("_id", None)

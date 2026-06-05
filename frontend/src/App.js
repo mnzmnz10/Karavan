@@ -4886,7 +4886,7 @@ function App() {
                     <Button onClick={() => { setContractForm(emptyContractForm); setContractFile(null); setContractUploadOpen(true); }} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl">
                       <Upload className="w-4 h-4 mr-2" /> Sözleşme Yükle
                     </Button>
-                    <Button onClick={() => { setNewContractForm({ title: '', customer_name: '', notes: '', kur: '35.00' }); setNewContractDialogOpen(true); }} className="bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl">
+                    <Button onClick={() => { const liveKur = exchangeRates?.EUR ? parseFloat(exchangeRates.EUR).toFixed(2) : '35.00'; setNewContractForm({ title: '', customer_name: '', notes: '', kur: liveKur }); setNewContractDialogOpen(true); }} className="bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl">
                       <Plus className="w-4 h-4 mr-2" /> Sıfırdan Sözleşme Yap
                     </Button>
                   </div>
@@ -4907,8 +4907,8 @@ function App() {
                             <FileText className="w-5 h-5 text-emerald-600" />
                           </div>
                           <div className="min-w-0 flex-1">
-                            <div className="font-bold text-slate-800 truncate">{c.title}</div>
-                            {c.customer_name && <div className="text-sm text-slate-500 truncate">{c.customer_name}</div>}
+                            <div className="font-bold text-slate-800 truncate" title={c.customer_name || c.title}>{c.customer_name || c.title}</div>
+                            {c.customer_name && <div className="text-sm text-slate-500 truncate" title={c.title}>{c.title}</div>}
                           </div>
                         </div>
                         <div className="text-xs text-slate-400 truncate">{c.file_name}</div>
@@ -5503,16 +5503,16 @@ function App() {
               <DialogHeader>
                 <DialogTitle>Sıfırdan Sözleşme Yap</DialogTitle>
                 <DialogDescription>
-                  Yeni bir boş sözleşme oluşturun. Bölümleri ve kalemleri sonradan manuel olarak ekleyebilirsiniz.
+                  KARAVAN GENEL FİYATLANDIRMA kataloğundaki ürünler otomatik yüklenir; açılan sözleşmede kalemleri ekleyip çıkarabilir, adet ve fiyatları düzenleyebilirsiniz.
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-2">
                 <div>
                   <Label>Sözleşme Başlığı *</Label>
-                  <Input 
-                    value={newContractForm.title} 
-                    onChange={(e) => setNewContractForm({ ...newContractForm, title: e.target.value })} 
-                    placeholder="Örn: 2026 KARAVAN PROJESİ"
+                  <Input
+                    value={newContractForm.title}
+                    onChange={(e) => setNewContractForm({ ...newContractForm, title: e.target.value })}
+                    placeholder="Örn: 15M3 - 17M3 DUCATO VEYA IVECO SEMIENTEGRE"
                   />
                 </div>
                 <div>
@@ -5528,10 +5528,11 @@ function App() {
                   <Input 
                     type="number"
                     step="0.01"
-                    value={newContractForm.kur} 
-                    onChange={(e) => setNewContractForm({ ...newContractForm, kur: e.target.value })} 
+                    value={newContractForm.kur}
+                    onChange={(e) => setNewContractForm({ ...newContractForm, kur: e.target.value })}
                     placeholder="35.00"
                   />
+                  <p className="mt-1 text-[11px] text-slate-400">Güncel kur otomatik geldi — gerekirse manuel düzeltebilirsiniz.</p>
                 </div>
                 <div>
                   <Label>Not (Opsiyonel)</Label>
