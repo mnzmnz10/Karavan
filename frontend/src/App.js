@@ -462,7 +462,7 @@ function App() {
   const [aiPreviewCompanyId, setAiPreviewCompanyId] = useState(''); // önizlemenin ait olduğu firma
   const [aiSaving, setAiSaving] = useState(false); // kaydetme sürüyor mu
   // Servis (tadilat/bakim) sekmesi
-  const emptyServiceForm = { customer_name: '', phone: '', vehicle_brand: '', vehicle_model: '', plate: '', is_trailer: false, arrival_date: '', delivery_date: '', operations: '', items: [], photos: [], notes: '', cost: '', advance_amount: '', warranty_months: '', warranty_note: '', status: 'received' };
+  const emptyServiceForm = { customer_name: '', phone: '', vehicle_brand: '', vehicle_model: '', plate: '', is_trailer: false, arrival_date: '', delivery_date: '', operations: '', items: [], photos: [], notes: '', cost: '', advance_amount: '', payment_account: '', warranty_months: '', warranty_note: '', status: 'received' };
   const [services, setServices] = useState([]);
   const [serviceForm, setServiceForm] = useState(emptyServiceForm);
   const [serviceEditingId, setServiceEditingId] = useState(null); // düzenlenen kayıt id (null = yeni)
@@ -1785,6 +1785,7 @@ function App() {
       notes: svc.notes || '',
       cost: svc.cost != null ? String(svc.cost) : '',
       advance_amount: svc.advance_amount != null ? String(svc.advance_amount) : '',
+      payment_account: svc.payment_account || '',
       warranty_months: svc.warranty_months != null ? String(svc.warranty_months) : '',
       warranty_note: svc.warranty_note || '',
       status: svc.status || 'received'
@@ -1811,6 +1812,7 @@ function App() {
         ? itemsCost
         : (serviceForm.cost !== '' && serviceForm.cost != null ? parseFloat(serviceForm.cost) : null),
       advance_amount: serviceForm.advance_amount !== '' && serviceForm.advance_amount != null ? parseFloat(serviceForm.advance_amount) : 0,
+      payment_account: serviceForm.payment_account || null,
       warranty_months: serviceForm.warranty_months !== '' && serviceForm.warranty_months != null ? parseInt(serviceForm.warranty_months, 10) : null,
       warranty_note: serviceForm.warranty_note || null,
       arrival_date: serviceForm.arrival_date || null,
@@ -8948,6 +8950,17 @@ function App() {
                           </div>
                         );
                       })()}
+                      <div className="mt-4">
+                        <Label>Ödeme Hesabı / Notu <span className="font-normal text-slate-400">— sadece sizde görünür, PDF'te yer almaz</span></Label>
+                        <textarea
+                          value={serviceForm.payment_account}
+                          onChange={(e) => setServiceForm({ ...serviceForm, payment_account: e.target.value })}
+                          rows={2}
+                          placeholder="örn. Mehmet Garanti hesabı, Nakit, IBAN ..."
+                          className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        />
+                        <p className="mt-1 text-[11px] text-slate-400">Avans ve ödeme hesabı bilgisi teslim formuna (PDF) yansımaz.</p>
+                      </div>
                     </div>
 
                     {/* Garanti */}

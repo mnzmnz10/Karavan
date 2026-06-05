@@ -549,7 +549,8 @@ class ServiceRecord(BaseModel):
     photos: Optional[List[str]] = []                            # Fotoğraflar (base64 data URL)
     notes: Optional[str] = Field(None, max_length=5000)          # Notlar
     cost: Optional[float] = Field(None, ge=0)                    # Toplam tutar (kalem yoksa manuel)
-    advance_amount: Optional[float] = Field(0, ge=0)            # Alınan avans (₺)
+    advance_amount: Optional[float] = Field(0, ge=0)            # Alınan avans (₺) — sadece sistemde
+    payment_account: Optional[str] = Field(None, max_length=500) # Ödeme hesabı/notu (sadece sistemde, PDF'te yok)
     warranty_months: Optional[int] = Field(None, ge=0)         # Garanti süresi (ay)
     warranty_note: Optional[str] = Field(None, max_length=1000) # Garanti kapsam notu
     status: str = "received"                                     # received | in_progress | delivered
@@ -570,6 +571,7 @@ class ServiceCreate(BaseModel):
     notes: Optional[str] = Field(None, max_length=5000)
     cost: Optional[float] = Field(None, ge=0)
     advance_amount: Optional[float] = Field(0, ge=0)
+    payment_account: Optional[str] = Field(None, max_length=500)
     warranty_months: Optional[int] = Field(None, ge=0)
     warranty_note: Optional[str] = Field(None, max_length=1000)
     status: str = "received"
@@ -589,6 +591,7 @@ class ServiceUpdate(BaseModel):
     notes: Optional[str] = Field(None, max_length=5000)
     cost: Optional[float] = Field(None, ge=0)
     advance_amount: Optional[float] = Field(None, ge=0)
+    payment_account: Optional[str] = Field(None, max_length=500)
     warranty_months: Optional[int] = Field(None, ge=0)
     warranty_note: Optional[str] = Field(None, max_length=1000)
     status: Optional[str] = None
@@ -8078,19 +8081,13 @@ def _service_items_total(items):
 
 
 async def _next_service_order_no():
-    """Sırayla artan iş emri numarası (İŞ-0001)."""
-    from pymongo import ReturnDocument
-    try:
-        res = await db.counters.find_one_and_update(
-            {"_id": "service_order"},
-            {"$inc": {"seq": 1}},
-            upsert=True,
-            return_document=ReturnDocument.AFTER,
-        )
-        seq = (res or {}).get("seq", 1)
-    except Exception:
-        seq = await db.services.count_documents({}) + 1
-    return f"İŞ-{int(seq):04d}"
+    """Rastgele iş emri numarası (İŞ-XXXXXX), çakışmayana kadar dener."""
+    import random
+    for _ in range(10):
+        no = f"İŞ-{random.randint(100000, 999999)}"
+        if not await db.services.find_one({"order_no": no}):
+            return no
+    return f"İŞ-{random.randint(100000, 999999)}"
 
 
 @api_router.post("/services")
@@ -9387,39 +9384,22 @@ class PDFServiceGenerator(PDFContractGenerator):
             story.append(items_tbl)
             story.append(Spacer(1, 12))
 
-        # ---- Ödeme özeti (Toplam / Avans / Kalan) ----
+        # ---- Toplam tutar paneli (avans/kalan PDF'te GÖSTERİLMEZ — sadece sistemde) ----
         total = svc.get("cost")
         if total is None:
             total = _service_items_total(items)
         total = float(total or 0)
-        advance = float(svc.get("advance_amount") or 0)
-        remaining = max(total - advance, 0)
-        pay_label = ParagraphStyle('SvcPayLbl', parent=self.styles['Normal'], fontName=self.get_font_name(is_bold=True), fontSize=9, textColor=colors.HexColor('#475569'), alignment=TA_LEFT, leading=12)
-        pay_val = ParagraphStyle('SvcPayVal', parent=self.styles['Normal'], fontName=self.get_font_name(is_bold=True), fontSize=11, textColor=colors.HexColor('#1B3A5C'), alignment=TA_RIGHT, leading=14)
-        pay_rows = [
-            [Paragraph("Toplam Tutar", pay_label), Paragraph(fmt(total), pay_val)],
-            [Paragraph("Alınan Avans", pay_label), Paragraph(fmt(advance), pay_val)],
-        ]
-        pay_tbl = PDFTable(pay_rows, colWidths=[9.0*cm, 9.0*cm])
-        pay_tbl.setStyle(TableStyle([
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('LINEBELOW', (0,0), (-1,-1), 0.5, colors.HexColor('#E5EAF0')),
-            ('TOPPADDING', (0,0), (-1,-1), 7), ('BOTTOMPADDING', (0,0), (-1,-1), 7),
-            ('LEFTPADDING', (0,0), (-1,-1), 14), ('RIGHTPADDING', (0,0), (-1,-1), 14),
-        ]))
-        remaining_left = [Paragraph("KALAN TUTAR", self.gt_label_style), Paragraph("Teslimde tahsil edilecek", self.gt_sub_style)]
-        remaining_right = [Paragraph(f"<b>{fmt(remaining)}</b>", self.gt_amount_style)]
-        rem_tbl = PDFTable([[remaining_left, remaining_right]], colWidths=[8.3*cm, 9.7*cm])
-        rem_tbl.setStyle(TableStyle([
+        total_left = [Paragraph("TOPLAM TUTAR", self.gt_label_style), Paragraph("KDV Hariç", self.gt_sub_style)]
+        total_right = [Paragraph(f"<b>{fmt(total)}</b>", self.gt_amount_style)]
+        total_tbl = PDFTable([[total_left, total_right]], colWidths=[8.3*cm, 9.7*cm])
+        total_tbl.setStyle(TableStyle([
             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
             ('TOPPADDING', (0,0), (-1,-1), 14), ('BOTTOMPADDING', (0,0), (-1,-1), 14),
             ('LEFTPADDING', (0,0), (0,-1), 18), ('LEFTPADDING', (1,0), (1,-1), 0),
             ('RIGHTPADDING', (0,0), (0,-1), 8), ('RIGHTPADDING', (1,0), (1,-1), 18),
             ('LINEBEFORE', (0,0), (0,-1), 4, colors.HexColor('#10B981')),
         ]))
-        story.append(pay_tbl)
-        story.append(Spacer(1, 8))
-        story.append(RoundedCard([rem_tbl], width=18.0*cm, bg_color=colors.HexColor('#1B3A5C'), corner_radius=8, padding=0))
+        story.append(RoundedCard([total_tbl], width=18.0*cm, bg_color=colors.HexColor('#1B3A5C'), corner_radius=8, padding=0))
         story.append(Spacer(1, 14))
 
         # ---- Garanti ----
