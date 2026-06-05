@@ -484,7 +484,6 @@ function App() {
   const [contractDraft, setContractDraft] = useState(null); // düzenlenen taslak yapı
   const [contractDirty, setContractDirty] = useState(false); // değişiklik yapıldı mı
   const [contractDataSaving, setContractDataSaving] = useState(false);
-  const [contractTwoCol, setContractTwoCol] = useState(true); // uzun sözleşmelerde iki sütun
   const [contractEditOpen, setContractEditOpen] = useState(false);
   const [contractEditId, setContractEditId] = useState(null);
   const [contractEditForm, setContractEditForm] = useState({ title: '', customer_name: '', notes: '' });
@@ -4595,11 +4594,6 @@ function App() {
                               </Button>
                             )}
                             {parsed && !contractRawView && (
-                              <Button variant="outline" size="sm" onClick={() => setContractTwoCol((v) => !v)} className="hidden lg:inline-flex">
-                                {contractTwoCol ? 'Tek sütun' : 'İki sütun'}
-                              </Button>
-                            )}
-                            {parsed && !contractRawView && (
                               <Button variant="outline" size="sm" onClick={() => enterContractEdit(baseData)} className="border-emerald-300 text-emerald-700 hover:bg-emerald-50">
                                 <Edit className="w-4 h-4 mr-2" /> Kalemleri Düzenle
                               </Button>
@@ -4620,7 +4614,7 @@ function App() {
 
                     {parsed && !contractRawView ? (
                       /* ===== TASARIMLI SÖZLEŞME GÖRÜNÜMÜ ===== */
-                      <div className={`${contractTwoCol ? 'max-w-6xl' : 'max-w-4xl'} mx-auto bg-white rounded-2xl ring-1 ring-slate-200/70 overflow-hidden shadow-[0_18px_50px_-20px_rgba(27,58,92,0.45)]`}>
+                      <div className="max-w-5xl mx-auto bg-white rounded-2xl ring-1 ring-slate-200/70 overflow-hidden shadow-[0_18px_50px_-20px_rgba(27,58,92,0.45)]">
                         {/* Başlık bandı */}
                         <div className="relative bg-[#1B3A5C] text-white px-6 sm:px-10 pt-8 pb-7 overflow-hidden">
                           <div className="absolute inset-0 opacity-[0.06]" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '22px 22px' }} />
@@ -4655,69 +4649,58 @@ function App() {
                           )}
                         </div>
 
-                        {/* Bölümler + kalemler */}
-                        <div className={`px-4 sm:px-8 py-7 bg-[#FBFCFD] ${contractTwoCol ? 'lg:columns-2 lg:gap-8' : 'space-y-7'}`}>
-                          {parsed.sections.map((sec, si) => {
-                            const subtotal = sec.items.reduce((s, it) => s + (it.total || 0), 0);
-                            return (
-                              <section key={si} className={contractTwoCol ? 'break-inside-avoid mb-7' : ''}>
-                                <div className="flex items-center gap-3 mb-3">
-                                  <span className="flex items-center justify-center w-7 h-7 rounded-lg bg-[#1B3A5C] text-white text-xs font-bold tabular-nums shrink-0">{String(si + 1).padStart(2, '0')}</span>
-                                  <h3 className="font-bold text-[#1B3A5C] uppercase text-[13px] tracking-[0.12em]">{sec.name}</h3>
-                                  <div className="flex-1 h-px bg-slate-200" />
-                                </div>
-                                <div className="rounded-xl ring-1 ring-slate-200 bg-white overflow-x-auto">
-                                  <table className={`w-full text-sm ${contractTwoCol ? '' : 'min-w-[560px]'}`}>
-                                    <thead>
-                                      <tr className="text-[10px] uppercase tracking-wider text-slate-400 border-b border-slate-100">
-                                        <th className="px-3 py-2 text-left font-semibold w-8">#</th>
-                                        <th className="px-2 py-2 text-left font-semibold">İşlem</th>
-                                        <th className="px-2 py-2 text-center font-semibold w-14">Adet</th>
-                                        <th className="px-2 py-2 text-right font-semibold w-24">Birim €</th>
-                                        <th className="px-2 py-2 text-right font-semibold w-28">Birim ₺</th>
-                                        <th className="px-3 py-2 text-right font-semibold w-32">Tutar ₺</th>
+                        {/* Bölümler + kalemler (Excel benzeri tek liste tablosu) */}
+                        <div className="px-4 sm:px-8 py-6 bg-white">
+                          <div className="ring-1 ring-slate-300 rounded-lg overflow-x-auto">
+                            <table className="w-full border-collapse text-[13px] min-w-[620px]">
+                              <thead>
+                                <tr className="bg-[#1B3A5C] text-white text-[11px] uppercase tracking-wider">
+                                  <th className="px-2 py-1.5 text-left font-semibold border border-[#2E5A86] w-8">#</th>
+                                  <th className="px-2 py-1.5 text-left font-semibold border border-[#2E5A86]">İşlem</th>
+                                  <th className="px-2 py-1.5 text-center font-semibold border border-[#2E5A86] w-12">Adet</th>
+                                  <th className="px-2 py-1.5 text-right font-semibold border border-[#2E5A86] w-24">Birim €</th>
+                                  <th className="px-2 py-1.5 text-right font-semibold border border-[#2E5A86] w-24">Birim ₺</th>
+                                  <th className="px-2 py-1.5 text-right font-semibold border border-[#2E5A86] w-28">Tutar ₺</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {parsed.sections.map((sec, si) => (
+                                  <React.Fragment key={si}>
+                                    <tr className="bg-slate-100">
+                                      <td colSpan={6} className="px-2 py-1 font-bold text-[#1B3A5C] uppercase text-[12px] tracking-wide border border-slate-300">
+                                        {String(si + 1).padStart(2, '0')} · {sec.name}
+                                      </td>
+                                    </tr>
+                                    {sec.items.map((it, ii) => (
+                                      <tr key={ii} className="hover:bg-emerald-50/40">
+                                        <td className="px-2 py-1 text-slate-400 tabular-nums border border-slate-200 align-top">{it.sno}</td>
+                                        <td className="px-2 py-1 text-slate-700 border border-slate-200">
+                                          {contractEditMode ? (
+                                            <div className="flex items-center gap-1.5">
+                                              <input value={it.name || ''} onChange={(e) => updateDraftItem(si, ii, 'name', e.target.value)} className="flex-1 min-w-[140px] h-7 px-1.5 border border-slate-200 rounded text-[13px] focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                                              <button type="button" onClick={() => deleteDraftItem(si, ii)} className="text-red-400 hover:text-red-600 shrink-0" title="Kalemi sil"><Trash2 className="w-3.5 h-3.5" /></button>
+                                            </div>
+                                          ) : it.name}
+                                        </td>
+                                        <td className="px-2 py-1 text-center text-slate-500 tabular-nums border border-slate-200">
+                                          {contractEditMode ? (
+                                            <input type="number" step="1" min="0" value={it.qty ?? ''} onChange={(e) => updateDraftItem(si, ii, 'qty', e.target.value)} className="w-12 h-7 px-1 border border-slate-200 rounded text-[13px] text-center tabular-nums focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                                          ) : (it.qty && it.qty !== '0' ? it.qty : '')}
+                                        </td>
+                                        <td className="px-2 py-1 text-right text-slate-500 tabular-nums border border-slate-200">
+                                          {contractEditMode ? (
+                                            <input type="number" step="0.01" min="0" value={it.eurUnit ?? ''} onChange={(e) => updateDraftItem(si, ii, 'eurUnit', e.target.value === '' ? '' : parseFloat(e.target.value))} className="w-20 h-7 px-1 border border-slate-200 rounded text-[13px] text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                                          ) : (it.eurUnit != null ? `€ ${formatPrice(it.eurUnit)}` : '')}
+                                        </td>
+                                        <td className={`px-2 py-1 text-right tabular-nums border border-slate-200 ${simActive ? 'text-emerald-700' : 'text-slate-500'}`}>{it.tlUnit != null ? `₺ ${formatPrice(adj(it.tlUnit))}` : ''}</td>
+                                        <td className={`px-2 py-1 text-right font-semibold tabular-nums border border-slate-200 ${simActive ? 'text-emerald-700' : 'text-[#1B3A5C]'}`}>{it.total != null ? `₺ ${formatPrice(adj(it.total))}` : ''}</td>
                                       </tr>
-                                    </thead>
-                                    <tbody>
-                                      {sec.items.map((it, ii) => (
-                                        <tr key={ii} className="border-b border-slate-50 last:border-0 hover:bg-emerald-50/30 transition-colors">
-                                          <td className="px-3 py-2.5 text-slate-300 tabular-nums align-top">{it.sno}</td>
-                                          <td className="px-2 py-2.5 text-slate-700">
-                                            {contractEditMode ? (
-                                              <div className="flex items-center gap-1.5">
-                                                <input value={it.name || ''} onChange={(e) => updateDraftItem(si, ii, 'name', e.target.value)} className="flex-1 min-w-[150px] h-8 px-2 border border-slate-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500" />
-                                                <button type="button" onClick={() => deleteDraftItem(si, ii)} className="text-red-400 hover:text-red-600 shrink-0" title="Kalemi sil"><Trash2 className="w-3.5 h-3.5" /></button>
-                                              </div>
-                                            ) : it.name}
-                                          </td>
-                                          <td className="px-2 py-2.5 text-center text-slate-500 tabular-nums">
-                                            {contractEditMode ? (
-                                              <input type="number" step="1" min="0" value={it.qty ?? ''} onChange={(e) => updateDraftItem(si, ii, 'qty', e.target.value)} className="w-14 h-8 px-1 border border-slate-200 rounded text-sm text-center tabular-nums focus:outline-none focus:ring-1 focus:ring-emerald-500" />
-                                            ) : (it.qty && it.qty !== '0' ? it.qty : '—')}
-                                          </td>
-                                          <td className="px-2 py-2.5 text-right text-slate-500 tabular-nums">
-                                            {contractEditMode ? (
-                                              <input type="number" step="0.01" min="0" value={it.eurUnit ?? ''} onChange={(e) => updateDraftItem(si, ii, 'eurUnit', e.target.value === '' ? '' : parseFloat(e.target.value))} className="w-20 h-8 px-1 border border-slate-200 rounded text-sm text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-emerald-500" />
-                                            ) : (it.eurUnit != null ? `€ ${formatPrice(it.eurUnit)}` : '')}
-                                          </td>
-                                          <td className={`px-2 py-2.5 text-right tabular-nums ${simActive ? 'text-emerald-700' : 'text-slate-500'}`}>{it.tlUnit != null ? `₺ ${formatPrice(adj(it.tlUnit))}` : ''}</td>
-                                          <td className={`px-3 py-2.5 text-right font-semibold tabular-nums ${simActive ? 'text-emerald-700' : 'text-[#1B3A5C]'}`}>{it.total != null ? `₺ ${formatPrice(adj(it.total))}` : ''}</td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                    {sec.items.length > 1 && (
-                                      <tfoot>
-                                        <tr className="bg-slate-50/60">
-                                          <td colSpan={5} className="px-3 py-2 text-right text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Ara Toplam</td>
-                                          <td className={`px-3 py-2 text-right font-bold tabular-nums whitespace-nowrap ${simActive ? 'text-emerald-700' : 'text-slate-700'}`}>₺ {formatPrice(adj(subtotal))}</td>
-                                        </tr>
-                                      </tfoot>
-                                    )}
-                                  </table>
-                                </div>
-                              </section>
-                            );
-                          })}
+                                    ))}
+                                  </React.Fragment>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
                         </div>
 
                         {/* Kur simülasyonu (fiyatların hemen üstünde) */}
