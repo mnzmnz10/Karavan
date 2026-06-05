@@ -476,6 +476,7 @@ function App() {
   const [contracts, setContracts] = useState([]);
   const [contractFile, setContractFile] = useState(null);
   const [contractDragOver, setContractDragOver] = useState(false);
+  const [addonSearch, setAddonSearch] = useState({ idx: -1, query: '' }); // ilave ürün arama dropdown'u
   const [contractForm, setContractForm] = useState(emptyContractForm);
   const [contractUploadOpen, setContractUploadOpen] = useState(false);
   const [contractUploading, setContractUploading] = useState(false);
@@ -2094,6 +2095,14 @@ function App() {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [contractEditMode, contractHistory]);
+
+  // Sözleşme taslağını geçmişe atıp güvenle değiştir (finansal bölümler için)
+  const mutateContractDraft = (fn) => {
+    setContractHistory((prev) => [...prev, JSON.parse(JSON.stringify(contractDraft))]);
+    setContractDraft((prev) => { const d = JSON.parse(JSON.stringify(prev)); fn(d); return d; });
+    setContractDirty(true);
+  };
+  const newId = () => Math.random().toString(36).slice(2, 10);
 
   const updateDraftItem = (si, ii, field, value) => {
     const finalVal = field === 'name' ? value.toLocaleUpperCase('tr-TR') : value;
@@ -5008,6 +5017,27 @@ function App() {
                 const specParse = parsed.specs ? { specs: parsed.specs, remaining: parsed.notes || [] } : parseContractSpecs(parsed.notes || []);
                 const contractSpecs = specParse.specs;
                 const contractDisplayNotes = specParse.remaining;
+                // --- Finansal hesaplama (ilaveler, fatura farkı, tahsilat, kalan) ---
+                const liveRate = parseFloat(exchangeRates?.EUR) || (parsed && parsed.kur) || 0;
+                const fin = (() => {
+                  const cr = parseFloat(parsed?.kur) || 0;
+                  const toEUR = (amount, currency, rate) => {
+                    const a = parseFloat(amount); if (isNaN(a)) return 0;
+                    if (currency === 'TRY') { const r = parseFloat(rate) || cr || liveRate || 1; return r ? a / r : 0; }
+                    return a;
+                  };
+                  const productsEUR = parsed?.eurTotal != null ? (parseFloat(parsed.eurTotal) || 0) : (parsed?.grandTotal && cr ? parsed.grandTotal / cr : 0);
+                  const addons = parsed?.addons || [];
+                  const addonsEUR = addons.reduce((s, a) => s + ((a.amount == null || a.amount === '') ? 0 : toEUR(a.amount, a.currency, a.rate)), 0);
+                  const inv = parsed?.invoiceDiff;
+                  const invEUR = (inv && inv.amount != null && inv.amount !== '') ? toEUR(inv.amount, inv.currency, inv.rate) : 0;
+                  const grandEUR = productsEUR + addonsEUR + invEUR;
+                  const collections = parsed?.collections || [];
+                  const collectedEUR = collections.reduce((s, c) => s + toEUR(c.amount, c.currency, c.rate), 0);
+                  const remainingEUR = grandEUR - collectedEUR;
+                  const pct = grandEUR > 0 ? Math.max(0, Math.min(100, Math.round(collectedEUR / grandEUR * 100))) : 0;
+                  return { cr, toEUR, productsEUR, addonsEUR, invEUR, grandEUR, collectedEUR, remainingEUR, pct };
+                })();
                 const origKur = parsed && parsed.kur != null ? parsed.originalKur != null ? parsed.originalKur : parsed.kur : null;
                 const currentKur = parsed && parsed.kur != null ? parsed.kur : null;
                 const simRateNum = parseFloat(contractSimRate);
@@ -5331,6 +5361,217 @@ function App() {
                             </div>
                           </div>
                         )}
+
+                        {/* ===== Finansal: Teslim / İlaveler / Ödeme Planı / Tahsilatlar / Kalan ===== */}
+                        <div className="px-4 sm:px-8 pb-6 bg-[#FBFCFD] space-y-5">
+                          {/* Teslim Tarihi */}
+                          <div className="flex items-center gap-3 flex-wrap text-sm">
+                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5"><History className="w-3.5 h-3.5" /> Teslim Tarihi</span>
+                            {contractEditMode ? (
+                              <input type="date" value={parsed.deliveryDate || ''} onChange={(e) => mutateContractDraft((d) => { d.deliveryDate = e.target.value; })} className="h-8 px-2 border border-slate-200 rounded text-sm bg-white" />
+                            ) : (
+                              <span className="font-semibold text-slate-800">{parsed.deliveryDate ? new Date(parsed.deliveryDate).toLocaleDateString('tr-TR') : '—'}</span>
+                            )}
+                          </div>
+
+                          {/* İlaveler */}
+                          {(contractEditMode || (parsed.addons || []).length > 0) && (
+                            <div className="rounded-xl border border-slate-200 bg-white p-4">
+                              <div className="flex items-center justify-between mb-3">
+                                <div className="font-bold text-slate-700 text-xs uppercase tracking-wider flex items-center gap-2"><PlusCircle className="w-3.5 h-3.5 text-emerald-600" /> İlaveler</div>
+                                {contractEditMode && (
+                                  <Button type="button" size="sm" variant="outline" onClick={() => mutateContractDraft((d) => { if (!d.addons) d.addons = []; d.addons.push({ id: newId(), name: '', amount: '', currency: 'EUR', rate: d.kur, status: 'priced' }); })} className="h-8 text-xs font-bold border-emerald-200 text-emerald-700 hover:bg-emerald-50"><Plus className="w-3.5 h-3.5 mr-1" /> İlave Ekle</Button>
+                                )}
+                              </div>
+                              {(parsed.addons || []).length === 0 ? (
+                                <p className="text-xs text-slate-400 italic">İlave yok. Tutarsız (fiyat belirlenecek) ilaveler de eklenebilir.</p>
+                              ) : (
+                                <div className="space-y-1.5">
+                                  {(parsed.addons || []).map((a, ai) => {
+                                    const aEUR = (a.amount == null || a.amount === '') ? null : fin.toEUR(a.amount, a.currency, a.rate);
+                                    if (!contractEditMode) {
+                                      return (
+                                        <div key={a.id || ai} className="flex items-center justify-between gap-2 text-sm border-b border-slate-100 last:border-0 py-1">
+                                          <span className="text-slate-700">{a.name || '—'}{(a.amount == null || a.amount === '') ? <span className="text-amber-600 text-xs italic ml-1">(fiyat belirlenecek)</span> : ''}</span>
+                                          <span className="font-semibold text-slate-800 tabular-nums shrink-0">{aEUR != null ? `€ ${formatPrice(aEUR)}` : '—'}</span>
+                                        </div>
+                                      );
+                                    }
+                                    return (
+                                      <div key={a.id || ai} className="flex items-center gap-1.5 flex-wrap">
+                                        <div className="relative flex-1 min-w-[150px]">
+                                          <input
+                                            value={a.name || ''}
+                                            onChange={(e) => { mutateContractDraft((d) => { d.addons[ai].name = e.target.value.toLocaleUpperCase('tr-TR'); }); setAddonSearch({ idx: ai, query: e.target.value }); }}
+                                            onFocus={() => setAddonSearch({ idx: ai, query: a.name || '' })}
+                                            onBlur={() => setTimeout(() => setAddonSearch({ idx: -1, query: '' }), 200)}
+                                            placeholder="İlave adı (katalogdan ara veya yaz)"
+                                            className="w-full h-8 px-2 border border-slate-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                                          />
+                                          {addonSearch.idx === ai && (() => {
+                                            const q = (addonSearch.query || '').toLocaleLowerCase('tr-TR').trim();
+                                            if (!q) return null;
+                                            const sug = (products || []).filter((p) => ((p.name || '').toLocaleLowerCase('tr-TR').includes(q) || (p.brand || '').toLocaleLowerCase('tr-TR').includes(q))).slice(0, 50);
+                                            if (sug.length === 0) return null;
+                                            return (
+                                              <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto text-left">
+                                                {sug.map((p) => {
+                                                  const tl = parseFloat(p.list_price_try) || 0;
+                                                  return (
+                                                    <button key={p.id} type="button" onMouseDown={() => { mutateContractDraft((d) => { d.addons[ai].name = (p.name || '').toLocaleUpperCase('tr-TR'); d.addons[ai].amount = Math.round(tl); d.addons[ai].currency = 'TRY'; d.addons[ai].rate = d.kur; d.addons[ai].status = 'priced'; }); setAddonSearch({ idx: -1, query: '' }); }} className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 border-b border-slate-100 last:border-none flex items-center justify-between gap-1">
+                                                      <span className="font-medium truncate">{p.brand ? `[${p.brand}] ` : ''}{p.name}</span>
+                                                      <span className="text-emerald-600 font-bold shrink-0">₺{formatPrice(tl)}</span>
+                                                    </button>
+                                                  );
+                                                })}
+                                              </div>
+                                            );
+                                          })()}
+                                        </div>
+                                        <input type="number" step="0.01" min="0" value={a.amount ?? ''} onChange={(e) => mutateContractDraft((d) => { d.addons[ai].amount = e.target.value; })} placeholder="boş=fiyatsız" className="w-24 h-8 px-1 border border-slate-200 rounded text-sm text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                                        <select value={a.currency || 'EUR'} onChange={(e) => mutateContractDraft((d) => { d.addons[ai].currency = e.target.value; })} className="h-8 px-1 border border-slate-200 rounded text-sm bg-white">
+                                          <option value="EUR">€</option>
+                                          <option value="TRY">₺</option>
+                                        </select>
+                                        {a.currency === 'TRY' && (
+                                          <input type="number" step="0.01" min="0" value={a.rate ?? ''} onChange={(e) => mutateContractDraft((d) => { d.addons[ai].rate = e.target.value; })} title="Kur" placeholder="kur" className="w-16 h-8 px-1 border border-slate-200 rounded text-sm text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                                        )}
+                                        <span className="text-xs text-slate-500 tabular-nums w-20 text-right">{aEUR != null ? `≈€ ${formatPrice(aEUR)}` : '—'}</span>
+                                        <button type="button" onClick={() => mutateContractDraft((d) => { d.addons.splice(ai, 1); })} className="text-rose-400 hover:text-rose-600 shrink-0"><Trash2 className="w-4 h-4" /></button>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Ödeme Planı + Tahsilatlar */}
+                          {(contractEditMode || (parsed.paymentPlan || []).length > 0 || (parsed.collections || []).length > 0) && (
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                              {/* Ödeme Planı */}
+                              {(contractEditMode || (parsed.paymentPlan || []).length > 0) && (
+                                <div className="rounded-xl border border-slate-200 bg-white p-4">
+                                  <div className="flex items-center justify-between mb-3">
+                                    <div className="font-bold text-slate-700 text-xs uppercase tracking-wider flex items-center gap-2"><History className="w-3.5 h-3.5 text-blue-600" /> Ödeme Planı</div>
+                                    {contractEditMode && (
+                                      <Button type="button" size="sm" variant="outline" onClick={() => mutateContractDraft((d) => { if (!d.paymentPlan) d.paymentPlan = []; d.paymentPlan.push({ id: newId(), date: '', description: '', amount: '', currency: 'EUR' }); })} className="h-8 text-xs font-bold border-blue-200 text-blue-700 hover:bg-blue-50"><Plus className="w-3.5 h-3.5 mr-1" /> Satır</Button>
+                                    )}
+                                  </div>
+                                  {(parsed.paymentPlan || []).length === 0 ? (
+                                    <p className="text-xs text-slate-400 italic">Planlanan ödeme yok.</p>
+                                  ) : (
+                                    <div className="space-y-1.5">
+                                      {(parsed.paymentPlan || []).map((p, pi) => {
+                                        const paid = (parsed.collections || []).length > 0 && fin.collectedEUR >= fin.toEUR(p.amount, p.currency, p.rate) * (pi + 1) - 0.01;
+                                        const overdue = p.date && !paid && new Date(p.date) < new Date(new Date().toDateString());
+                                        if (!contractEditMode) {
+                                          return (
+                                            <div key={p.id || pi} className="flex items-center justify-between gap-2 text-sm border-b border-slate-100 last:border-0 py-1">
+                                              <div className="min-w-0"><span className="text-slate-500 text-xs">{p.date ? new Date(p.date).toLocaleDateString('tr-TR') : ''}</span> <span className="text-slate-700">{p.description}</span></div>
+                                              <div className="flex items-center gap-2 shrink-0">
+                                                {overdue && <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded">GECİKTİ</span>}
+                                                <span className="font-semibold tabular-nums">{p.currency === 'TRY' ? '₺' : '€'} {formatPrice(p.amount)}</span>
+                                              </div>
+                                            </div>
+                                          );
+                                        }
+                                        return (
+                                          <div key={p.id || pi} className="flex items-center gap-1.5">
+                                            <input type="date" value={p.date || ''} onChange={(e) => mutateContractDraft((d) => { d.paymentPlan[pi].date = e.target.value; })} className="h-8 px-1 border border-slate-200 rounded text-xs" />
+                                            <input value={p.description || ''} onChange={(e) => mutateContractDraft((d) => { d.paymentPlan[pi].description = e.target.value.toLocaleUpperCase('tr-TR'); })} placeholder="açıklama" className="flex-1 min-w-0 h-8 px-2 border border-slate-200 rounded text-sm" />
+                                            <input type="number" value={p.amount ?? ''} onChange={(e) => mutateContractDraft((d) => { d.paymentPlan[pi].amount = e.target.value; })} placeholder="tutar" className="w-20 h-8 px-1 border border-slate-200 rounded text-sm text-right tabular-nums" />
+                                            <select value={p.currency || 'EUR'} onChange={(e) => mutateContractDraft((d) => { d.paymentPlan[pi].currency = e.target.value; })} className="h-8 px-1 border border-slate-200 rounded text-sm bg-white"><option value="EUR">€</option><option value="TRY">₺</option></select>
+                                            <button type="button" onClick={() => mutateContractDraft((d) => { d.paymentPlan.splice(pi, 1); })} className="text-rose-400 hover:text-rose-600 shrink-0"><Trash2 className="w-4 h-4" /></button>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Tahsilatlar */}
+                              {(contractEditMode || (parsed.collections || []).length > 0) && (
+                                <div className="rounded-xl border border-slate-200 bg-white p-4">
+                                  <div className="flex items-center justify-between mb-3">
+                                    <div className="font-bold text-slate-700 text-xs uppercase tracking-wider flex items-center gap-2"><DollarSign className="w-3.5 h-3.5 text-emerald-600" /> Tahsilatlar</div>
+                                    {contractEditMode && (
+                                      <Button type="button" size="sm" variant="outline" onClick={() => mutateContractDraft((d) => { if (!d.collections) d.collections = []; d.collections.push({ id: newId(), date: '', description: '', amount: '', currency: 'EUR', rate: d.kur }); })} className="h-8 text-xs font-bold border-emerald-200 text-emerald-700 hover:bg-emerald-50"><Plus className="w-3.5 h-3.5 mr-1" /> Satır</Button>
+                                    )}
+                                  </div>
+                                  {(parsed.collections || []).length === 0 ? (
+                                    <p className="text-xs text-slate-400 italic">Tahsilat yok.</p>
+                                  ) : (
+                                    <div className="space-y-1.5">
+                                      {(() => { let run = fin.grandEUR; return (parsed.collections || []).map((c, ci) => {
+                                        const cEUR = fin.toEUR(c.amount, c.currency, c.rate);
+                                        run -= cEUR;
+                                        if (!contractEditMode) {
+                                          return (
+                                            <div key={c.id || ci} className="text-sm border-b border-slate-100 last:border-0 py-1">
+                                              <div className="flex items-center justify-between gap-2">
+                                                <span className="text-slate-500 text-xs">{c.date ? new Date(c.date).toLocaleDateString('tr-TR') : ''} {c.description}</span>
+                                                <span className="font-semibold tabular-nums shrink-0">{c.currency === 'TRY' ? `₺ ${formatPrice(c.amount)}` : `€ ${formatPrice(c.amount)}`}</span>
+                                              </div>
+                                              <div className="flex items-center justify-between text-[11px] text-slate-400">
+                                                <span>{c.currency === 'TRY' ? `kur ${c.rate || fin.cr} → ≈€ ${formatPrice(cEUR)}` : ''}</span>
+                                                <span>kalan ≈€ {formatPrice(Math.max(run, 0))}</span>
+                                              </div>
+                                            </div>
+                                          );
+                                        }
+                                        return (
+                                          <div key={c.id || ci} className="flex items-center gap-1.5">
+                                            <input type="date" value={c.date || ''} onChange={(e) => mutateContractDraft((d) => { d.collections[ci].date = e.target.value; })} className="h-8 px-1 border border-slate-200 rounded text-xs" />
+                                            <input value={c.description || ''} onChange={(e) => mutateContractDraft((d) => { d.collections[ci].description = e.target.value.toLocaleUpperCase('tr-TR'); })} placeholder="açıklama" className="flex-1 min-w-0 h-8 px-2 border border-slate-200 rounded text-sm" />
+                                            <input type="number" value={c.amount ?? ''} onChange={(e) => mutateContractDraft((d) => { d.collections[ci].amount = e.target.value; })} placeholder="tutar" className="w-20 h-8 px-1 border border-slate-200 rounded text-sm text-right tabular-nums" />
+                                            <select value={c.currency || 'EUR'} onChange={(e) => mutateContractDraft((d) => { d.collections[ci].currency = e.target.value; })} className="h-8 px-1 border border-slate-200 rounded text-sm bg-white"><option value="EUR">€</option><option value="TRY">₺</option></select>
+                                            {c.currency === 'TRY' && <input type="number" value={c.rate ?? ''} onChange={(e) => mutateContractDraft((d) => { d.collections[ci].rate = e.target.value; })} placeholder="kur" title="Ödeme günü kuru" className="w-16 h-8 px-1 border border-slate-200 rounded text-sm text-right tabular-nums" />}
+                                            <button type="button" onClick={() => mutateContractDraft((d) => { d.collections.splice(ci, 1); })} className="text-rose-400 hover:text-rose-600 shrink-0"><Trash2 className="w-4 h-4" /></button>
+                                          </div>
+                                        );
+                                      }); })()}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Özet / Kalan */}
+                          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#1B3A5C] to-[#15293f] text-white px-5 py-5 shadow-lg">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              <div className="space-y-1 text-sm">
+                                <div className="flex justify-between text-white/70"><span>Ürünler</span><span className="tabular-nums">€ {formatPrice(fin.productsEUR)}</span></div>
+                                {fin.addonsEUR !== 0 && <div className="flex justify-between text-white/70"><span>İlaveler</span><span className="tabular-nums">€ {formatPrice(fin.addonsEUR)}</span></div>}
+                                {contractEditMode ? (
+                                  <div className="flex justify-between items-center text-white/70 gap-2">
+                                    <span>Fatura Farkı</span>
+                                    <span className="flex items-center gap-1">
+                                      <input type="number" value={(parsed.invoiceDiff && parsed.invoiceDiff.amount) ?? ''} onChange={(e) => mutateContractDraft((d) => { if (!d.invoiceDiff) d.invoiceDiff = { currency: 'EUR', rate: d.kur }; d.invoiceDiff.amount = e.target.value; })} placeholder="0" className="w-20 h-7 px-1 rounded text-slate-800 text-right tabular-nums text-xs" />
+                                      <select value={(parsed.invoiceDiff && parsed.invoiceDiff.currency) || 'EUR'} onChange={(e) => mutateContractDraft((d) => { if (!d.invoiceDiff) d.invoiceDiff = { amount: '', rate: d.kur }; d.invoiceDiff.currency = e.target.value; })} className="h-7 px-0.5 rounded text-slate-800 text-xs"><option value="EUR">€</option><option value="TRY">₺</option></select>
+                                    </span>
+                                  </div>
+                                ) : (fin.invEUR !== 0 && <div className="flex justify-between text-white/70"><span>Fatura Farkı</span><span className="tabular-nums">€ {formatPrice(fin.invEUR)}</span></div>)}
+                                <div className="flex justify-between font-bold border-t border-white/15 pt-1 mt-1"><span>Genel Toplam</span><span className="tabular-nums">€ {formatPrice(fin.grandEUR)}</span></div>
+                                <div className="flex justify-between text-emerald-300"><span>Tahsil Edilen</span><span className="tabular-nums">€ {formatPrice(fin.collectedEUR)}</span></div>
+                              </div>
+                              <div className="flex flex-col justify-center sm:items-end">
+                                <div className="text-[10px] uppercase tracking-[0.2em] text-white/50">Kalan Tutar</div>
+                                <div className="text-3xl font-black tabular-nums">€ {formatPrice(fin.remainingEUR)}</div>
+                                <div className="text-emerald-300/90 text-xs tabular-nums mt-0.5">≈ ₺ {formatPrice(fin.remainingEUR * (fin.cr || 0))} <span className="text-white/40">(söz. kuru {fin.cr || '—'})</span></div>
+                                <div className="text-emerald-300/90 text-xs tabular-nums">≈ ₺ {formatPrice(fin.remainingEUR * (liveRate || 0))} <span className="text-white/40">(güncel {liveRate ? formatPrice(liveRate) : '—'})</span></div>
+                                {(() => {
+                                  const st = fin.grandEUR <= 0 ? null : (fin.remainingEUR <= 0.01 ? { t: 'TAMAMLANDI', c: 'bg-emerald-500' } : (fin.collectedEUR > 0.01 ? { t: `KISMİ %${fin.pct}`, c: 'bg-amber-500' } : { t: 'ÖDENMEDİ', c: 'bg-rose-500' }));
+                                  const over = fin.remainingEUR < -0.01;
+                                  return (<div className="mt-2 flex items-center gap-2">{over ? <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-violet-500">FAZLA ÖDEME</span> : (st && <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${st.c}`}>{st.t}</span>)}</div>);
+                                })()}
+                                {fin.grandEUR > 0 && (<div className="w-full sm:w-40 h-1.5 bg-white/15 rounded-full mt-2 overflow-hidden"><div className="h-full bg-emerald-400" style={{ width: `${fin.pct}%` }} /></div>)}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
 
                         {/* Notlar + imza */}
                         <div className="px-4 sm:px-8 pb-8 bg-[#FBFCFD] space-y-6">

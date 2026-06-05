@@ -9261,7 +9261,147 @@ class PDFContractGenerator(PDFQuoteGenerator):
             )
             story.append(gt_card)
             story.append(Spacer(1, 14))
-            
+
+        # --- Finansal: İlaveler / Ödeme Planı / Tahsilatlar / Kalan ---
+        cr = float(data_block.get("kur") or 0)
+        def _to_eur(amount, currency, rate):
+            try:
+                a = float(amount)
+            except (TypeError, ValueError):
+                return 0.0
+            if currency == "TRY":
+                r = float(rate or 0) or cr or 1
+                return a / r if r else 0.0
+            return a
+        def _fmt_d(d):
+            if not d:
+                return ""
+            try:
+                return datetime.fromisoformat(str(d).replace('Z', '+00:00')).strftime('%d.%m.%Y')
+            except Exception:
+                return str(d)[:10]
+
+        addons = data_block.get("addons") or []
+        plan = data_block.get("paymentPlan") or []
+        collections = data_block.get("collections") or []
+        inv = data_block.get("invoiceDiff") or {}
+        delivery = data_block.get("deliveryDate")
+        products_eur = float(data_block.get("eurTotal") or 0)
+        addons_eur = sum(_to_eur(a.get("amount"), a.get("currency"), a.get("rate")) for a in addons if a.get("amount") not in (None, ""))
+        inv_eur = _to_eur(inv.get("amount"), inv.get("currency"), inv.get("rate")) if inv.get("amount") not in (None, "") else 0.0
+        grand_eur = products_eur + addons_eur + inv_eur
+        collected_eur = sum(_to_eur(c.get("amount"), c.get("currency"), c.get("rate")) for c in collections)
+        remaining_eur = grand_eur - collected_eur
+        has_fin = bool(addons or plan or collections or (inv.get("amount") not in (None, "")) or delivery)
+
+        if delivery:
+            story.append(Paragraph(f"<b>TESLİM TARİHİ:</b> {_fmt_d(delivery)}", self.note_text_style))
+            story.append(Spacer(1, 8))
+
+        # İlaveler tablosu
+        priced_addons = [a for a in addons]
+        if priced_addons:
+            rows = [[Paragraph("<b>İLAVELER</b>", self.table_header_style), Paragraph("<b>TUTAR</b>", self.table_header_right_style)]]
+            for a in priced_addons:
+                if a.get("amount") in (None, ""):
+                    val = "Fiyat belirlenecek"
+                else:
+                    val = fmt(_to_eur(a.get("amount"), a.get("currency"), a.get("rate")), "EUR")
+                rows.append([Paragraph(upper_tr(a.get("name") or ""), self.table_cell_style), Paragraph(val, self.table_cell_right_bold)])
+            t = PDFTable(rows, colWidths=[14.0 * cm, 4.0 * cm])
+            t.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1B3A5C')),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('LINEBELOW', (0, 0), (-1, -1), 0.5, colors.HexColor('#E5EAF0')),
+                ('TOPPADDING', (0, 0), (-1, -1), 5), ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+                ('LEFTPADDING', (0, 0), (-1, -1), 8), ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+                ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+            ]))
+            story.append(t)
+            story.append(Spacer(1, 12))
+
+        # Ödeme planı tablosu
+        if plan:
+            rows = [[Paragraph("<b>TARİH</b>", self.table_header_style), Paragraph("<b>AÇIKLAMA</b>", self.table_header_style), Paragraph("<b>TUTAR</b>", self.table_header_right_style)]]
+            for p in plan:
+                cur = "₺" if p.get("currency") == "TRY" else "€"
+                amt = f"{cur} {round(float(p.get('amount') or 0)):,.0f}".replace(",", ".")
+                rows.append([Paragraph(_fmt_d(p.get("date")), self.table_cell_style), Paragraph(upper_tr(p.get("description") or ""), self.table_cell_style), Paragraph(amt, self.table_cell_right)])
+            t = PDFTable(rows, colWidths=[2.6 * cm, 11.4 * cm, 4.0 * cm])
+            t.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2F4B68')),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('LINEBELOW', (0, 0), (-1, -1), 0.5, colors.HexColor('#E5EAF0')),
+                ('TOPPADDING', (0, 0), (-1, -1), 5), ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+                ('LEFTPADDING', (0, 0), (-1, -1), 8), ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+                ('ALIGN', (2, 0), (2, -1), 'RIGHT'),
+            ]))
+            story.append(Paragraph("<b>ÖDEME PLANI</b>", self.note_title_style))
+            story.append(Spacer(1, 3))
+            story.append(t)
+            story.append(Spacer(1, 12))
+
+        # Tahsilatlar tablosu (kur + EUR + çalışan kalan)
+        if collections:
+            rows = [[
+                Paragraph("<b>TARİH</b>", self.table_header_style), Paragraph("<b>AÇIKLAMA</b>", self.table_header_style),
+                Paragraph("<b>TUTAR</b>", self.table_header_right_style), Paragraph("<b>KUR</b>", self.table_header_center_style),
+                Paragraph("<b>≈ EUR</b>", self.table_header_right_style), Paragraph("<b>KALAN €</b>", self.table_header_right_style),
+            ]]
+            run = grand_eur
+            for c in collections:
+                c_eur = _to_eur(c.get("amount"), c.get("currency"), c.get("rate"))
+                run -= c_eur
+                cur = "₺" if c.get("currency") == "TRY" else "€"
+                amt = f"{cur} {round(float(c.get('amount') or 0)):,.0f}".replace(",", ".")
+                kur_disp = (f"{float(c.get('rate') or cr):g}" if c.get("currency") == "TRY" else "—")
+                rows.append([
+                    Paragraph(_fmt_d(c.get("date")), self.table_cell_style), Paragraph(upper_tr(c.get("description") or ""), self.table_cell_style),
+                    Paragraph(amt, self.table_cell_right), Paragraph(kur_disp, self.table_cell_style),
+                    Paragraph(fmt(c_eur, "EUR"), self.table_cell_right), Paragraph(fmt(max(run, 0), "EUR"), self.table_cell_right_bold),
+                ])
+            t = PDFTable(rows, colWidths=[2.4 * cm, 6.2 * cm, 2.7 * cm, 1.7 * cm, 2.5 * cm, 2.5 * cm])
+            t.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0E7C5A')),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('LINEBELOW', (0, 0), (-1, -1), 0.5, colors.HexColor('#E5EAF0')),
+                ('TOPPADDING', (0, 0), (-1, -1), 5), ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+                ('LEFTPADDING', (0, 0), (-1, -1), 6), ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+                ('ALIGN', (2, 0), (2, -1), 'RIGHT'), ('ALIGN', (3, 0), (3, -1), 'CENTER'), ('ALIGN', (4, 0), (-1, -1), 'RIGHT'),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ]))
+            story.append(Paragraph("<b>TAHSİLATLAR</b>", self.note_title_style))
+            story.append(Spacer(1, 3))
+            story.append(t)
+            story.append(Spacer(1, 12))
+
+        # Ödeme özeti / Kalan paneli
+        if has_fin:
+            sum_lines = [f"Ürünler: <b>{fmt(products_eur, 'EUR')}</b>"]
+            if abs(addons_eur) > 0.001:
+                sum_lines.append(f"İlaveler: <b>{fmt(addons_eur, 'EUR')}</b>")
+            if abs(inv_eur) > 0.001:
+                sum_lines.append(f"Fatura Farkı: <b>{fmt(inv_eur, 'EUR')}</b>")
+            sum_lines.append(f"Genel Toplam: <b>{fmt(grand_eur, 'EUR')}</b>")
+            sum_lines.append(f"Tahsil Edilen: <b>{fmt(collected_eur, 'EUR')}</b>")
+            left_p = Paragraph("<br/>".join(sum_lines), self.gt_sub_style)
+            kalan_tl = remaining_eur * (cr or 0)
+            right_flow = [
+                Paragraph("KALAN TUTAR", self.gt_label_style),
+                Paragraph(f"<b>{fmt(remaining_eur, 'EUR')}</b>", self.gt_amount_style),
+                Paragraph(f"≈ {fmt(kalan_tl, 'TRY')} (kur {cr:g})" if cr else "", self.gt_eur_style),
+            ]
+            sum_tbl = PDFTable([[left_p, right_flow]], colWidths=[9.0 * cm, 9.0 * cm])
+            sum_tbl.setStyle(TableStyle([
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('TOPPADDING', (0, 0), (-1, -1), 16), ('BOTTOMPADDING', (0, 0), (-1, -1), 16),
+                ('LEFTPADDING', (0, 0), (0, -1), 18), ('LEFTPADDING', (1, 0), (1, -1), 8),
+                ('RIGHTPADDING', (0, 0), (0, -1), 8), ('RIGHTPADDING', (1, 0), (1, -1), 18),
+                ('LINEBEFORE', (0, 0), (0, -1), 4, colors.HexColor('#10B981')),
+            ]))
+            story.append(RoundedCard([sum_tbl], width=18.0 * cm, bg_color=colors.HexColor('#1B3A5C'), corner_radius=8, padding=0))
+            story.append(Spacer(1, 14))
+
         # --- Müşteri Seçimleri (renk/malzeme) kutuları — notlardan ayrıştırılır, en üstte ---
         SPEC_LABELS = ['KUMAŞ', 'MOBİLYA ANA RENK', 'DOLAP KAPAKLARI', 'KÖŞE DÖNÜŞLER', 'MİNDER', 'PARKE']
         def _parse_specs(arr):
