@@ -576,6 +576,13 @@ class ContractUpdate(BaseModel):
     notes: Optional[str] = Field(None, max_length=10000)
     data: Optional[Dict[str, Any]] = None  # düzenlenmiş yapısal sözleşme verisi (bölüm/kalem)
 
+class NewContractPayload(BaseModel):
+    title: str = Field(..., max_length=300)
+    customer_name: Optional[str] = Field(None, max_length=200)
+    notes: Optional[str] = Field(None, max_length=10000)
+    kur: Optional[float] = None
+
+
 class ExchangeRate(BaseModel):
     currency: str
     rate_to_try: Decimal
@@ -8081,6 +8088,210 @@ async def delete_service(service_id: str):
 
 
 # ==================== SÖZLEŞMELER ENDPOINT'LERI ====================
+def upper_tr(s):
+    if not s:
+        return ""
+    s = str(s)
+    replaces = {
+        "i": "İ",
+        "ı": "I",
+        "ş": "Ş",
+        "ğ": "Ğ",
+        "ü": "Ü",
+        "ö": "Ö",
+        "ç": "Ç"
+    }
+    for k, v in replaces.items():
+        s = s.replace(k, v)
+    return s.upper().strip()
+
+def parse_contract_data(sheets):
+    if not sheets or not isinstance(sheets, list) or len(sheets) == 0:
+        return None
+    rows = sheets[0].get("rows", [])
+    if not rows:
+        return None
+        
+    def num_of(v):
+        if v is None or v == '':
+            return None
+        s = str(v).strip()
+        s = re.sub(r'[^\d.,-]', '', s)
+        if not s:
+            return None
+        if ',' in s:
+            s = s.replace('.', '').replace(',', '.')
+        try:
+            return float(s)
+        except ValueError:
+            return None
+            
+    header_idx = -1
+    col = {"sno": 0, "qty": None, "eur": None, "tl": None, "total": None, "kur": None}
+    name_col = 1
+    
+    for i in range(min(len(rows), 15)):
+        r = rows[i]
+        if any("TUTAR" in upper_tr(c) for c in r):
+            header_idx = i
+            best_len = -1
+            for ci, c in enumerate(r):
+                u = upper_tr(c)
+                if not u:
+                    continue
+                if u in ("S.NO", "NO", "SNO", "S NO"):
+                    col["sno"] = ci
+                elif "ADET" in u:
+                    col["qty"] = ci
+                elif "EUR" in u:
+                    col["eur"] = ci
+                elif "TL F" in u or ("TL" in u and "YAT" in u):
+                    col["tl"] = ci
+                elif "TUTAR" in u:
+                    col["total"] = ci
+                elif "KUR" in u:
+                    col["kur"] = ci
+                elif len(u) > best_len:
+                    best_len = len(u)
+                    name_col = ci
+            break
+            
+    if header_idx < 0 or col["total"] is None:
+        return None
+        
+    subtitle = str(rows[header_idx][name_col]) if rows[header_idx] and name_col < len(rows[header_idx]) else ""
+    subtitle = upper_tr(subtitle)
+    
+    raw_sections = []
+    current_sec = {"name": "", "items": []}
+    notes = []
+    grand_total = None
+    kur = None
+    after_total = False
+    
+    def cell_at(r, idx):
+        if idx is not None and idx < len(r) and r[idx] is not None:
+            return str(r[idx]).strip()
+        return ""
+        
+    for i in range(header_idx + 1, len(rows)):
+        r = rows[i]
+        if not r:
+            continue
+            
+        name = cell_at(r, name_col)
+        eur = cell_at(r, col["eur"])
+        tl_unit_str = cell_at(r, col["tl"])
+        total_str = cell_at(r, col["total"])
+        sno = cell_at(r, col["sno"])
+        qty = cell_at(r, col["qty"])
+        kur_str = cell_at(r, col.get("kur"))
+        
+        if kur is None and kur_str:
+            kur = num_of(kur_str)
+            
+        u = upper_tr(name)
+        if not name and not total_str and not eur:
+            continue
+            
+        if "GENEL TOPLAM" in u:
+            grand_total = num_of(total_str)
+            after_total = True
+            continue
+            
+        if after_total:
+            if "ÇORLU KARAVAN" in u or u == "MÜŞTERİ" or "ZAMKI" in u or "İMZA" in u:
+                continue
+            if "EURO KUR" in u or "KAÇ EURO" in u or "KARŞILIĞI" in u:
+                continue
+            if name:
+                notes.append(upper_tr(name))
+            continue
+            
+        if eur != '':
+            current_sec["items"].append({
+                "sno": sno,
+                "name": upper_tr(name),
+                "qty": qty,
+                "eurUnit": num_of(eur),
+                "tlUnit": num_of(tl_unit_str),
+                "total": num_of(total_str)
+            })
+        elif name:
+            if current_sec["items"]:
+                raw_sections.append(current_sec)
+            current_sec = {"name": upper_tr(name), "items": []}
+            
+    if current_sec["items"]:
+        raw_sections.append(current_sec)
+        
+    if not raw_sections:
+        return None
+        
+    # --- Auto-categorization: SİNEKLİKLER - TENTE - BASAMAKLAR ---
+    def should_move_to_diger(item_name):
+        if not item_name:
+            return True
+        n = upper_tr(item_name)
+        has_kw = "SİNEKLİK" in n or "TENTE" in n or "BASAMAK" in n or "SİNEKLIK" in n
+        if not has_kw:
+            return True
+        if any(w in n for w in ("PROJE", "MUAYENE", "EMİSYON", "RUHSAT", "HİZMET BEDELİ")):
+            return True
+        return False
+        
+    processed_sections = []
+    moved_items = []
+    
+    for sec in raw_sections:
+        sec_name_up = upper_tr(sec["name"])
+        is_target_sec = "SİNEKLİK" in sec_name_up or "TENTE" in sec_name_up or "BASAMAK" in sec_name_up
+        
+        if is_target_sec:
+            valid_items = []
+            for item in sec["items"]:
+                if should_move_to_diger(item["name"]):
+                    moved_items.append(item)
+                else:
+                    valid_items.append(item)
+            sec["items"] = valid_items
+            processed_sections.append(sec)
+        else:
+            processed_sections.append(sec)
+            
+    if moved_items:
+        diger_sec = None
+        for sec in processed_sections:
+            if upper_tr(sec["name"]) == "DİĞER":
+                diger_sec = sec
+                break
+        if diger_sec:
+            diger_sec["items"].extend(moved_items)
+        else:
+            processed_sections.append({
+                "name": "DİĞER",
+                "items": moved_items
+            })
+            
+    # --- Sequential numbering ---
+    counter = 1
+    for sec in processed_sections:
+        for it in sec["items"]:
+            it["sno"] = str(counter)
+            counter += 1
+            
+    eur_total = grand_total / kur if grand_total is not None and kur else None
+    
+    return {
+        "subtitle": subtitle,
+        "sections": processed_sections,
+        "notes": notes,
+        "grandTotal": grand_total,
+        "eurTotal": eur_total,
+        "kur": kur,
+        "originalKur": kur
+    }
+
 def _parse_excel_for_preview(data: bytes):
     """Excel'i tarayicida onizlemek icin sayfalara/hucrelere ayir.
     [{name, rows: [[hucre,...],...]}] doner. Satir/sutun makul sinirlanir."""
@@ -8155,16 +8366,19 @@ async def create_contract(
     if not sheets:
         raise HTTPException(status_code=422, detail="Excel içeriği okunamadı.")
 
+    parsed_data = parse_contract_data(sheets)
+
     doc = {
         "id": str(uuid.uuid4()),
-        "title": (title or fname).strip()[:300],
-        "customer_name": ((customer_name or "").strip() or None),
-        "notes": ((notes or "").strip() or None),
+        "title": upper_tr(title or fname)[:300],
+        "customer_name": (upper_tr(customer_name) if customer_name else None),
+        "notes": (upper_tr(notes) if notes else None),
         "file_name": fname,
         "sheets": sheets,
         "file_b64": base64.b64encode(data).decode("utf-8"),  # orijinali indirebilmek icin
         "doc_date": _excel_doc_date(data),  # Excel'in kendi tarihi (yukleme degil)
         "created_at": datetime.now(timezone.utc),
+        "data": parsed_data
     }
     await db.contracts.insert_one(doc)
     doc.pop("_id", None)
@@ -8340,6 +8554,576 @@ async def delete_contract(contract_id: str):
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Sözleşme bulunamadı")
     return {"success": True, "message": "Sözleşme silindi"}
+
+
+@api_router.post("/contracts/new")
+async def create_blank_contract(payload: NewContractPayload):
+    """Sıfırdan boş sözleşme oluştur."""
+    now = datetime.now(timezone.utc)
+    doc = {
+        "id": str(uuid.uuid4()),
+        "title": upper_tr(payload.title)[:300],
+        "customer_name": (upper_tr(payload.customer_name) if payload.customer_name else None),
+        "notes": (upper_tr(payload.notes) if payload.notes else None),
+        "file_name": "Sıfırdan Oluşturuldu",
+        "sheets": [],
+        "file_b64": "",
+        "doc_date": now,
+        "created_at": now,
+        "data": {
+            "subtitle": "Müşteri Teklif Formu ve Sözleşme",
+            "sections": [],
+            "notes": [],
+            "grandTotal": 0,
+            "eurTotal": 0,
+            "kur": payload.kur or 35.0,
+            "originalKur": payload.kur or 35.0
+        }
+    }
+    await db.contracts.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+from reportlab.platypus import Flowable
+
+class RoundedCard(Flowable):
+    def __init__(self, flowables, width, bg_color, border_color=None, border_width=1, corner_radius=8, padding=0):
+        super().__init__()
+        self.flowables = flowables
+        self.width = width
+        self.bg_color = bg_color
+        self.border_color = border_color
+        self.border_width = border_width
+        self.corner_radius = corner_radius
+        self.padding = padding
+        self.height = 0
+        
+    def wrap(self, availWidth, availHeight):
+        content_width = self.width - 2 * self.padding
+        self.height = 2 * self.padding
+        for f in self.flowables:
+            w, h = f.wrap(content_width, availHeight)
+            self.height += h
+        return self.width, self.height
+        
+    def draw(self):
+        canvas = self.canv
+        canvas.saveState()
+        
+        # 1. Background and Border
+        canvas.setFillColor(self.bg_color)
+        stroke = 1 if self.border_color else 0
+        if stroke:
+            canvas.setStrokeColor(self.border_color)
+            canvas.setLineWidth(self.border_width)
+            
+        canvas.roundRect(0, 0, self.width, self.height, self.corner_radius, stroke=stroke, fill=1)
+        
+        # 2. Bezier Rounded Clipping Mask
+        def add_round_rect_to_path(p, x, y, w, h, r):
+            c = 0.552284749831
+            p.moveTo(x + r, y)
+            p.lineTo(x + w - r, y)
+            p.curveTo(x + w - r * (1 - c), y,
+                      x + w, y + r * (1 - c),
+                      x + w, y + r)
+            p.lineTo(x + w, y + h - r)
+            p.curveTo(x + w, y + h - r * (1 - c),
+                      x + w - r * (1 - c), y + h,
+                      x + w - r, y + h)
+            p.lineTo(x + r, y + h)
+            p.curveTo(x + r * (1 - c), y + h,
+                      x, y + h - r * (1 - c),
+                      x, y + h - r)
+            p.lineTo(x, y + r)
+            p.curveTo(x, y + r * (1 - c),
+                      x + r * (1 - c), y,
+                      x + r, y)
+                      
+        p = canvas.beginPath()
+        add_round_rect_to_path(p, 0, 0, self.width, self.height, self.corner_radius)
+        p.close()
+        canvas.clipPath(p, stroke=0, fill=0)
+        
+        # 3. Draw content
+        y_cursor = self.height - self.padding
+        content_width = self.width - 2 * self.padding
+        for f in self.flowables:
+            w, h = f.wrap(content_width, y_cursor)
+            y_cursor -= h
+            canvas.saveState()
+            canvas.translate(self.padding, y_cursor)
+            f.canv = canvas
+            f.draw()
+            canvas.restoreState()
+            
+        canvas.restoreState()
+
+
+class PDFContractGenerator(PDFQuoteGenerator):
+    def __init__(self):
+        super().__init__()
+        self.contract_title_style = ParagraphStyle(
+            'ContractTitle',
+            parent=self.styles['Normal'],
+            fontName=self.get_font_name(is_bold=True),
+            fontSize=15,
+            textColor=colors.white,
+            alignment=TA_LEFT,
+            leading=18
+        )
+        self.contract_subtitle_style = ParagraphStyle(
+            'ContractSubtitle',
+            parent=self.styles['Normal'],
+            fontName=self.get_font_name(),
+            fontSize=9.5,
+            textColor=colors.white,
+            alignment=TA_LEFT,
+            leading=12
+        )
+        self.contract_meta_style = ParagraphStyle(
+            'ContractMeta',
+            parent=self.styles['Normal'],
+            fontName=self.get_font_name(is_bold=True),
+            fontSize=9,
+            textColor=colors.white,
+            alignment=TA_RIGHT,
+            leading=12
+        )
+        self.table_header_style = ParagraphStyle(
+            'ContractTableHeader',
+            parent=self.styles['Normal'],
+            fontName=self.get_font_name(is_bold=True),
+            fontSize=8,
+            textColor=colors.white,
+            alignment=TA_LEFT
+        )
+        self.table_header_right_style = ParagraphStyle(
+            'ContractTableHeaderRight',
+            parent=self.styles['Normal'],
+            fontName=self.get_font_name(is_bold=True),
+            fontSize=8,
+            textColor=colors.white,
+            alignment=TA_RIGHT
+        )
+        self.table_header_center_style = ParagraphStyle(
+            'ContractTableHeaderCenter',
+            parent=self.styles['Normal'],
+            fontName=self.get_font_name(is_bold=True),
+            fontSize=8,
+            textColor=colors.white,
+            alignment=TA_CENTER
+        )
+        self.table_cell_style = ParagraphStyle(
+            'ContractTableCell',
+            parent=self.styles['Normal'],
+            fontName=self.get_font_name(),
+            fontSize=8,
+            textColor=colors.HexColor('#2D3748'),
+            leading=10
+        )
+        self.table_cell_bold = ParagraphStyle(
+            'ContractTableCellBold',
+            parent=self.styles['Normal'],
+            fontName=self.get_font_name(is_bold=True),
+            fontSize=8,
+            textColor=colors.HexColor('#1B3A5C'),
+            leading=10
+        )
+        self.table_cell_right = ParagraphStyle(
+            'ContractTableCellRight',
+            parent=self.styles['Normal'],
+            fontName=self.get_font_name(),
+            fontSize=8,
+            textColor=colors.HexColor('#2D3748'),
+            alignment=TA_RIGHT,
+            leading=10
+        )
+        self.table_cell_right_bold = ParagraphStyle(
+            'ContractTableCellRightBold',
+            parent=self.styles['Normal'],
+            fontName=self.get_font_name(is_bold=True),
+            fontSize=8,
+            textColor=colors.HexColor('#1B3A5C'),
+            alignment=TA_RIGHT,
+            leading=10
+        )
+        self.note_title_style = ParagraphStyle(
+            'ContractNoteTitle',
+            parent=self.styles['Normal'],
+            fontName=self.get_font_name(is_bold=True),
+            fontSize=9,
+            textColor=colors.HexColor('#92400E'),
+            spaceAfter=4
+        )
+        self.note_text_style = ParagraphStyle(
+            'ContractNoteText',
+            parent=self.styles['Normal'],
+            fontName=self.get_font_name(),
+            fontSize=8.5,
+            textColor=colors.HexColor('#78350F'),
+            leading=11
+        )
+        self.data_style_bold = ParagraphStyle(
+            'DataStyleBold',
+            parent=self.styles['Normal'],
+            fontName=self.get_font_name(is_bold=True),
+            fontSize=9,
+            textColor=colors.HexColor('#2D3748'),
+            alignment=TA_LEFT
+        )
+        self.data_style_center = ParagraphStyle(
+            'DataStyleCenter',
+            parent=self.styles['Normal'],
+            fontName=self.get_font_name(),
+            fontSize=9,
+            textColor=colors.HexColor('#718096'),
+            alignment=TA_CENTER
+        )
+
+    def _draw_page_decorations(self, canvas, doc):
+        """Sözleşme için sayfa altlarında slogan/iletişim olmasın, sadece sayfa numarası ve üst accent şerit olsun."""
+        canvas.saveState()
+        width, height = A4
+        primary = colors.HexColor(self.PROP_PRIMARY)
+
+        # Üst ince accent şerit
+        canvas.setFillColor(primary)
+        canvas.rect(0, height - 6, width, 6, stroke=0, fill=1)
+
+        # Sayfa numarası (en altta sağda)
+        canvas.setFont(self.get_font_name(), 8)
+        canvas.setFillColor(colors.HexColor('#718096'))
+        canvas.drawRightString(width - 1.5 * cm, 1.0 * cm, f"Sayfa {doc.page}")
+        canvas.restoreState()
+
+    def create_contract_pdf(self, contract_data: Dict) -> BytesIO:
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            rightMargin=1.5*cm,
+            leftMargin=1.5*cm,
+            topMargin=1.5*cm,
+            bottomMargin=1.5*cm,
+            title=f"Sözleşme - {contract_data.get('title', 'Sözleşme')}",
+            author="Çorlu Karavan"
+        )
+        story = []
+        
+        logo_paths = [
+            Path("public/logo.png"),
+            Path(__file__).parent / "public" / "logo.png",
+            Path(__file__).parent.parent / "public" / "logo.png"
+        ]
+        logo_path = None
+        for p in logo_paths:
+            if p.exists():
+                logo_path = p
+                break
+                
+        logo_flowable = None
+        if logo_path:
+            try:
+                from reportlab.platypus import Image as PDFImage
+                logo_flowable = PDFImage(str(logo_path), width=45, height=38)
+            except Exception as e:
+                logger.error(f"Error loading logo in contract PDF: {e}")
+                
+        title_text = contract_data.get("title") or "SÖZLEŞME"
+        title_p = Paragraph(f"<b>{upper_tr(title_text)}</b>", self.contract_title_style)
+        sub_p = Paragraph("Müşteri Teklif Formu ve Sözleşme", self.contract_subtitle_style)
+        
+        customer_name = contract_data.get("customer_name")
+        customer_p = None
+        if customer_name:
+            customer_p = Paragraph(f"Müşteri: <b>{upper_tr(customer_name)}</b>", self.contract_subtitle_style)
+            
+        left_flowables = [title_p, sub_p]
+        if customer_p:
+            left_flowables.append(Spacer(1, 4))
+            left_flowables.append(customer_p)
+            
+        doc_date_val = contract_data.get("doc_date") or contract_data.get("created_at")
+        if isinstance(doc_date_val, str):
+            try:
+                dt = datetime.fromisoformat(doc_date_val.replace('Z', '+00:00'))
+                date_str = dt.strftime('%d.%m.%Y')
+            except Exception:
+                date_str = doc_date_val[:10]
+        elif isinstance(doc_date_val, datetime):
+            date_str = doc_date_val.strftime('%d.%m.%Y')
+        else:
+            date_str = datetime.now().strftime('%d.%m.%Y')
+            
+        meta_lines = [f"TARİH: {date_str}"]
+        
+        data_block = contract_data.get("data") or {}
+        kur = data_block.get("kur")
+        if kur:
+            kur_str = f"{kur:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            meta_lines.append(f"KUR: 1 € = ₺{kur_str}")
+            
+        meta_p = Paragraph("<br/>".join(meta_lines), self.contract_meta_style)
+        
+        header_left_cell = left_flowables
+        if logo_flowable:
+            from reportlab.platypus import Table as PDFTable
+            logo_title_tbl = PDFTable([[logo_flowable, left_flowables]], colWidths=[1.8*cm, 10.7*cm])
+            logo_title_tbl.setStyle(TableStyle([
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('LEFTPADDING', (0,0), (-1,-1), 0),
+                ('RIGHTPADDING', (0,0), (-1,-1), 0),
+                ('TOPPADDING', (0,0), (-1,-1), 0),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 0),
+            ]))
+            header_left_cell = logo_title_tbl
+            
+        header_tbl = PDFTable([[header_left_cell, meta_p]], colWidths=[12.5*cm, 5.5*cm])
+        header_tbl.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('TOPPADDING', (0,0), (-1,-1), 12),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 12),
+            ('LEFTPADDING', (0,0), (-1,-1), 14),
+            ('RIGHTPADDING', (0,0), (-1,-1), 14),
+            ('LINEBELOW', (0,-1), (-1,-1), 3, colors.HexColor('#10B981')),
+        ]))
+        
+        # Sitedeki gibi üst banner köşelerini yuvarla
+        header_card = RoundedCard(
+            [header_tbl],
+            width=18.0*cm,
+            bg_color=colors.HexColor('#1B3A5C'),
+            border_color=None,
+            corner_radius=8,
+            padding=0
+        )
+        story.append(header_card)
+        story.append(Spacer(1, 14))
+        
+        headers = [
+            Paragraph("<b>#</b>", self.table_header_center_style),
+            Paragraph("<b>İŞLEM</b>", self.table_header_style),
+            Paragraph("<b>ADET</b>", self.table_header_center_style),
+            Paragraph("<b>BİRİM (€)</b>", self.table_header_right_style),
+            Paragraph("<b>BİRİM (₺)</b>", self.table_header_right_style),
+            Paragraph("<b>TUTAR (₺)</b>", self.table_header_right_style),
+        ]
+        
+        table_rows = [headers]
+        table_styles = [
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1B3A5C')),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('LINEBELOW', (0,0), (-1,-1), 0.5, colors.HexColor('#CBD5E1')),
+            ('LINEAFTER', (0,0), (-2,-1), 0.5, colors.HexColor('#CBD5E1')),
+            ('TOPPADDING', (0,0), (-1,-1), 5),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+            ('LEFTPADDING', (0,0), (-1,-1), 4),
+            ('RIGHTPADDING', (0,0), (-1,-1), 4),
+            # Alignments matching web UI
+            ('ALIGN', (0,0), (0,-1), 'CENTER'),
+            ('ALIGN', (1,0), (1,-1), 'LEFT'),
+            ('ALIGN', (2,0), (2,-1), 'CENTER'),
+            ('ALIGN', (3,0), (-1,-1), 'RIGHT'),
+        ]
+        
+        def fmt(val, currency=""):
+            if val is None:
+                return ""
+            v_str = f"{val:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            if currency == "EUR":
+                return f"€ {v_str}"
+            elif currency == "TRY":
+                return f"₺ {v_str}"
+            return v_str
+            
+        sections = data_block.get("sections") or []
+        row_idx = 1
+        
+        for si, sec in enumerate(sections):
+            sec_title_p = Paragraph(f"<b>{si+1:02d} · {upper_tr(sec.get('name'))}</b>", self.table_cell_bold)
+            table_rows.append([sec_title_p, "", "", "", "", ""])
+            table_styles.append(('SPAN', (0, row_idx), (5, row_idx)))
+            table_styles.append(('BACKGROUND', (0, row_idx), (5, row_idx), colors.HexColor('#F1F5F9')))
+            row_idx += 1
+            
+            for it in sec.get("items", []):
+                sno_p = Paragraph(str(it.get("sno", "")), self.table_cell_style)
+                name_p = Paragraph(upper_tr(it.get("name", "")), self.table_cell_style)
+                qty_val = it.get("qty")
+                qty_p = Paragraph(str(qty_val) if qty_val and qty_val != '0' else "", self.table_cell_style)
+                
+                eur_p = Paragraph(fmt(it.get("eurUnit"), "EUR"), self.table_cell_right)
+                tl_p = Paragraph(fmt(it.get("tlUnit"), "TRY"), self.table_cell_right)
+                tot_p = Paragraph(fmt(it.get("total"), "TRY"), self.table_cell_right_bold)
+                
+                table_rows.append([sno_p, name_p, qty_p, eur_p, tl_p, tot_p])
+                row_idx += 1
+                
+            subtotal = sum(float(item.get("total") or 0) for item in sec.get("items", []))
+            sub_label_p = Paragraph("<b>BÖLÜM TOPLAMI</b>", self.table_cell_bold)
+            sub_val_p = Paragraph(f"<b>{fmt(subtotal, 'TRY')}</b>", self.table_cell_right_bold)
+            
+            table_rows.append([sub_label_p, "", "", "", "", sub_val_p])
+            table_styles.append(('SPAN', (0, row_idx), (4, row_idx)))
+            table_styles.append(('BACKGROUND', (0, row_idx), (5, row_idx), colors.HexColor('#F8FAFC')))
+            table_styles.append(('ALIGN', (0, row_idx), (4, row_idx), 'RIGHT'))
+            row_idx += 1
+            
+        contract_table = PDFTable(table_rows, colWidths=[0.8*cm, 8.2*cm, 1.2*cm, 2.3*cm, 2.5*cm, 3.0*cm])
+        contract_table.setStyle(TableStyle(table_styles))
+        
+        # Sitedeki gibi ürün listesi etrafının kenarlarını yuvarla (Yalnızca tek sayfaya sığıyorsa)
+        w_t, table_height = contract_table.wrap(18.0*cm, 10000)
+        if table_height < 580:
+            table_card = RoundedCard(
+                [contract_table],
+                width=18.0*cm,
+                bg_color=colors.white,
+                border_color=colors.HexColor('#CBD5E1'),
+                border_width=0.5,
+                corner_radius=8,
+                padding=0
+            )
+            story.append(table_card)
+        else:
+            story.append(contract_table)
+        story.append(Spacer(1, 14))
+        
+        gt = data_block.get("grandTotal")
+        et = data_block.get("eurTotal")
+        if gt is not None:
+            gt_lines = [
+                f"GENEL TOPLAM (KDV HARİÇ): <b>{fmt(gt, 'TRY')}</b>"
+            ]
+            if et is not None:
+                gt_lines.append(f"EUR Karşılığı: <b>{fmt(et, 'EUR')}</b>")
+                
+            gt_p = Paragraph("<br/>".join(gt_lines), self.contract_title_style)
+            
+            gt_tbl = PDFTable([[gt_p]], colWidths=[18.0*cm])
+            gt_tbl.setStyle(TableStyle([
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('TOPPADDING', (0,0), (-1,-1), 10),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 10),
+                ('LEFTPADDING', (0,0), (-1,-1), 14),
+                ('RIGHTPADDING', (0,0), (-1,-1), 14),
+                ('LINELEFT', (0,0), (0,-1), 4, colors.HexColor('#10B981')),
+            ]))
+            
+            # Sitedeki gibi genel toplam köşelerini yuvarla
+            gt_card = RoundedCard(
+                [gt_tbl],
+                width=18.0*cm,
+                bg_color=colors.HexColor('#1B3A5C'),
+                border_color=None,
+                corner_radius=8,
+                padding=0
+            )
+            story.append(gt_card)
+            story.append(Spacer(1, 14))
+            
+        notes_list = data_block.get("notes") or []
+        general_note = contract_data.get("notes")
+        
+        if notes_list or general_note:
+            note_flowables = [Paragraph("<b>NOTLAR & ŞARTLAR</b>", self.note_title_style)]
+            for n in notes_list:
+                if n.strip():
+                    note_flowables.append(Paragraph(f"• {upper_tr(n)}", self.note_text_style))
+            if general_note:
+                if notes_list:
+                    note_flowables.append(Spacer(1, 4))
+                note_flowables.append(Paragraph(upper_tr(general_note), self.note_text_style))
+                
+            note_tbl = PDFTable([[note_flowables]], colWidths=[18.0*cm])
+            note_tbl.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#FEF3C7')),
+                ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor('#FDE68A')),
+                ('TOPPADDING', (0,0), (-1,-1), 10),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 10),
+                ('LEFTPADDING', (0,0), (-1,-1), 12),
+                ('RIGHTPADDING', (0,0), (-1,-1), 12),
+            ]))
+            
+            # Notlar ve şartlar tablosunu da şık bir şekilde yuvarla (Yalnızca sığıyorsa)
+            w_n, note_height = note_tbl.wrap(18.0*cm, 10000)
+            if note_height < 500:
+                note_card = RoundedCard(
+                    [note_tbl],
+                    width=18.0*cm,
+                    bg_color=colors.HexColor('#FEF3C7'),
+                    border_color=colors.HexColor('#FDE68A'),
+                    border_width=0.5,
+                    corner_radius=8,
+                    padding=0
+                )
+                story.append(note_card)
+            else:
+                story.append(note_tbl)
+            story.append(Spacer(1, 14))
+            
+        sig_left = [
+            Paragraph("<b>Çorlu Karavan</b>", self.data_style_bold),
+            Spacer(1, 24),
+            Paragraph("Yetkili İmza", self.data_style_center)
+        ]
+        sig_right = [
+            Paragraph(f"<b>{upper_tr(customer_name or 'Müşteri')}</b>", self.data_style_bold),
+            Spacer(1, 24),
+            Paragraph("Müşteri İmza", self.data_style_center)
+        ]
+        
+        sig_tbl = PDFTable([[sig_left, sig_right]], colWidths=[9.0*cm, 9.0*cm])
+        sig_tbl.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('LINEABOVE', (0,0), (-1,0), 0.5, colors.HexColor('#E2E8F0')),
+            ('TOPPADDING', (0,0), (-1,-1), 10),
+        ]))
+        story.append(KeepTogether([sig_tbl]))
+        
+        doc.build(story, onFirstPage=self._draw_page_decorations, onLaterPages=self._draw_page_decorations)
+        buffer.seek(0)
+        return buffer
+
+
+@app.get("/api/contracts/{contract_id}/pdf")
+async def download_contract_pdf(contract_id: str):
+    """Sözleşmeyi tasarımlı PDF olarak indir."""
+    try:
+        doc = await db.contracts.find_one({"id": contract_id})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Sözleşme bulunamadı")
+        
+        # Eğer düzenlenmiş data henüz yoksa (Excel ham haldeyse) önce parse et
+        if not doc.get("data") or not doc["data"].get("sections"):
+            sheets = doc.get("sheets") or []
+            parsed_data = parse_contract_data(sheets)
+            if parsed_data:
+                await db.contracts.update_one({"id": contract_id}, {"$set": {"data": parsed_data}})
+                doc["data"] = parsed_data
+                
+        if not doc.get("data"):
+            raise HTTPException(status_code=422, detail="Sözleşme verisi PDF için ayrıştırılamadı.")
+            
+        pdf_generator = PDFContractGenerator()
+        pdf_buffer = pdf_generator.create_contract_pdf(doc)
+        
+        raw_name = (doc.get("title") or "sozlesme") + ".pdf"
+        ascii_name = raw_name.encode("ascii", "ignore").decode("ascii") or "sozlesme.pdf"
+        if not ascii_name.lower().endswith(".pdf"):
+            ascii_name += ".pdf"
+            
+        return StreamingResponse(
+            pdf_buffer,
+            media_type='application/pdf',
+            headers={"Content-Disposition": f'attachment; filename="{ascii_name}"'}
+        )
+    except Exception as e:
+        logger.error(f"Sözleşme PDF üretim hatası: {e}")
+        raise HTTPException(status_code=500, detail="PDF üretilirken hata oluştu")
 
 
 app.include_router(api_router)
