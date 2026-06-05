@@ -1913,7 +1913,7 @@ function App() {
   };
 
   const uploadContract = async () => {
-    if (!contractForm.title.trim()) { toast.error('Sözleşme başlığı girin'); return; }
+    if (!contractForm.title.trim()) { toast.error('En az bir araç türü seçin'); return; }
     if (!contractFile) { toast.error('Excel dosyası seçin'); return; }
     try {
       setContractUploading(true);
@@ -5414,8 +5414,32 @@ function App() {
               </DialogHeader>
               <div className="space-y-4 py-2">
                 <div>
-                  <Label>Başlık</Label>
-                  <Input value={contractForm.title} onChange={(e) => setContractForm({ ...contractForm, title: e.target.value })} placeholder="Örn: Ahmet Yılmaz - Motokaravan Sözleşmesi" />
+                  <Label>Araç Türü</Label>
+                  {(() => {
+                    const VEHICLE_TYPES = ['15M3 PSA', '17M3 PSA', 'MERCEDES', 'IVECO', 'VOLKSWAGEN', 'MAN', 'FORD', 'SEMİENTEGRE', 'OTOBÜS'];
+                    const selected = contractForm.title ? contractForm.title.split(' / ').filter(Boolean) : [];
+                    const toggle = (v) => {
+                      const next = selected.includes(v) ? selected.filter((x) => x !== v) : [...selected, v];
+                      setContractForm({ ...contractForm, title: next.join(' / ') });
+                    };
+                    return (
+                      <div className="mt-1 flex flex-wrap gap-2">
+                        {VEHICLE_TYPES.map((v) => {
+                          const on = selected.includes(v);
+                          return (
+                            <button
+                              key={v}
+                              type="button"
+                              onClick={() => toggle(v)}
+                              className={`px-3 py-1.5 rounded-lg text-sm font-semibold border transition-colors cursor-pointer ${on ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                            >
+                              {v}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div>
                   <Label>Müşteri (opsiyonel)</Label>
