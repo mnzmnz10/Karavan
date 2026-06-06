@@ -533,6 +533,14 @@ class ServiceItem(BaseModel):
     qty: Optional[float] = Field(1, ge=0)                        # Adet
     unit_price: Optional[float] = Field(0, ge=0)                 # Birim fiyat (₺)
 
+class ServiceCollection(BaseModel):
+    id: Optional[str] = None                                     # Satır id (frontend üretir)
+    date: Optional[str] = None                                   # Tahsilat tarihi (YYYY-MM-DD)
+    description: Optional[str] = Field(None, max_length=300)     # Açıklama
+    amount: Optional[float] = Field(None, ge=0)                  # Tutar (negatif olmaz)
+    currency: Optional[str] = "TRY"                              # TRY | EUR | USD
+    rate: Optional[float] = Field(None, ge=0)                    # Kur (1 birim = ? ₺, TRY dışı için)
+
 class ServiceRecord(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     order_no: Optional[str] = None                              # İş emri no (otomatik, İŞ-0001)
@@ -549,7 +557,8 @@ class ServiceRecord(BaseModel):
     photos: Optional[List[str]] = []                            # Fotoğraflar (base64 data URL)
     notes: Optional[str] = Field(None, max_length=5000)          # Notlar
     cost: Optional[float] = Field(None, ge=0)                    # Toplam tutar (kalem yoksa manuel)
-    advance_amount: Optional[float] = Field(0, ge=0)            # Alınan avans (₺) — sadece sistemde
+    advance_amount: Optional[float] = Field(0, ge=0)            # Alınan avans (₺) — eski kayıtlar (geriye uyum)
+    collections: Optional[List[ServiceCollection]] = []         # Tahsilatlar (çoklu, kalandan düşülür) — sadece sistemde
     payment_account: Optional[str] = Field(None, max_length=500) # Ödeme hesabı/notu (sadece sistemde, PDF'te yok)
     warranty_months: Optional[int] = Field(None, ge=0)         # Garanti süresi (ay)
     warranty_note: Optional[str] = Field(None, max_length=1000) # Garanti kapsam notu
@@ -571,6 +580,7 @@ class ServiceCreate(BaseModel):
     notes: Optional[str] = Field(None, max_length=5000)
     cost: Optional[float] = Field(None, ge=0)
     advance_amount: Optional[float] = Field(0, ge=0)
+    collections: Optional[List[ServiceCollection]] = []
     payment_account: Optional[str] = Field(None, max_length=500)
     warranty_months: Optional[int] = Field(None, ge=0)
     warranty_note: Optional[str] = Field(None, max_length=1000)
@@ -591,6 +601,7 @@ class ServiceUpdate(BaseModel):
     notes: Optional[str] = Field(None, max_length=5000)
     cost: Optional[float] = Field(None, ge=0)
     advance_amount: Optional[float] = Field(None, ge=0)
+    collections: Optional[List[ServiceCollection]] = None
     payment_account: Optional[str] = Field(None, max_length=500)
     warranty_months: Optional[int] = Field(None, ge=0)
     warranty_note: Optional[str] = Field(None, max_length=1000)

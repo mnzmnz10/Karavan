@@ -462,7 +462,7 @@ function App() {
   const [aiPreviewCompanyId, setAiPreviewCompanyId] = useState(''); // önizlemenin ait olduğu firma
   const [aiSaving, setAiSaving] = useState(false); // kaydetme sürüyor mu
   // Servis (tadilat/bakim) sekmesi
-  const emptyServiceForm = { customer_name: '', phone: '', vehicle_brand: '', vehicle_model: '', plate: '', is_trailer: false, arrival_date: '', delivery_date: '', operations: '', items: [], photos: [], notes: '', cost: '', advance_amount: '', payment_account: '', warranty_months: '', warranty_note: '', status: 'received' };
+  const emptyServiceForm = { customer_name: '', phone: '', vehicle_brand: '', vehicle_model: '', plate: '', is_trailer: false, arrival_date: '', delivery_date: '', operations: '', items: [], photos: [], notes: '', cost: '', advance_amount: '', collections: [], payment_account: '', warranty_months: '', warranty_note: '', status: 'received' };
   const [services, setServices] = useState([]);
   const [serviceForm, setServiceForm] = useState(emptyServiceForm);
   const [serviceEditingId, setServiceEditingId] = useState(null); // düzenlenen kayıt id (null = yeni)
@@ -1738,6 +1738,26 @@ function App() {
   });
   const removeServiceItem = (idx) => setServiceForm((f) => ({ ...f, items: (f.items || []).filter((_, i) => i !== idx) }));
 
+  // ---- Servis tahsilat (ödeme) yardımcıları — çoklu para birimi, ₺'ye çevrilip kalandan düşülür ----
+  // exchangeRates.EUR / .USD = 1 birim dövizin ₺ karşılığı
+  const collectionToTRY = (amount, currency, rate) => {
+    const a = parseFloat(amount); if (isNaN(a)) return 0;
+    if (!currency || currency === 'TRY') return a;
+    const r = parseFloat(rate) || parseFloat(exchangeRates?.[currency]) || 0;
+    return a * r;
+  };
+  const serviceCollectedTRY = (collections) => (collections || []).reduce(
+    (s, c) => s + ((c.amount == null || c.amount === '') ? 0 : collectionToTRY(c.amount, c.currency, c.rate)), 0);
+  const addServiceCollection = () => setServiceForm((f) => ({ ...f, collections: [...(f.collections || []), { id: newId(), date: new Date().toISOString().slice(0, 10), description: '', amount: '', currency: 'TRY', rate: '' }] }));
+  const updateServiceCollection = (idx, field, value) => setServiceForm((f) => {
+    const collections = [...(f.collections || [])];
+    let v = value;
+    if (field === 'amount' && v !== '' && v != null) { const n = parseFloat(v); if (!isNaN(n) && n < 0) v = Math.abs(n).toString(); }
+    collections[idx] = { ...collections[idx], [field]: v };
+    return { ...f, collections };
+  });
+  const removeServiceCollection = (idx) => setServiceForm((f) => ({ ...f, collections: (f.collections || []).filter((_, i) => i !== idx) }));
+
   // ---- Fotoğraf ekleme (yeniden boyutlandırıp base64) ----
   const addServicePhotos = async (fileList) => {
     const files = Array.from(fileList || []);
@@ -1776,6 +1796,15 @@ function App() {
 
   const openEditServiceDialog = (svc) => {
     setServiceEditingId(svc.id);
+    // Tahsilatlar: yeni alan. Eski kayıtta yoksa ve avans varsa, avansı ilk tahsilat satırına taşı.
+    let collections = Array.isArray(svc.collections)
+      ? svc.collections.map((c) => ({ id: c.id || newId(), date: c.date || '', description: c.description || '', amount: c.amount != null ? String(c.amount) : '', currency: c.currency || 'TRY', rate: c.rate != null ? String(c.rate) : '' }))
+      : [];
+    let advanceVal = svc.advance_amount != null ? String(svc.advance_amount) : '';
+    if (collections.length === 0 && parseFloat(svc.advance_amount) > 0) {
+      collections = [{ id: newId(), date: svc.arrival_date || '', description: 'Avans', amount: String(svc.advance_amount), currency: 'TRY', rate: '' }];
+      advanceVal = ''; // tek kaynak tahsilatlar; çift sayımı önle
+    }
     setServiceForm({
       customer_name: svc.customer_name || '', phone: svc.phone || '',
       vehicle_brand: svc.vehicle_brand || '', vehicle_model: svc.vehicle_model || '',
@@ -1786,7 +1815,8 @@ function App() {
       photos: Array.isArray(svc.photos) ? svc.photos : [],
       notes: svc.notes || '',
       cost: svc.cost != null ? String(svc.cost) : '',
-      advance_amount: svc.advance_amount != null ? String(svc.advance_amount) : '',
+      advance_amount: advanceVal,
+      collections,
       payment_account: svc.payment_account || '',
       warranty_months: svc.warranty_months != null ? String(svc.warranty_months) : '',
       warranty_note: svc.warranty_note || '',
@@ -1805,11 +1835,22 @@ function App() {
       .filter((it) => (it.name || '').trim() || parseFloat(it.unit_price) > 0)
       .map((it) => ({ name: (it.name || '').trim(), qty: parseFloat(it.qty) || 0, unit_price: parseFloat(it.unit_price) || 0 }));
     const itemsCost = serviceItemsTotal(cleanItems);
+    const cleanCollections = (serviceForm.collections || [])
+      .filter((c) => c.amount !== '' && c.amount != null && !isNaN(parseFloat(c.amount)))
+      .map((c) => ({
+        id: c.id || newId(),
+        date: c.date || null,
+        description: (c.description || '').trim() || null,
+        amount: Math.abs(parseFloat(c.amount)) || 0,
+        currency: c.currency || 'TRY',
+        rate: (c.currency && c.currency !== 'TRY' && c.rate !== '' && c.rate != null) ? parseFloat(c.rate) : null,
+      }));
     const payload = {
       ...serviceForm,
       is_trailer: !!serviceForm.is_trailer,
       items: cleanItems,
       photos: serviceForm.photos || [],
+      collections: cleanCollections,
       cost: cleanItems.length > 0
         ? itemsCost
         : (serviceForm.cost !== '' && serviceForm.cost != null ? parseFloat(serviceForm.cost) : null),
@@ -1890,7 +1931,7 @@ function App() {
     setServiceEditingId(null);
     setServiceForm({
       ...emptyServiceForm,
-      customer_name: customerName,
+      customer_name: customerName || quote?.name || '',
       items: quoteItems,
       notes: `${baseNote}[Teklif: ${quote?.name || ''}]`,
       cost: quote?.total_net_price != null ? String(quote.total_net_price) : '',
@@ -9287,9 +9328,31 @@ function App() {
                           <Label>Telefon</Label>
                           <Input value={serviceForm.phone} onChange={(e) => setServiceForm({ ...serviceForm, phone: e.target.value })} placeholder="05xx ..." />
                         </div>
-                        <div>
-                          <Label>Araç Markası</Label>
-                          <Input value={serviceForm.vehicle_brand} onChange={(e) => setServiceForm({ ...serviceForm, vehicle_brand: e.target.value })} placeholder="Ford, Fiat ..." />
+                        <div className="sm:col-span-2">
+                          <Label>Araç Türü / Markası</Label>
+                          {(() => {
+                            const VEHICLE_TYPES = ['15M³ PSA', '17M³ PSA', 'MERCEDES', 'IVECO', 'VOLKSWAGEN', 'MAN', 'FORD', 'SEMİ ENTEGRE', 'OTOBÜS', 'ÇEKME KARAVAN'];
+                            const selected = serviceForm.vehicle_brand || '';
+                            const choose = (v) => setServiceForm({ ...serviceForm, vehicle_brand: selected === v ? '' : v });
+                            return (
+                              <div className="mt-1 flex flex-wrap gap-2">
+                                {VEHICLE_TYPES.map((v) => {
+                                  const on = selected === v;
+                                  return (
+                                    <button
+                                      key={v}
+                                      type="button"
+                                      onClick={() => choose(v)}
+                                      className={`px-3 py-1.5 rounded-lg text-sm font-semibold border transition-colors cursor-pointer ${on ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                                    >
+                                      {v}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })()}
+                          <Input className="mt-2" value={serviceForm.vehicle_brand} onChange={(e) => setServiceForm({ ...serviceForm, vehicle_brand: e.target.value })} placeholder="veya elle yazın: Ford, Fiat ..." />
                         </div>
                         <div>
                           <Label>Araç Modeli</Label>
@@ -9415,10 +9478,10 @@ function App() {
                       )}
                     </div>
 
-                    {/* Ödeme (avans / kalan) */}
+                    {/* Ödeme / Tahsilatlar */}
                     <div>
                       <div className="mb-3 flex items-center gap-2 text-[11px] font-black uppercase tracking-wider text-emerald-700">
-                        <DollarSign className="w-3.5 h-3.5" /> Ödeme
+                        <DollarSign className="w-3.5 h-3.5" /> Ödeme / Tahsilatlar
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
@@ -9429,22 +9492,63 @@ function App() {
                             <Input type="number" min="0" step="0.01" value={serviceForm.cost} onChange={(e) => setServiceForm({ ...serviceForm, cost: e.target.value })} placeholder="0" />
                           )}
                         </div>
-                        <div>
-                          <Label>Alınan Avans (₺)</Label>
-                          <Input type="number" min="0" step="0.01" value={serviceForm.advance_amount} onChange={(e) => setServiceForm({ ...serviceForm, advance_amount: e.target.value })} placeholder="0" />
-                        </div>
                       </div>
+
+                      {/* Tahsilatlar listesi (çoklu para birimi) */}
+                      <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="font-bold text-slate-700 text-xs uppercase tracking-wider flex items-center gap-2"><DollarSign className="w-3.5 h-3.5 text-emerald-600" /> Tahsilatlar</div>
+                          <Button type="button" size="sm" variant="outline" onClick={addServiceCollection} className="h-8 text-xs font-bold border-emerald-200 text-emerald-700 hover:bg-emerald-50"><Plus className="w-3.5 h-3.5 mr-1" /> Tahsilat Ekle</Button>
+                        </div>
+                        {(serviceForm.collections || []).length === 0 ? (
+                          <p className="text-xs text-slate-400 italic">Henüz tahsilat yok. Aldıkça ekleyin; kalan tutardan otomatik düşülür.</p>
+                        ) : (
+                          <div className="space-y-1.5">
+                            {(serviceForm.collections || []).map((c, ci) => (
+                              <div key={c.id || ci} className="grid items-center gap-1.5" style={{ gridTemplateColumns: 'auto minmax(110px, 1fr) 90px 56px 76px 28px' }}>
+                                <input type="date" value={c.date || ''} onChange={(e) => updateServiceCollection(ci, 'date', e.target.value)} className="h-8 px-1 border border-slate-200 rounded text-xs" />
+                                <input value={c.description || ''} onChange={(e) => updateServiceCollection(ci, 'description', e.target.value)} placeholder="açıklama" className="h-8 px-2 border border-slate-200 rounded text-sm min-w-0" />
+                                <input type="number" min="0" step="0.01" value={c.amount ?? ''} onChange={(e) => updateServiceCollection(ci, 'amount', e.target.value)} placeholder="tutar" className="h-8 px-1 border border-slate-200 rounded text-sm text-right tabular-nums" />
+                                <select value={c.currency || 'TRY'} onChange={(e) => updateServiceCollection(ci, 'currency', e.target.value)} className="h-8 px-1 border border-slate-200 rounded text-sm bg-white"><option value="TRY">₺</option><option value="EUR">€</option><option value="USD">$</option></select>
+                                <input type="number" step="0.01" value={c.currency !== 'TRY' ? (c.rate ?? '') : ''} onChange={(e) => updateServiceCollection(ci, 'rate', e.target.value)} placeholder="kur" title="1 birim = ? ₺ (boşsa güncel kur kullanılır)" disabled={c.currency === 'TRY'} className={`h-8 px-1 border border-slate-200 rounded text-sm text-right tabular-nums ${c.currency === 'TRY' ? 'invisible' : ''}`} />
+                                <button type="button" onClick={() => removeServiceCollection(ci)} className="text-rose-400 hover:text-rose-600 shrink-0"><Trash2 className="w-4 h-4" /></button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
                       {(() => {
                         const total = (serviceForm.items || []).length > 0 ? serviceItemsTotal(serviceForm.items) : (parseFloat(serviceForm.cost) || 0);
                         const adv = parseFloat(serviceForm.advance_amount) || 0;
-                        const remaining = Math.max(total - adv, 0);
+                        const collected = adv + serviceCollectedTRY(serviceForm.collections);
+                        const remaining = total - collected;
+                        const pct = total > 0 ? Math.max(0, Math.min(100, Math.round(collected / total * 100))) : 0;
+                        const st = total <= 0 ? null : (remaining <= 0.01 ? { t: 'TAMAMLANDI', c: 'bg-emerald-500' } : (collected > 0.01 ? { t: `ÖDEME %${pct}`, c: 'bg-amber-500' } : { t: 'ÖDENMEDİ', c: 'bg-rose-500' }));
+                        const over = remaining < -0.01;
                         return (
-                          <div className="mt-3 flex items-center justify-between rounded-xl bg-gradient-to-r from-[#1B3A5C] to-[#15293f] text-white px-4 py-3">
-                            <div>
-                              <div className="text-[10px] uppercase tracking-[0.18em] text-white/50">Kalan Tutar</div>
-                              <div className="text-[11px] text-white/60">Teslimde tahsil edilecek</div>
+                          <div className="mt-3 rounded-xl bg-gradient-to-r from-[#1B3A5C] to-[#15293f] text-white px-4 py-3 space-y-2">
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-white/70">Toplam</span>
+                              <span className="tabular-nums font-semibold">₺ {formatPrice(total)}</span>
                             </div>
-                            <div className="text-2xl font-black tabular-nums">₺ {formatPrice(remaining)}</div>
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-emerald-300">Tahsil Edilen</span>
+                              <span className="tabular-nums font-semibold text-emerald-300">₺ {formatPrice(collected)}</span>
+                            </div>
+                            <div className="border-t border-white/15" />
+                            <div className="flex items-end justify-between">
+                              <div>
+                                <div className="text-[10px] uppercase tracking-[0.18em] text-white/50">Kalan Tutar</div>
+                                <div className="text-[11px] text-white/60">Teslimde tahsil edilecek</div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-2xl font-black tabular-nums">₺ {formatPrice(Math.max(remaining, 0))}</div>
+                                <div className="mt-1 flex justify-end">
+                                  {over ? <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-violet-500">FAZLA ÖDEME</span> : (st && <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${st.c}`}>{st.t}</span>)}
+                                </div>
+                              </div>
+                            </div>
                           </div>
                         );
                       })()}
@@ -9457,7 +9561,7 @@ function App() {
                           placeholder="Nakit veya X Hesaba İban"
                           className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                         />
-                        <p className="mt-1 text-[11px] text-slate-400">Avans ve ödeme hesabı bilgisi teslim formuna (PDF) yansımaz.</p>
+                        <p className="mt-1 text-[11px] text-slate-400">Tahsilat ve ödeme hesabı bilgisi teslim formuna (PDF) yansımaz.</p>
                       </div>
                     </div>
 
@@ -9611,9 +9715,9 @@ function App() {
                     const isTrailer = s.is_trailer || !(s.plate || '').trim();
                     const vehicle = [s.vehicle_brand, s.vehicle_model].filter(Boolean).join(' ') || (isTrailer ? 'Çekme Karavan' : 'Araç belirtilmemiş');
                     const total = s.cost != null ? s.cost : 0;
-                    const advance = s.advance_amount || 0;
-                    const remaining = Math.max(total - advance, 0);
-                    const payStatus = total <= 0 ? null : (remaining <= 0 ? { label: 'Ödendi', cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' } : (advance > 0 ? { label: 'Avans Alındı', cls: 'bg-amber-100 text-amber-700 border-amber-200' } : { label: 'Ödenmedi', cls: 'bg-rose-100 text-rose-700 border-rose-200' }));
+                    const collected = (s.advance_amount || 0) + serviceCollectedTRY(s.collections);
+                    const remaining = Math.max(total - collected, 0);
+                    const payStatus = total <= 0 ? null : (remaining <= 0 ? { label: 'Ödendi', cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' } : (collected > 0 ? { label: 'Kısmi Ödeme', cls: 'bg-amber-100 text-amber-700 border-amber-200' } : { label: 'Ödenmedi', cls: 'bg-rose-100 text-rose-700 border-rose-200' }));
                     return (
                       <div key={s.id} className={`bg-white rounded-2xl border border-slate-200 border-l-4 shadow-sm hover:shadow-md transition-shadow p-5 flex flex-col gap-3 ${s.status === 'received' ? 'border-l-amber-400' : s.status === 'in_progress' ? 'border-l-blue-500' : 'border-l-emerald-500'}`}>
                         <div className="flex items-start justify-between gap-2">
@@ -9654,7 +9758,7 @@ function App() {
                         {total > 0 && (
                           <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs space-y-1">
                             <div className="flex items-center justify-between"><span className="text-slate-500">Toplam</span><span className="font-bold text-slate-700 tabular-nums">₺ {formatPrice(total)}</span></div>
-                            {advance > 0 && <div className="flex items-center justify-between"><span className="text-slate-500">Avans</span><span className="font-semibold text-slate-600 tabular-nums">₺ {formatPrice(advance)}</span></div>}
+                            {collected > 0 && <div className="flex items-center justify-between"><span className="text-slate-500">Tahsil Edilen</span><span className="font-semibold text-slate-600 tabular-nums">₺ {formatPrice(collected)}</span></div>}
                             <div className="flex items-center justify-between"><span className="text-slate-500">Kalan</span><span className="font-black text-emerald-700 tabular-nums">₺ {formatPrice(remaining)}</span></div>
                             {payStatus && <div className="pt-1"><span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-bold border ${payStatus.cls}`}>{payStatus.label}</span></div>}
                           </div>
