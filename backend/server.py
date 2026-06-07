@@ -613,6 +613,7 @@ class ContractUpdate(BaseModel):
     customer_name: Optional[str] = Field(None, max_length=200)
     notes: Optional[str] = Field(None, max_length=10000)
     data: Optional[Dict[str, Any]] = None  # düzenlenmiş yapısal sözleşme verisi (bölüm/kalem)
+    stage: Optional[str] = Field(None, max_length=20)  # 'proposal' (teklif aşaması) | 'agreed' (anlaşıldı)
 
 class NewContractPayload(BaseModel):
     title: str = Field(..., max_length=300)
@@ -8214,6 +8215,418 @@ def _inject_standard_notes(notes):
     return result
 
 
+_TR_MONTH_MAP = {
+    "OCAK": "01",
+    "ŞUBAT": "02",
+    "SUBAT": "02",
+    "MART": "03",
+    "NİSAN": "04",
+    "NISAN": "04",
+    "MAYIS": "05",
+    "HAZİRAN": "06",
+    "HAZIRAN": "06",
+    "TEMMUZ": "07",
+    "AĞUSTOS": "08",
+    "AGUSTOS": "08",
+    "EYLÜL": "09",
+    "EYLUL": "09",
+    "EKİM": "10",
+    "EKIM": "10",
+    "KASIM": "11",
+    "ARALIK": "12",
+}
+
+_CONTRACT_SPEC_ALIASES = [
+    ("MOBİLYA ANA RENK", "MOBİLYA ANA RENK"),
+    ("MOBILYA ANA RENK", "MOBİLYA ANA RENK"),
+    ("DOLAP KAPAKLARI", "DOLAP KAPAKLARI"),
+    ("KÖŞE DÖNÜŞLER", "KÖŞE DÖNÜŞLER"),
+    ("KOŞE DÖNÜŞLER", "KÖŞE DÖNÜŞLER"),
+    ("KÖSE DÖNÜŞLER", "KÖŞE DÖNÜŞLER"),
+    ("KOSE DONUSLER", "KÖŞE DÖNÜŞLER"),
+    ("KUMAŞ RENK", "KUMAŞ"),
+    ("KUMAS RENK", "KUMAŞ"),
+    ("KUMAŞ", "KUMAŞ"),
+    ("KUMAS", "KUMAŞ"),
+    ("MİNDER RENK", "MİNDER"),
+    ("MINDER RENK", "MİNDER"),
+    ("MİNDER", "MİNDER"),
+    ("MINDER", "MİNDER"),
+    ("PARKE", "PARKE"),
+]
+
+_CONTRACT_SPEC_LABELS = ["KUMAŞ", "MOBİLYA ANA RENK", "DOLAP KAPAKLARI", "KÖŞE DÖNÜŞLER", "MİNDER", "PARKE"]
+
+
+def _parse_tr_amount(text):
+    if not text:
+        return ""
+    u = upper_tr(text)
+    number_re = r"(\d+(?:[.,]\d{3})*(?:[.,]\d+)?)"
+    match = re.search(number_re + r"\s*(BİN|BIN)\b", u)
+    multiplier = 1000
+    if not match:
+        match = re.search(number_re, u)
+        multiplier = 1
+    if not match:
+        return ""
+    raw = match.group(1)
+    if "," in raw:
+        raw = raw.replace(".", "").replace(",", ".")
+    elif raw.count(".") == 1 and len(raw.rsplit(".", 1)[1]) == 3:
+        raw = raw.replace(".", "")
+    else:
+        raw = raw.replace(".", "")
+    try:
+        return float(raw) * multiplier
+    except ValueError:
+        return ""
+
+
+def _strip_contract_dates(text):
+    s = str(text or "")
+    s = re.sub(r"\b\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2}:\d{2})?\b", " ", s)
+    month_names = "|".join(sorted((re.escape(k) for k in _TR_MONTH_MAP), key=len, reverse=True))
+    return re.sub(r"\b\d{1,2}\s+(?:" + month_names + r")\s+\d{4}\b", " ", upper_tr(s))
+
+
+def _parse_contract_collection_amount(text):
+    return _parse_tr_amount(_strip_contract_dates(text))
+
+
+def _parse_contract_addon_amount(text):
+    if not text:
+        return ""
+    u = upper_tr(text)
+    price_signals = ("BİN", "BIN", "EURO", "EUR", "€", "TL", "₺", "LİRA", "LIRA", "+KDV", "KDV")
+    if not any(sig in u for sig in price_signals):
+        return ""
+    kdv_match = re.search(r"(\d+(?:[.,]\d+)?)\s*\+\s*KDV", u)
+    if kdv_match:
+        try:
+            return float(kdv_match.group(1).replace(",", "."))
+        except ValueError:
+            return ""
+    return _parse_tr_amount(text)
+
+
+def _parse_tr_date(text):
+    if not text:
+        return ""
+    s = str(text).strip()
+    iso_match = re.search(r"\b(\d{4})-(\d{2})-(\d{2})\b", s)
+    if iso_match:
+        return iso_match.group(0)
+    u = upper_tr(s)
+    month_names = "|".join(sorted((re.escape(k) for k in _TR_MONTH_MAP), key=len, reverse=True))
+    tr_match = re.search(r"\b(\d{1,2})\s+(" + month_names + r")\s+(\d{4})\b", u)
+    if not tr_match:
+        return ""
+    day = int(tr_match.group(1))
+    month = _TR_MONTH_MAP.get(tr_match.group(2), "")
+    year = tr_match.group(3)
+    if not month or day < 1 or day > 31:
+        return ""
+    return f"{year}-{month}-{day:02d}"
+
+
+def _contract_currency(text, default="EUR"):
+    u = upper_tr(text)
+    if "TL" in u or "₺" in u or "LİRA" in u or "LIRA" in u:
+        return "TRY"
+    if "EURO" in u or "EUR" in u or "€" in u:
+        return "EUR"
+    return default
+
+
+def _contract_collection_description(text):
+    u = upper_tr(text)
+    u = re.sub(r"\b\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2}:\d{2})?\b", " ", u)
+    month_names = "|".join(sorted((re.escape(k) for k in _TR_MONTH_MAP), key=len, reverse=True))
+    u = re.sub(r"\b\d{1,2}\s+(?:" + month_names + r")\s+\d{4}\b", " ", u)
+    u = re.sub(r"\b\d+(?:[.,]\d{3})*(?:[.,]\d+)?\s*(?:BİN|BIN)?\s*(?:EURO|EUR|€|TL|₺|LİRA|LIRA)?\b", " ", u)
+    for word in ("TARİHİNDE", "TARIHINDE", "ÖDENECEKTİR", "ODENECEKTIR", "ALINMIŞTIR", "ALINMISTIR"):
+        u = u.replace(word, " ")
+    u = re.sub(r"[.:;]+", " ", u)
+    u = re.sub(r"\s+", " ", u).strip()
+    return u or "ÖDEME"
+
+
+def _extract_contract_specs(line, specs):
+    s = str(line or "")
+    u = upper_tr(s)
+    found = []
+    occupied = set()
+    for alias, key in _CONTRACT_SPEC_ALIASES:
+        start = 0
+        alias_u = upper_tr(alias)
+        while True:
+            idx = u.find(alias_u, start)
+            if idx < 0:
+                break
+            if idx not in occupied:
+                found.append((idx, idx + len(alias_u), key))
+                occupied.add(idx)
+            start = idx + len(alias_u)
+    if not found:
+        return False
+    found.sort(key=lambda item: item[0])
+    for i, (_, end_idx, key) in enumerate(found):
+        next_idx = found[i + 1][0] if i + 1 < len(found) else len(s)
+        val = s[end_idx:next_idx].strip(" :-/").strip()
+        val = re.sub(r"^(RENK)\b", "", upper_tr(val)).strip(" :-/").strip()
+        if val:
+            specs[key] = upper_tr(val)
+        elif key not in specs:
+            specs[key] = ""
+    return True
+
+
+def _is_contract_section_heading(u):
+    compact = re.sub(r"[^A-ZÇĞİÖŞÜ0-9 ]+", " ", u)
+    compact = re.sub(r"\s+", " ", compact).strip()
+    for heading, mode in (
+        ("İLAVELER", "addons"),
+        ("ILAVELER", "addons"),
+        ("TAHSİLATLAR", "collections"),
+        ("TAHSILATLAR", "collections"),
+        ("ÖDEMELER", "collections"),
+        ("ODEMELER", "collections"),
+        ("ÖDEME PLANI", "collections"),
+        ("ODEME PLANI", "collections"),
+    ):
+        if compact == heading:
+            return mode, ""
+        if compact.startswith(heading + " "):
+            return mode, compact[len(heading):].strip(" :-")
+    return None, ""
+
+
+def _is_standard_contract_note(line):
+    u = upper_tr(line)
+    patterns = (
+        "KDV DAHİL DEĞİLDİR",
+        "KDV DAHIL DEGILDIR",
+        "GARANTİ SÜRESİ",
+        "GARANTI SURESI",
+        "KUR DURUMUNA GÖRE",
+        "KUR DURUMUNA GORE",
+        "TEKLİF GEÇERLİLİK",
+        "TEKLIF GECERLILIK",
+    )
+    return any(p in u for p in patterns)
+
+
+def _is_ignored_contract_note(line):
+    u = upper_tr(line)
+    compact = re.sub(r"\s+", " ", u).strip(" .:-")
+    if not compact:
+        return True
+    if compact in {"TOPLAM", "GENEL TOPLAM", "KALAN", "TİCARİ MSZ BAKILACAK", "TICARI MSZ BAKILACAK", "MÜŞTERİ", "MUSTERI"}:
+        return True
+    ignored_parts = ("MSZ KARAVAN", "TİCARİ MSZ", "TICARI MSZ", "TC.NU", "TC. NU", "TC NU", "VERGİ NO", "VERGI NO", "ZAMKI", "İMZA", "IMZA")
+    return any(part in compact for part in ignored_parts)
+
+
+def _contract_num_of(v):
+    if v is None or v == "":
+        return None
+    s = str(v).strip()
+    s = re.sub(r"[^\d.,-]", "", s)
+    if not s or s in ("-", ",", "."):
+        return None
+    if "," in s:
+        s = s.replace(".", "").replace(",", ".")
+    elif s.count(".") == 1 and len(s.rsplit(".", 1)[1]) == 3:
+        s = s.replace(".", "")
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def _row_text_cells(row):
+    return [(i, str(c).strip()) for i, c in enumerate(row or []) if c is not None and str(c).strip()]
+
+
+def _row_label(row):
+    for idx, text in _row_text_cells(row):
+        u = upper_tr(text)
+        if _contract_num_of(text) is not None:
+            continue
+        if _contract_currency(text, "") or u in ("KALAN", "GENEL TOPLAM", "TOPLAM"):
+            continue
+        return idx, text
+    text_cells = _row_text_cells(row)
+    return text_cells[0] if text_cells else (None, "")
+
+
+def _row_numeric_cells(row, skip_idx=None):
+    vals = []
+    for idx, text in _row_text_cells(row):
+        if idx == skip_idx:
+            continue
+        value = _contract_num_of(text)
+        if value is not None:
+            vals.append((idx, value))
+    return vals
+
+
+def _row_currency(row, amount_idx=None, default="EUR"):
+    if amount_idx is not None:
+        cells = list(row or [])
+        for idx in (amount_idx, amount_idx + 1):
+            if 0 <= idx < len(cells):
+                cur = _contract_currency(cells[idx], "")
+                if cur:
+                    return cur
+    for _, text in _row_text_cells(row):
+        cur = _contract_currency(text, "")
+        if cur:
+            return cur
+    return default
+
+
+def _clean_addon_name(text):
+    name = upper_tr(text)
+    name = re.sub(r"\([^)]*(?:KDV|EURO|EUR|TL|₺|LİRA|LIRA|\d)[^)]*\)", " ", name)
+    name = re.sub(r"\b\d+(?:[.,]\d+)?\s*(?:BİN|BIN)?\s*(?:EURO|EUR|€|TL|₺|LİRA|LIRA)\b", " ", name)
+    name = re.sub(r"\b\d+(?:[.,]\d+)?\s*\+\s*KDV\b", " ", name)
+    name = re.sub(r"\s+", " ", name).strip(" :-()\t")
+    return name
+
+
+def _extract_contract_notes_sections(rows, kur):
+    specs = {label: "" for label in _CONTRACT_SPEC_LABELS}
+    addons = []
+    collections = []
+    delivery_date = ""
+    invoice_diff = {"amount": "", "currency": "EUR", "rate": kur}
+    remaining_notes = []
+    mode = None
+    extracted_any = False
+
+    row_list = [r if isinstance(r, list) else [r] for r in (rows or [])]
+    has_tahsilatlar = any(
+        "TAHSİLATLAR" in upper_tr(" ".join(text for _, text in _row_text_cells(row)))
+        or "TAHSILATLAR" in upper_tr(" ".join(text for _, text in _row_text_cells(row)))
+        for row in row_list
+    )
+
+    def add_addon(row, label):
+        nonlocal extracted_any
+        label_idx, _ = _row_label(row)
+        nums = _row_numeric_cells(row, skip_idx=label_idx)
+        amount = nums[0][1] if nums else _parse_contract_addon_amount(label)
+        amount_idx = nums[0][0] if nums else None
+        name = _clean_addon_name(label)
+        if not name or _is_ignored_contract_note(name):
+            return
+        addons.append({
+            "id": uuid.uuid4().hex[:8],
+            "name": name,
+            "amount": amount,
+            "currency": _row_currency(row, amount_idx),
+            "rate": kur,
+            "status": "priced",
+        })
+        extracted_any = True
+
+    def add_collection(row, label):
+        nonlocal extracted_any
+        label_idx, _ = _row_label(row)
+        nums = _row_numeric_cells(row, skip_idx=label_idx)
+        amount = nums[0][1] if nums else _parse_contract_collection_amount(label)
+        if amount == "":
+            extracted_any = True
+            return
+        amount_idx = nums[0][0] if nums else None
+        if nums and _parse_tr_date(label):
+            description = "ÖDEME"
+        elif nums:
+            description = upper_tr(label)
+        else:
+            description = _contract_collection_description(label)
+        collections.append({
+            "id": uuid.uuid4().hex[:8],
+            "date": "" if "SÖZLEŞME ESNASINDA" in upper_tr(label) or "SÖZLEŞME TARİHİNDE" in upper_tr(label) else _parse_tr_date(label),
+            "description": description,
+            "amount": amount,
+            "currency": _row_currency(row, amount_idx),
+            "rate": kur,
+        })
+        extracted_any = True
+
+    for row in row_list:
+        label_idx, label = _row_label(row)
+        if not label:
+            continue
+        u = upper_tr(label)
+
+        if _is_standard_contract_note(label):
+            remaining_notes.append(label)
+            continue
+
+        heading_mode, inline_rest = _is_contract_section_heading(u)
+        if heading_mode:
+            is_payment_heading = "ÖDEME" in u or "ODEME" in u
+            mode = "skip_collections" if has_tahsilatlar and is_payment_heading else heading_mode
+            extracted_any = True
+            if inline_rest and mode != "skip_collections":
+                if mode == "addons":
+                    add_addon([inline_rest], inline_rest)
+                else:
+                    add_collection([inline_rest], inline_rest)
+            continue
+
+        if "FATURA FARKI" in u:
+            nums = _row_numeric_cells(row, skip_idx=label_idx)
+            if nums:
+                invoice_diff = {"amount": nums[0][1], "currency": _row_currency(row, nums[0][0]), "rate": kur}
+            extracted_any = True
+            continue
+
+        if "TESLİM TARİHİ" in u or "TESLIM TARIHI" in u:
+            parsed = _parse_tr_date(label)
+            if parsed:
+                delivery_date = parsed
+                extracted_any = True
+                continue
+
+        if _extract_contract_specs(label, specs):
+            extracted_any = True
+            continue
+
+        if _is_ignored_contract_note(label) or "EURO KUR" in u or "KAÇ EURO" in u or "KARŞILIĞI" in u:
+            extracted_any = True
+            continue
+
+        if mode == "skip_collections":
+            extracted_any = True
+            continue
+
+        if mode == "addons":
+            add_addon(row, label)
+            continue
+        if mode == "collections":
+            add_collection(row, label)
+            continue
+
+        remaining_notes.append(label)
+
+    if not extracted_any:
+        remaining_notes = [label for row in row_list for _, label in [_row_label(row)] if label]
+
+    return {
+        "notes": remaining_notes,
+        "addons": addons,
+        "collections": collections,
+        "specs": specs,
+        "deliveryDate": delivery_date,
+        "invoiceDiff": invoice_diff,
+    }
+
+
 def parse_contract_data(sheets):
     if not sheets or not isinstance(sheets, list) or len(sheets) == 0:
         return None
@@ -8274,6 +8687,7 @@ def parse_contract_data(sheets):
     raw_sections = []
     current_sec = {"name": "", "items": []}
     notes = []
+    after_rows = []
     grand_total = None
     kur = None
     after_total = False
@@ -8300,21 +8714,21 @@ def parse_contract_data(sheets):
             kur = num_of(kur_str)
             
         u = upper_tr(name)
+        if after_total:
+            row_u = upper_tr(" ".join(str(c) for c in (r or []) if c is not None))
+            if not row_u:
+                continue
+            if "ÇORLU KARAVAN" in row_u or row_u == "MÜŞTERİ" or "ZAMKI" in row_u or "İMZA" in row_u:
+                continue
+            after_rows.append(r)
+            continue
+            
         if not name and not total_str and not eur:
             continue
             
         if "GENEL TOPLAM" in u:
             grand_total = num_of(total_str)
             after_total = True
-            continue
-            
-        if after_total:
-            if "ÇORLU KARAVAN" in u or u == "MÜŞTERİ" or "ZAMKI" in u or "İMZA" in u:
-                continue
-            if "EURO KUR" in u or "KAÇ EURO" in u or "KARŞILIĞI" in u:
-                continue
-            if name:
-                notes.append(upper_tr(name))
             continue
             
         if eur != '':
@@ -8394,7 +8808,8 @@ def parse_contract_data(sheets):
             counter += 1
             
     eur_total = grand_total / kur if grand_total is not None and kur else None
-    notes = _inject_standard_notes(notes)
+    extracted_notes = _extract_contract_notes_sections(after_rows or notes, kur)
+    notes = _inject_standard_notes(extracted_notes["notes"])
 
     return {
         "subtitle": subtitle,
@@ -8403,7 +8818,12 @@ def parse_contract_data(sheets):
         "grandTotal": grand_total,
         "eurTotal": eur_total,
         "kur": kur,
-        "originalKur": kur
+        "originalKur": kur,
+        "addons": extracted_notes["addons"],
+        "collections": extracted_notes["collections"],
+        "specs": extracted_notes["specs"],
+        "deliveryDate": extracted_notes["deliveryDate"],
+        "invoiceDiff": extracted_notes["invoiceDiff"]
     }
 
 def _parse_excel_for_preview(data: bytes):
@@ -8458,14 +8878,41 @@ def _excel_doc_date(data: bytes):
         return None
 
 
+def _derive_contract_customer(sheets):
+    """Excel'in ilk satirlarindan musteri adini otomatik cikar (toplu yukleme icin)."""
+    try:
+        rows = sheets[0].get("rows", []) if sheets else []
+    except Exception:
+        return None
+    for r in (rows or [])[:6]:
+        if not r:
+            continue
+        for ci, cell in enumerate(r):
+            u = upper_tr(cell)
+            if "MÜŞTERİ" in u or "MUSTERI" in u:
+                rest = u
+                for kw in ("MÜŞTERİ SÖZLEŞMESİ", "MUSTERI SOZLESMESI", "MÜŞTERİ", "MUSTERI"):
+                    if kw in rest:
+                        rest = rest.split(kw, 1)[1]
+                        break
+                rest = rest.strip(" :- ")
+                if len(rest) > 1 and "SÖZLEŞME" not in rest and "SOZLESME" not in rest:
+                    return rest[:200]
+                others = [upper_tr(c).strip() for cj, c in enumerate(r) if cj != ci and c not in (None, "")]
+                others = [o for o in others if len(o) > 1 and "SÖZLEŞME" not in o and "SOZLESME" not in o]
+                if others:
+                    return max(others, key=len)[:200]
+    return None
+
+
 @api_router.post("/contracts")
 async def create_contract(
     file: UploadFile = File(...),
-    title: str = Form(...),
+    title: Optional[str] = Form(None),
     customer_name: Optional[str] = Form(None),
     notes: Optional[str] = Form(None),
 ):
-    """Excel sozlesme yukle: tarayici onizlemesi icin ayristir ve sakla."""
+    """Excel sozlesme yukle: tarayici onizlemesi icin ayristir ve sakla. Baslik/musteri verilmezse Excel'den otomatik turetilir (toplu yukleme)."""
     fname = file.filename or "sozlesme.xlsx"
     ext = fname.rsplit(".", 1)[-1].lower() if "." in fname else ""
     if ext not in ("xlsx", "xlsm", "xls"):
@@ -8482,10 +8929,16 @@ async def create_contract(
 
     parsed_data = parse_contract_data(sheets)
 
+    # Baslik/musteri verilmediyse Excel iceriginden turet (toplu yukleme akisi)
+    auto_customer = customer_name or _derive_contract_customer(sheets)
+    fname_stem = fname.rsplit(".", 1)[0] if "." in fname else fname
+    auto_title = title or (parsed_data.get("subtitle") if parsed_data else None) or fname_stem
+
     doc = {
         "id": str(uuid.uuid4()),
-        "title": upper_tr(title or fname)[:300],
-        "customer_name": (upper_tr(customer_name) if customer_name else None),
+        "title": upper_tr(auto_title or fname)[:300],
+        "customer_name": (upper_tr(auto_customer) if auto_customer else None),
+        "stage": "proposal",  # yeni yüklenen sözleşme teklif aşamasında başlar
         "notes": (upper_tr(notes) if notes else None),
         "file_name": fname,
         "sheets": sheets,
@@ -8639,6 +9092,8 @@ async def update_contract(contract_id: str, payload: ContractUpdate):
     if not existing:
         raise HTTPException(status_code=404, detail="Sözleşme bulunamadı")
     upd = {k: v for k, v in payload.dict(exclude_unset=True).items()}
+    if "stage" in upd and upd["stage"] not in ("proposal", "agreed"):
+        upd.pop("stage")
     if upd:
         await db.contracts.update_one({"id": contract_id}, {"$set": upd})
     doc = await db.contracts.find_one({"id": contract_id}, {"_id": 0, "file_b64": 0, "sheets": 0})
@@ -9467,7 +9922,7 @@ class PDFContractGenerator(PDFQuoteGenerator):
             story.append(Spacer(1, 14))
             
         sig_left = [
-            Paragraph("<b>Çorlu Karavan</b>", self.data_style_bold),
+            Paragraph("<b>MSZ KARAVAN</b>", self.data_style_bold),
             Spacer(1, 24),
             Paragraph("Yetkili İmza", self.data_style_center)
         ]

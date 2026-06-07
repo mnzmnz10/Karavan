@@ -10,7 +10,7 @@ import { Badge } from './components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from './components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select';
-import { Trash2, Upload, RefreshCw, Plus, TrendingUp, Building2, Package, DollarSign, Edit, Save, X, FileText, Check, Archive, Download, Wrench, Eye, EyeOff, AlertTriangle, Tags, Copy, Pin, StickyNote, Users, Star, Search, Phone, Mail, MapPin, Calculator, Battery, Loader2, ScanSearch, LogOut, PlusCircle, MinusCircle, History, Settings, ChevronUp, ChevronDown, GripVertical, Cable } from 'lucide-react';
+import { Trash2, Upload, RefreshCw, Plus, TrendingUp, Building2, Package, DollarSign, Edit, Save, X, FileText, Check, Archive, Download, Wrench, Eye, EyeOff, AlertTriangle, Tags, Copy, Pin, StickyNote, Users, Star, Search, Phone, Mail, MapPin, Calculator, Battery, Loader2, ScanSearch, LogOut, PlusCircle, MinusCircle, History, Settings, ChevronUp, ChevronDown, GripVertical, Cable, Folder, FolderOpen, CheckCircle2 } from 'lucide-react';
 import KabloSemasiSection from '@/features/wiring/KabloSemasiSection';
 import { toast } from 'sonner';
 import { Toaster } from './components/ui/sonner';
@@ -480,7 +480,11 @@ function App() {
   const [contractForm, setContractForm] = useState(emptyContractForm);
   const [contractUploadOpen, setContractUploadOpen] = useState(false);
   const [contractUploading, setContractUploading] = useState(false);
+  const [bulkUploading, setBulkUploading] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState({ done: 0, total: 0, fail: 0 });
   const [viewingContract, setViewingContract] = useState(null); // önizlenen sözleşme (sheets dahil)
+  const [contractPayFilter, setContractPayFilter] = useState('all'); // sözleşme ödeme filtresi: all | open | done
+  const [contractStageFilter, setContractStageFilter] = useState('agreed'); // sözleşme aşama filtresi (varsayılan: anlaşılanlar): agreed | proposal | all
   const [contractLoadingView, setContractLoadingView] = useState(false);
   const [contractRawView, setContractRawView] = useState(false); // tasarım / ham tablo
   const [contractSimRate, setContractSimRate] = useState(''); // kur simülasyonu (boş = orijinal kur)
@@ -1970,6 +1974,13 @@ function App() {
     return over ? { t: 'FAZLA ÖDEME', c: 'bg-violet-500 text-white' } : st;
   };
 
+  // Sözleşme ödeme durumu sınıfı: 'open' (tamamlanmamış) | 'done' (tamamlandı/fazla) | 'none' (finansal veri yok)
+  const contractPayClass = (c) => {
+    const st = getContractPaymentStatus(c);
+    if (!st) return 'none';
+    return (st.t === 'TAMAMLANDI' || st.t === 'FAZLA ÖDEME') ? 'done' : 'open';
+  };
+
   // ===================== SÖZLEŞMELER =====================
   const loadContracts = async () => {
     try {
@@ -2003,6 +2014,39 @@ function App() {
     } finally {
       setContractUploading(false);
     }
+  };
+
+  const setContractStage = async (id, stage) => {
+    try {
+      await axios.put(`${API}/contracts/${id}`, { stage });
+      setContracts((prev) => prev.map((c) => (c.id === id ? { ...c, stage } : c)));
+    } catch (e) {
+      toast.error('Aşama güncellenemedi');
+    }
+  };
+
+  const bulkUploadContracts = async (fileList) => {
+    const files = Array.from(fileList || []).filter((f) => /\.(xlsx|xls|xlsm)$/i.test(f.name));
+    if (files.length === 0) { toast.error('Excel dosyası (.xlsx/.xls) seçilmedi'); return; }
+    setBulkUploading(true);
+    setBulkProgress({ done: 0, total: files.length, fail: 0 });
+    let ok = 0, fail = 0;
+    for (const f of files) {
+      try {
+        const fd = new FormData();
+        fd.append('file', f);
+        // başlık/müşteri gönderilmiyor → backend Excel içeriğinden otomatik türetir
+        await axios.post(`${API}/contracts`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        ok++;
+      } catch (e) {
+        fail++;
+      }
+      setBulkProgress({ done: ok + fail, total: files.length, fail });
+    }
+    setBulkUploading(false);
+    if (fail === 0) toast.success(`${ok} sözleşme yüklendi`);
+    else toast.error(`${ok} yüklendi, ${fail} başarısız`);
+    await loadContracts();
   };
 
   const openContract = async (id, startInEditMode = false) => {
@@ -5050,25 +5094,67 @@ function App() {
                     </h2>
                     <p className="text-sm text-slate-500">Excel sözleşmelerini yükleyin, uzaktan görüntüleyin</p>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <Button onClick={() => { setContractForm(emptyContractForm); setContractFile(null); setContractUploadOpen(true); }} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl">
                       <Upload className="w-4 h-4 mr-2" /> Sözleşme Yükle
                     </Button>
-                    <Button onClick={() => { const liveKur = exchangeRates?.EUR ? parseFloat(exchangeRates.EUR).toFixed(2) : '35.00'; setNewContractForm({ title: '', customer_name: '', notes: '', kur: liveKur }); setNewContractDialogOpen(true); }} className="bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl">
-                      <Plus className="w-4 h-4 mr-2" /> Sıfırdan Sözleşme Yap
-                    </Button>
+                    <input id="contract-bulk-input" type="file" accept=".xlsx,.xls,.xlsm" multiple className="sr-only" onChange={(e) => { bulkUploadContracts(e.target.files); e.target.value = ''; }} />
+                    <label htmlFor="contract-bulk-input" className={`inline-flex items-center justify-center px-4 h-10 rounded-xl font-bold text-sm cursor-pointer transition-colors ${bulkUploading ? 'bg-slate-200 text-slate-500 pointer-events-none' : 'bg-slate-800 hover:bg-slate-900 text-white'}`}>
+                      <Upload className="w-4 h-4 mr-2" /> {bulkUploading ? `Yükleniyor ${bulkProgress.done}/${bulkProgress.total}` : 'Toplu Yükle'}
+                    </label>
                   </div>
                 </div>
 
-                {contracts.length === 0 ? (
-                  <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-slate-200">
-                    <FileText className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                    <p className="text-slate-500 font-medium">Henüz sözleşme yok</p>
-                    <p className="text-slate-400 text-sm">İlk sözleşmeni yüklemek veya sıfırdan oluşturmak için üstteki butonları kullan</p>
+                {contracts.length > 0 && (
+                  <div className="space-y-3">
+                    {/* Ön filtre: aşama (segmented) */}
+                    <div className="inline-flex flex-wrap rounded-xl bg-slate-100 p-1 gap-1">
+                      {[
+                        { k: 'agreed', label: 'Anlaşılan Sözleşmeler', Icon: CheckCircle2 },
+                        { k: 'proposal', label: 'Teklif Aşaması', Icon: Folder },
+                        { k: 'all', label: 'Tümü', Icon: FileText },
+                      ].map(({ k, label, Icon }) => {
+                        const count = k === 'all' ? contracts.length : contracts.filter((c) => (c.stage || 'proposal') === k).length;
+                        const active = contractStageFilter === k;
+                        return (
+                          <button key={k} type="button" onClick={() => { setContractStageFilter(k); if (k !== 'agreed') setContractPayFilter('all'); }} className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${active ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                            <Icon className="w-4 h-4" /> {label} <span className="text-slate-400 font-semibold">{count}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {/* Ödeme alt-filtresi: yalnızca Anlaşıldı görünümünde (teklif aşamasında ödeme yok) */}
+                    {contractStageFilter === 'agreed' && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider w-16 shrink-0">Ödeme</span>
+                        {[{ k: 'all', label: 'Tümü' }, { k: 'open', label: 'Ödemesi Tamamlanmayan' }, { k: 'done', label: 'Tamamlandı' }].map(({ k, label }) => {
+                          const agreedList = contracts.filter((c) => (c.stage || 'proposal') === 'agreed');
+                          const count = k === 'all' ? agreedList.length : agreedList.filter((c) => contractPayClass(c) === k).length;
+                          const active = contractPayFilter === k;
+                          return (
+                            <button key={k} type="button" onClick={() => setContractPayFilter(k)} className={`px-3.5 py-1.5 rounded-full text-sm font-semibold border transition-colors ${active ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                              {label} <span className={active ? 'text-white/80' : 'text-slate-400'}>{count}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                ) : (
+                )}
+
+                {(() => {
+                  const filtered = contracts.filter((c) => (contractStageFilter === 'all' || (c.stage || 'proposal') === contractStageFilter) && (contractStageFilter !== 'agreed' || contractPayFilter === 'all' || contractPayClass(c) === contractPayFilter));
+                  const proposalCount = contracts.filter((c) => (c.stage || 'proposal') === 'proposal').length;
+                  return (
+                  <>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {contracts.map((c) => (
+                    {/* Sıfırdan Sözleşme — her zaman sabit en başta */}
+                    <button type="button" onClick={() => { const liveKur = exchangeRates?.EUR ? parseFloat(exchangeRates.EUR).toFixed(2) : '35.00'; setNewContractForm({ title: '', customer_name: '', notes: '', kur: liveKur }); setNewContractDialogOpen(true); }} className="group bg-blue-50/40 hover:bg-blue-50 rounded-2xl border-2 border-dashed border-blue-300 hover:border-blue-400 transition-colors p-5 flex flex-col items-center justify-center text-center gap-2 min-h-[170px]">
+                      <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform"><Plus className="w-6 h-6" /></div>
+                      <div className="font-bold text-blue-700">Sıfırdan Sözleşme Yap</div>
+                      <div className="text-xs text-blue-500/80">Katalogdan yeni sözleşme oluştur</div>
+                    </button>
+                    {filtered.map((c) => (
                       <div key={c.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow p-5 flex flex-col gap-2">
                         <div className="flex items-start justify-between gap-3">
                           <div className="flex items-start gap-3 min-w-0 flex-1">
@@ -5081,6 +5167,7 @@ function App() {
                             </div>
                           </div>
                           {(() => {
+                            if ((c.stage || 'proposal') !== 'agreed') return null;
                             const status = getContractPaymentStatus(c);
                             return status ? (
                               <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${status.c}`}>
@@ -5091,6 +5178,16 @@ function App() {
                         </div>
                         <div className="text-xs text-slate-400 truncate">{c.file_name}</div>
                         <div className="text-xs text-slate-400">{(c.doc_date || c.created_at) ? new Date(c.doc_date || c.created_at).toLocaleDateString('tr-TR') : ''}</div>
+                        {(() => {
+                          const stage = c.stage || 'proposal';
+                          const agreed = stage === 'agreed';
+                          return (
+                            <select value={stage} onChange={(e) => setContractStage(c.id, e.target.value)} title="Aşama seç" className={`self-start text-[11px] font-bold px-2.5 py-1 rounded-full border cursor-pointer outline-none focus:ring-2 focus:ring-emerald-300 ${agreed ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-amber-50 border-amber-200 text-amber-700'}`}>
+                              <option value="proposal">Teklif Aşaması</option>
+                              <option value="agreed">Anlaşıldı</option>
+                            </select>
+                          );
+                        })()}
                         <div className="flex items-center gap-2 pt-2 border-t border-slate-100 mt-auto">
                           <Button size="sm" className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs" onClick={() => openContract(c.id)}>
                             <Eye className="w-4 h-4 mr-1" /> Görüntüle
@@ -5111,7 +5208,17 @@ function App() {
                       </div>
                     ))}
                   </div>
-                )}
+                  {filtered.length === 0 && (
+                    <div className="text-center py-8 text-sm text-slate-400">
+                      {contracts.length === 0
+                        ? 'Henüz sözleşme yok — yukarıdaki kartla oluştur ya da Excel yükle.'
+                        : (contractStageFilter === 'agreed'
+                            ? (<span>Henüz anlaşılan sözleşme yok.{proposalCount > 0 && (<> <button type="button" onClick={() => setContractStageFilter('proposal')} className="font-bold text-emerald-700 hover:underline">Teklif Aşaması ({proposalCount})</button> klasörüne bak.</>)}</span>)
+                            : 'Bu filtreye uygun sözleşme yok.')}
+                    </div>
+                  )}
+                  </>
+                  ); })()}
               </>
             ) : (
               /* Sözleşme önizleme */
@@ -5412,6 +5519,47 @@ function App() {
                           )}
                         </div>
 
+                        {/* Müşteri Seçimleri (Renk / Malzeme) — kalemlerden sonra, kur simülasyonundan önce */}
+                        <div className="px-4 sm:px-8 pb-4 bg-[#FBFCFD]">
+                          <div className="rounded-xl border border-slate-200 bg-white p-4">
+                            <div className="font-bold text-slate-700 text-xs uppercase tracking-wider mb-3 flex items-center gap-2">
+                              <Tags className="w-3.5 h-3.5 text-emerald-600" /> Müşteri Seçimleri (Renk / Malzeme)
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                              {SPEC_LABELS.map((label) => (
+                                <div key={label} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2">
+                                  <span className="text-[11px] font-bold text-slate-600 uppercase shrink-0 w-32">{label}</span>
+                                  {contractEditMode ? (
+                                    <input
+                                      value={(contractDraft.specs && contractDraft.specs[label]) || ''}
+                                      onChange={(e) => {
+                                        setContractHistory(prev => [...prev, JSON.parse(JSON.stringify(contractDraft))]);
+                                        setContractDraft(prev => { const d = JSON.parse(JSON.stringify(prev)); if (!d.specs) d.specs = {}; d.specs[label] = e.target.value.toLocaleUpperCase('tr-TR'); return d; });
+                                        setContractDirty(true);
+                                      }}
+                                      placeholder="Elle yazın..."
+                                      className="flex-1 h-8 px-2 border border-slate-200 rounded text-sm bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                                    />
+                                  ) : (
+                                    <span className="flex-1 text-sm font-semibold text-slate-800 border-b border-dashed border-slate-300 min-h-[20px]">{(contractSpecs && contractSpecs[label]) || ' '}</span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Teslim Tarihi — müşteri seçimlerinden sonra */}
+                        <div className="px-4 sm:px-8 pb-4 bg-[#FBFCFD]">
+                          <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
+                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2"><History className="w-4 h-4 text-emerald-600" /> Teslim Tarihi</span>
+                            {contractEditMode ? (
+                              <input type="date" value={parsed.deliveryDate || ''} onChange={(e) => mutateContractDraft((d) => { d.deliveryDate = e.target.value; })} className="h-8 px-2 border border-slate-200 rounded-lg text-sm bg-white" />
+                            ) : (
+                              <span className="font-bold text-slate-800 text-sm tabular-nums">{parsed.deliveryDate ? new Date(parsed.deliveryDate).toLocaleDateString('tr-TR') : '—'}</span>
+                            )}
+                          </div>
+                        </div>
                         {/* Kur simülasyonu (fiyatların hemen üstünde) */}
                         {origKur != null && (
                           <div className="px-4 sm:px-8 pb-4 bg-[#FBFCFD]">
@@ -5533,43 +5681,37 @@ function App() {
                         {parsed.grandTotal != null && (
                           <div className="px-4 sm:px-8 pb-7 bg-[#FBFCFD]">
                             <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#1B3A5C] to-[#15293f] text-white px-6 py-5 shadow-lg">
-                              <div className="absolute -right-8 -top-8 w-40 h-40 rounded-full bg-emerald-500/10" />
-                              <div className="relative space-y-3">
-                                {/* Sözleşme Toplamı — mavi ton */}
-                                <div className="flex items-center justify-between gap-4 rounded-lg bg-sky-500/10 px-3 py-2">
-                                  <div className="text-sky-300 text-sm font-medium flex items-center gap-1.5">
-                                    <div className="w-2 h-2 rounded-full bg-sky-400" />
-                                    Sözleşme Toplamı
+                              <div className="relative">
+                                {/* Alt toplamlar — sessiz, hizalı satırlar */}
+                                <div className="space-y-2.5">
+                                  <div className="flex items-baseline justify-between gap-4">
+                                    <span className="text-white/65 text-sm flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-sky-400/80" />Sözleşme Toplamı</span>
+                                    <span className="text-right whitespace-nowrap">
+                                      <span className="text-white font-semibold tabular-nums">₺ {formatPrice(adj(parsed.grandTotal))}</span>
+                                      {parsed.eurTotal != null && <span className="text-white/45 text-xs ml-2 tabular-nums">≈ € {formatPrice(parsed.eurTotal)}</span>}
+                                    </span>
                                   </div>
-                                  <div className="text-right tabular-nums">
-                                    <span className="text-sky-100 text-lg font-semibold">₺ {formatPrice(adj(parsed.grandTotal))}</span>
-                                    {parsed.eurTotal != null && <span className="text-sky-300/70 text-xs ml-2">≈ € {formatPrice(parsed.eurTotal)}</span>}
-                                  </div>
+                                  {fin.addonsEUR !== 0 && (
+                                    <div className="flex items-baseline justify-between gap-4">
+                                      <span className="text-white/65 text-sm flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-amber-400/80" />İlaveler Toplamı</span>
+                                      <span className="text-right whitespace-nowrap">
+                                        <span className="text-white font-semibold tabular-nums">₺ {formatPrice(adj(fin.addonsEUR * (currentKur || 1)))}</span>
+                                        <span className="text-white/45 text-xs ml-2 tabular-nums">≈ € {formatPrice(fin.addonsEUR)}</span>
+                                      </span>
+                                    </div>
+                                  )}
                                 </div>
-                                {/* İlaveler Toplamı — amber ton, yalnızca ilave varsa göster */}
-                                {fin.addonsEUR !== 0 && (
-                                  <div className="flex items-center justify-between gap-4 rounded-lg bg-amber-500/10 px-3 py-2">
-                                    <div className="text-amber-300 text-sm font-medium flex items-center gap-1.5">
-                                      <div className="w-2 h-2 rounded-full bg-amber-400" />
-                                      İlaveler Toplamı
-                                    </div>
-                                    <div className="text-right tabular-nums">
-                                      <span className="text-amber-100 text-lg font-semibold">₺ {formatPrice(adj(fin.addonsEUR * (currentKur || 1)))}</span>
-                                      <span className="text-amber-300/70 text-xs ml-2">≈ € {formatPrice(fin.addonsEUR)}</span>
-                                    </div>
-                                  </div>
-                                )}
-                                {/* Ayırıcı çizgi */}
-                                <div className="border-t border-white/20" />
-                                {/* Genel Toplam — emerald vurgu */}
-                                <div className="flex items-end justify-between gap-4 flex-wrap rounded-lg bg-emerald-500/10 px-3 py-2">
+                                {/* Ayırıcı */}
+                                <div className="h-px bg-white/15 my-4" />
+                                {/* Genel Toplam — kahraman satır */}
+                                <div className="flex items-end justify-between gap-4 flex-wrap">
                                   <div>
-                                    <div className="text-emerald-300 text-[11px] uppercase tracking-[0.2em] font-medium">Genel Toplam{simActive ? ` · 1 € = ₺${formatPrice(simRateNum)}` : ''}</div>
-                                    <div className="text-white/40 text-xs mt-1">KDV HARİÇ</div>
+                                    <div className="text-emerald-300 text-[11px] uppercase tracking-[0.18em] font-bold">Genel Toplam</div>
+                                    <div className="text-white/40 text-[11px] mt-1">KDV Hariç{simActive ? ` · 1 € = ₺${formatPrice(simRateNum)}` : ''}</div>
                                   </div>
                                   <div className="text-right">
-                                    <div style={{ fontFamily: "'Fraunces', Georgia, serif" }} className={`text-3xl sm:text-4xl font-semibold tabular-nums ${simActive ? 'text-emerald-300' : 'text-emerald-200'}`}>₺ {formatPrice(adj(parsed.grandTotal + (fin.addonsEUR * (currentKur || 1))))}</div>
-                                    {parsed.eurTotal != null && <div className="text-emerald-300/90 text-sm font-medium tabular-nums mt-0.5">≈ € {formatPrice(parsed.eurTotal + fin.addonsEUR)}</div>}
+                                    <div className={`text-3xl sm:text-4xl font-bold tabular-nums ${simActive ? 'text-emerald-300' : 'text-white'}`}>₺ {formatPrice(adj(parsed.grandTotal + (fin.addonsEUR * (currentKur || 1))))}</div>
+                                    {parsed.eurTotal != null && <div className="text-emerald-300/85 text-sm font-semibold tabular-nums mt-0.5">≈ € {formatPrice(parsed.eurTotal + fin.addonsEUR)}</div>}
                                   </div>
                                 </div>
                               </div>
@@ -5579,76 +5721,67 @@ function App() {
 
                         {/* ===== Finansal: Teslim / İlaveler / Ödeme Planı / Tahsilatlar / Kalan ===== */}
                         <div className="px-4 sm:px-8 pb-6 bg-[#FBFCFD] space-y-5">
-                          {/* Teslim Tarihi */}
-                          <div className="flex items-center gap-3 flex-wrap text-sm">
-                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5"><History className="w-3.5 h-3.5" /> Teslim Tarihi</span>
-                            {contractEditMode ? (
-                              <input type="date" value={parsed.deliveryDate || ''} onChange={(e) => mutateContractDraft((d) => { d.deliveryDate = e.target.value; })} className="h-8 px-2 border border-slate-200 rounded text-sm bg-white" />
-                            ) : (
-                              <span className="font-semibold text-slate-800">{parsed.deliveryDate ? new Date(parsed.deliveryDate).toLocaleDateString('tr-TR') : '—'}</span>
-                            )}
-                          </div>
-
-
-                          {/* Tahsilatlar */}
-                          {(contractEditMode || (parsed.collections || []).length > 0) && (
-                                <div className="rounded-xl border border-slate-200 bg-white p-4">
-                                  <div className="flex items-center justify-between mb-3">
-                                    <div className="font-bold text-slate-700 text-xs uppercase tracking-wider flex items-center gap-2"><DollarSign className="w-3.5 h-3.5 text-emerald-600" /> Tahsilatlar</div>
-                                    {contractEditMode && (
-                                      <Button type="button" size="sm" variant="outline" onClick={() => mutateContractDraft((d) => { if (!d.collections) d.collections = []; d.collections.push({ id: newId(), date: '', description: '', amount: '', currency: 'EUR', rate: d.kur }); })} className="h-8 text-xs font-bold border-emerald-200 text-emerald-700 hover:bg-emerald-50"><Plus className="w-3.5 h-3.5 mr-1" /> Satır</Button>
-                                    )}
-                                  </div>
-                                  {(parsed.collections || []).length === 0 ? (
-                                    <p className="text-xs text-slate-400 italic">Tahsilat yok.</p>
-                                  ) : (
-                                    <div className="space-y-1.5">
-                                      {(() => { let run = fin.grandEUR; return (parsed.collections || []).map((c, ci) => {
-                                        const cEUR = fin.toEUR(c.amount, c.currency, c.rate);
-                                        run -= cEUR;
-                                        if (!contractEditMode) {
-                                          return (
-                                            <div key={c.id || ci} className="grid items-center gap-1.5 py-1 border-b border-slate-100 last:border-0" style={{ gridTemplateColumns: 'auto minmax(120px, 1fr) 90px 44px 76px' }}>
-                                              <span className="text-slate-500 text-xs tabular-nums">{c.date ? new Date(c.date).toLocaleDateString('tr-TR') : '—'}</span>
-                                              <span className="text-slate-700 text-sm truncate">{c.description || '—'}</span>
-                                              <span className="font-semibold tabular-nums text-sm text-right">{c.currency === 'TRY' ? `₺ ${formatPrice(c.amount)}` : `€ ${formatPrice(c.amount)}`}</span>
-                                              <span className="text-slate-400 text-xs text-center">{c.currency === 'TRY' ? '₺' : '€'}</span>
-                                              <span className="text-slate-500 text-xs tabular-nums text-right">{c.currency === 'TRY' ? (c.rate || fin.cr || '—') : ''}</span>
-                                            </div>
-                                          );
-                                        }
-                                        return (
-                                          <div key={c.id || ci} className="grid items-center gap-1.5" style={{ gridTemplateColumns: 'auto minmax(120px, 1fr) 90px 44px 76px 28px' }}>
-                                            <input type="date" value={c.date || ''} onChange={(e) => mutateContractDraft((d) => { d.collections[ci].date = e.target.value; })} className="h-8 px-1 border border-slate-200 rounded text-xs" />
-                                            <input value={c.description || ''} onChange={(e) => mutateContractDraft((d) => { d.collections[ci].description = e.target.value.toLocaleUpperCase('tr-TR'); })} placeholder="açıklama" className="h-8 px-2 border border-slate-200 rounded text-sm min-w-0" />
-                                            <input type="number" value={c.amount ?? ''} onChange={(e) => mutateContractDraft((d) => { d.collections[ci].amount = e.target.value; })} placeholder="tutar" className="h-8 px-1 border border-slate-200 rounded text-sm text-right tabular-nums" />
-                                            <select value={c.currency || 'EUR'} onChange={(e) => mutateContractDraft((d) => { d.collections[ci].currency = e.target.value; })} className="h-8 px-1 border border-slate-200 rounded text-sm bg-white"><option value="EUR">€</option><option value="TRY">₺</option></select>
-                                            <input type="number" step="0.01" value={c.currency === 'TRY' ? (c.rate ?? '') : ''} onChange={(e) => mutateContractDraft((d) => { d.collections[ci].rate = e.target.value; })} placeholder="kur" title="Ödeme günü kuru" disabled={c.currency !== 'TRY'} className={`h-8 px-1 border border-slate-200 rounded text-sm text-right tabular-nums ${c.currency !== 'TRY' ? 'invisible' : ''}`} />
-                                            <button type="button" onClick={() => mutateContractDraft((d) => { d.collections.splice(ci, 1); })} className="text-rose-400 hover:text-rose-600 shrink-0"><Trash2 className="w-4 h-4" /></button>
-                                          </div>
-                                        );
-                                      }); })()}
-                                    </div>
+                          {/* Özet / Kalan */}
+                          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#1B3A5C] to-[#15293f] text-white px-5 py-5 shadow-lg space-y-4">
+                            {(contractEditMode || (parsed.collections || []).length > 0) && (
+                              <div>
+                                <div className="flex items-center justify-between mb-3 pb-3 border-b border-white/15">
+                                  <div className="font-bold text-white text-xs uppercase tracking-wider flex items-center gap-2"><DollarSign className="w-3.5 h-3.5 text-emerald-300" /> Tahsilatlar <span className="text-white/45 font-semibold normal-case">· {(parsed.collections || []).length} ödeme</span></div>
+                                  {contractEditMode && (
+                                    <Button type="button" size="sm" variant="outline" onClick={() => mutateContractDraft((d) => { if (!d.collections) d.collections = []; d.collections.push({ id: newId(), date: '', description: '', amount: '', currency: 'EUR', rate: d.kur }); })} className="h-8 text-xs font-bold border-emerald-400/40 text-emerald-200 bg-white/5 hover:bg-white/10"><Plus className="w-3.5 h-3.5 mr-1" /> Satır</Button>
                                   )}
                                 </div>
-                          )}
-
-                          {/* Özet / Kalan */}
-                          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#1B3A5C] to-[#15293f] text-white px-5 py-5 shadow-lg">
+                                {(parsed.collections || []).length === 0 ? (
+                                  <p className="text-xs text-white/40 italic">Tahsilat yok.</p>
+                                ) : (
+                                  <div className="space-y-0.5">
+                                    {!contractEditMode && (
+                                      <div className="flex items-center gap-3 pb-1.5 mb-0.5 border-b border-white/10 text-[10px] uppercase tracking-wider text-white/35">
+                                        <span className="w-20 shrink-0">Tarih</span>
+                                        <span className="flex-1">Açıklama</span>
+                                        <span className="shrink-0">Miktar</span>
+                                      </div>
+                                    )}
+                                    {(parsed.collections || []).map((c, ci) => {
+                                      if (!contractEditMode) {
+                                        return (
+                                          <div key={c.id || ci} className="flex items-center gap-3 py-1">
+                                            <span className="w-20 shrink-0 text-white/45 text-xs tabular-nums">{c.date ? new Date(c.date).toLocaleDateString('tr-TR') : '—'}</span>
+                                            <span className="flex-1 min-w-0 truncate text-white/70 text-sm">{c.description || 'Ödeme'}{c.currency === 'TRY' && (c.rate || fin.cr) ? <span className="text-white/35"> · kur {c.rate || fin.cr}</span> : ''}</span>
+                                            <span className="shrink-0 tabular-nums font-semibold text-sm text-white">{c.currency === 'TRY' ? `₺ ${formatPrice(c.amount)}` : `€ ${formatPrice(c.amount)}`}</span>
+                                          </div>
+                                        );
+                                      }
+                                      return (
+                                        <div key={c.id || ci} className="grid items-center gap-1.5" style={{ gridTemplateColumns: 'auto minmax(110px, 1fr) 88px 44px 70px 28px' }}>
+                                          <input type="date" value={c.date || ''} onChange={(e) => mutateContractDraft((d) => { d.collections[ci].date = e.target.value; })} className="h-8 px-1 rounded bg-white/10 border border-white/20 text-white text-xs [color-scheme:dark]" />
+                                          <input value={c.description || ''} onChange={(e) => mutateContractDraft((d) => { d.collections[ci].description = e.target.value.toLocaleUpperCase('tr-TR'); })} placeholder="açıklama" className="h-8 px-2 rounded bg-white/10 border border-white/20 text-white placeholder:text-white/40 text-sm min-w-0" />
+                                          <input type="number" value={c.amount ?? ''} onChange={(e) => mutateContractDraft((d) => { d.collections[ci].amount = e.target.value; })} placeholder="tutar" className="h-8 px-1 rounded bg-white/10 border border-white/20 text-white placeholder:text-white/40 text-sm text-right tabular-nums" />
+                                          <select value={c.currency || 'EUR'} onChange={(e) => mutateContractDraft((d) => { d.collections[ci].currency = e.target.value; })} className="h-8 px-1 rounded bg-white/10 border border-white/20 text-white text-sm"><option value="EUR" className="bg-[#1B3A5C]">€</option><option value="TRY" className="bg-[#1B3A5C]">₺</option></select>
+                                          <input type="number" step="0.01" value={c.currency === 'TRY' ? (c.rate ?? '') : ''} onChange={(e) => mutateContractDraft((d) => { d.collections[ci].rate = e.target.value; })} placeholder="kur" title="Ödeme günü kuru" disabled={c.currency !== 'TRY'} className={`h-8 px-1 rounded bg-white/10 border border-white/20 text-white placeholder:text-white/40 text-sm text-right tabular-nums ${c.currency !== 'TRY' ? 'invisible' : ''}`} />
+                                          <button type="button" onClick={() => mutateContractDraft((d) => { d.collections.splice(ci, 1); })} className="text-rose-300 hover:text-rose-100 shrink-0"><Trash2 className="w-4 h-4" /></button>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                                <div className="h-px bg-white/15 mt-4" />
+                              </div>
+                            )}
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                               <div className="space-y-2 text-sm">
-                                <div className="flex justify-between items-center text-white/80 py-0.5">
+                                <div className="flex justify-between items-center text-white/65 py-0.5">
                                   <span>Sözleşme</span>
-                                  <span className="tabular-nums font-semibold">€ {formatPrice(fin.productsEUR)}</span>
+                                  <span className="tabular-nums font-semibold text-white">€ {formatPrice(fin.productsEUR)}</span>
                                 </div>
                                 {fin.addonsEUR !== 0 && (
-                                  <div className="flex justify-between items-center text-white/80 py-0.5">
+                                  <div className="flex justify-between items-center text-white/65 py-0.5">
                                     <span>İlaveler</span>
-                                    <span className="tabular-nums font-semibold">€ {formatPrice(fin.addonsEUR)}</span>
+                                    <span className="tabular-nums font-semibold text-white">€ {formatPrice(fin.addonsEUR)}</span>
                                   </div>
                                 )}
                                 {contractEditMode ? (
-                                  <div className="flex justify-between items-center text-white/80 py-0.5">
+                                  <div className="flex justify-between items-center text-white/65 py-0.5">
                                     <span>Fatura Farkı</span>
                                     <span className="flex items-center gap-1.5">
                                       <input
@@ -5690,33 +5823,30 @@ function App() {
                                   </div>
                                 ) : (
                                   fin.invEUR !== 0 && (
-                                    <div className="flex justify-between items-center text-white/80 py-0.5">
+                                    <div className="flex justify-between items-center text-white/65 py-0.5">
                                       <span>Fatura Farkı</span>
-                                      <span className="tabular-nums font-semibold">€ {formatPrice(fin.invEUR)}</span>
+                                      <span className="tabular-nums font-semibold text-white">€ {formatPrice(fin.invEUR)}</span>
                                     </div>
                                   )
                                 )}
                                 <div className="border-t border-white/15 my-1"></div>
                                 <div className="flex justify-between items-center font-bold text-base text-white py-0.5">
                                   <span>Genel Toplam</span>
-                                  <span className="tabular-nums text-emerald-400 font-extrabold">€ {formatPrice(fin.grandEUR)}</span>
-                                </div>
-                                <div className="flex justify-between items-center text-emerald-300 font-medium py-0.5">
-                                  <span>Tahsil Edilen</span>
-                                  <span className="tabular-nums font-bold">€ {formatPrice(fin.collectedEUR)}</span>
+                                  <span className="tabular-nums text-emerald-300 font-extrabold">€ {formatPrice(fin.grandEUR)}</span>
                                 </div>
                               </div>
                               <div className="flex flex-col justify-center sm:items-end">
-                                <div className="text-[10px] uppercase tracking-[0.2em] text-white/50">Kalan Tutar</div>
-                                <div className="text-3xl font-black tabular-nums">€ {formatPrice(fin.remainingEUR)}</div>
-                                <div className="text-emerald-300/90 text-xs tabular-nums mt-0.5">≈ ₺ {formatPrice(fin.remainingEUR * (fin.cr || 0))} <span className="text-white/40">(söz. kuru {fin.cr || '—'})</span></div>
-                                <div className="text-emerald-300/90 text-xs tabular-nums">≈ ₺ {formatPrice(fin.remainingEUR * (liveRate || 0))} <span className="text-white/40">(güncel {liveRate ? formatPrice(liveRate) : '—'})</span></div>
+                                <div className="text-sm font-medium mb-2"><span className="text-white/55">Tahsil Edilen </span><span className="tabular-nums font-bold text-emerald-300">€ {formatPrice(fin.collectedEUR)}</span></div>
+                                <div className="text-[11px] uppercase tracking-[0.2em] text-emerald-300 font-bold">Kalan Tutar</div>
+                                <div className="text-4xl font-black tabular-nums text-white mt-0.5">€ {formatPrice(fin.remainingEUR)}</div>
+                                <div className="text-white/55 text-xs tabular-nums mt-1">≈ ₺ {formatPrice(fin.remainingEUR * (fin.cr || 0))} <span className="text-white/35">(söz. kuru {fin.cr || '—'})</span></div>
+                                <div className="text-white/55 text-xs tabular-nums">≈ ₺ {formatPrice(fin.remainingEUR * (liveRate || 0))} <span className="text-white/35">(güncel {liveRate ? formatPrice(liveRate) : '—'})</span></div>
                                 {(() => {
                                   const st = fin.grandEUR <= 0 ? null : (fin.remainingEUR <= 0.01 ? { t: 'TAMAMLANDI', c: 'bg-emerald-500' } : (fin.collectedEUR > 0.01 ? { t: `ÖDEME %${fin.pct}`, c: 'bg-amber-500' } : { t: 'ÖDENMEDİ', c: 'bg-rose-500' }));
                                   const over = fin.remainingEUR < -0.01;
-                                  return (<div className="mt-2 flex items-center gap-2">{over ? <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-violet-500">FAZLA ÖDEME</span> : (st && <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${st.c}`}>{st.t}</span>)}</div>);
+                                  return (<div className="mt-3 flex items-center gap-2">{over ? <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-violet-500 text-white">FAZLA ÖDEME</span> : (st && <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full text-white ${st.c}`}>{st.t}</span>)}</div>);
                                 })()}
-                                {fin.grandEUR > 0 && (<div className="w-full sm:w-40 h-1.5 bg-white/15 rounded-full mt-2 overflow-hidden"><div className="h-full bg-emerald-400" style={{ width: `${fin.pct}%` }} /></div>)}
+                                {fin.grandEUR > 0 && (<div className="w-full sm:w-44 h-2 bg-white/15 rounded-full mt-2 overflow-hidden"><div className="h-full bg-emerald-400 rounded-full" style={{ width: `${fin.pct}%` }} /></div>)}
                               </div>
                             </div>
                           </div>
@@ -5724,34 +5854,6 @@ function App() {
 
                         {/* Notlar + imza */}
                         <div className="px-4 sm:px-8 pb-8 bg-[#FBFCFD] space-y-6">
-                          {/* Müşteri Seçimleri (renk/malzeme) — notların en üstünde kutular */}
-                          <div className="rounded-xl border border-slate-200 bg-white p-4">
-                            <div className="font-bold text-slate-700 text-xs uppercase tracking-wider mb-3 flex items-center gap-2">
-                              <Tags className="w-3.5 h-3.5 text-emerald-600" /> Müşteri Seçimleri (Renk / Malzeme)
-                            </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                              {SPEC_LABELS.map((label) => (
-                                <div key={label} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2">
-                                  <span className="text-[11px] font-bold text-slate-600 uppercase shrink-0 w-32">{label}</span>
-                                  {contractEditMode ? (
-                                    <input
-                                      value={(contractDraft.specs && contractDraft.specs[label]) || ''}
-                                      onChange={(e) => {
-                                        setContractHistory(prev => [...prev, JSON.parse(JSON.stringify(contractDraft))]);
-                                        setContractDraft(prev => { const d = JSON.parse(JSON.stringify(prev)); if (!d.specs) d.specs = {}; d.specs[label] = e.target.value.toLocaleUpperCase('tr-TR'); return d; });
-                                        setContractDirty(true);
-                                      }}
-                                      placeholder="Elle yazın..."
-                                      className="flex-1 h-8 px-2 border border-slate-200 rounded text-sm bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                                    />
-                                  ) : (
-                                    <span className="flex-1 text-sm font-semibold text-slate-800 border-b border-dashed border-slate-300 min-h-[20px]">{(contractSpecs && contractSpecs[label]) || ' '}</span>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-
                           {contractEditMode ? (
                             <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4 space-y-3">
                               <div className="font-bold text-amber-800 text-xs uppercase tracking-wider flex items-center gap-2">
@@ -5843,7 +5945,7 @@ function App() {
                           )}
                           <div className="grid grid-cols-2 gap-8 pt-8">
                             <div className="text-center">
-                              <div className="border-t-2 border-slate-300 pt-2 text-sm font-semibold text-slate-700">Çorlu Karavan</div>
+                              <div className="border-t-2 border-slate-300 pt-2 text-sm font-semibold text-slate-700">MSZ KARAVAN</div>
                               <div className="text-xs text-slate-400">Yetkili İmza</div>
                             </div>
                             <div className="text-center">
