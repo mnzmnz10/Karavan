@@ -622,6 +622,10 @@ class NewContractPayload(BaseModel):
     kur: Optional[float] = None
 
 
+class ContractTemplatePayload(BaseModel):
+    data: dict = Field(default_factory=dict)
+
+
 class ExchangeRate(BaseModel):
     currency: str
     rate_to_try: Decimal
@@ -8960,6 +8964,45 @@ async def list_contracts():
     return docs
 
 
+@api_router.get("/contracts/template")
+async def get_contract_template():
+    """Sıfırdan sözleşmede önyüklenecek varsayılan şablon (kullanıcı kaydetmişse). Yoksa katalog kullanılır."""
+    doc = await db.app_settings.find_one({"_id": "contract_template"})
+    if doc and doc.get("template") and (doc["template"].get("sections")):
+        return {"exists": True, "template": doc["template"], "updated_at": doc.get("updated_at")}
+    return {"exists": False, "template": None}
+
+
+@api_router.get("/contracts/template-data")
+async def get_contract_template_data(kur: float = 40.0):
+    """Şablon editörü için düzenlenebilir seed data (kayıtlı şablon varsa o, yoksa katalog). Sözleşme OLUŞTURMAZ."""
+    tmpl = await db.app_settings.find_one({"_id": "contract_template"})
+    cat = tmpl["template"] if (tmpl and tmpl.get("template") and tmpl["template"].get("sections")) else None
+    data = _seed_contract_data_from_catalog(kur, cat)
+    return {"data": data, "fromTemplate": cat is not None}
+
+
+@api_router.put("/contracts/template")
+async def save_contract_template(payload: ContractTemplatePayload):
+    """Düzenlenmiş sözleşme tablosunu varsayılan şablon olarak kaydet (kur-bağımsız)."""
+    template = _contract_data_to_template(payload.data)
+    if not template.get("sections"):
+        raise HTTPException(status_code=400, detail="Şablon için en az bir bölüm gerekli")
+    await db.app_settings.update_one(
+        {"_id": "contract_template"},
+        {"$set": {"template": template, "updated_at": datetime.now(timezone.utc)}},
+        upsert=True,
+    )
+    return {"success": True, "message": "Varsayılan şablon kaydedildi"}
+
+
+@api_router.delete("/contracts/template")
+async def delete_contract_template():
+    """Varsayılan şablonu sıfırla — sıfırdan sözleşme tekrar katalogdan açılır."""
+    await db.app_settings.delete_one({"_id": "contract_template"})
+    return {"success": True, "message": "Varsayılan şablon sıfırlandı"}
+
+
 @api_router.get("/contracts/{contract_id}")
 async def get_contract(contract_id: str):
     """Tek sozlesme (onizleme verisi dahil)."""
@@ -9141,9 +9184,31 @@ def _load_contract_catalog():
     return _CONTRACT_CATALOG_CACHE
 
 
-def _seed_contract_data_from_catalog(kur: float):
-    """Katalogdan, verilen kura göre tlUnit/total hesaplanmış sözleşme data'sı üret."""
-    cat = _load_contract_catalog()
+def _contract_data_to_template(data: dict) -> dict:
+    """Sözleşme data'sından kur-bağımsız şablon üret (sadece eurUnit + qty saklanır, ₺ yeniden hesaplanır)."""
+    data = data or {}
+    sections = []
+    for sec in (data.get("sections") or []):
+        items = []
+        for it in (sec.get("items") or []):
+            items.append({
+                "sno": it.get("sno", ""),
+                "name": it.get("name", ""),
+                "qty": it.get("qty", 0),
+                "eurUnit": float(it.get("eurUnit") or 0),
+            })
+        sections.append({"name": sec.get("name", ""), "items": items})
+    return {
+        "subtitle": data.get("subtitle") or "",
+        "sections": sections,
+        "notes": list(data.get("notes") or []),
+    }
+
+
+def _seed_contract_data_from_catalog(kur: float, cat: dict = None):
+    """Katalogdan (veya verilen şablondan), verilen kura göre tlUnit/total hesaplanmış sözleşme data'sı üret."""
+    if cat is None:
+        cat = _load_contract_catalog()
     kur = kur or 35.0
     sections = []
     grand_total = 0.0
@@ -9181,7 +9246,9 @@ async def create_blank_contract(payload: NewContractPayload):
     """Sıfırdan sözleşme oluştur — KARAVAN GENEL FİYATLANDIRMA kataloğu önyüklenir."""
     now = datetime.now(timezone.utc)
     kur = payload.kur or 35.0
-    data = _seed_contract_data_from_catalog(kur)
+    tmpl = await db.app_settings.find_one({"_id": "contract_template"})
+    cat = tmpl["template"] if (tmpl and tmpl.get("template") and tmpl["template"].get("sections")) else None
+    data = _seed_contract_data_from_catalog(kur, cat)
     doc = {
         "id": str(uuid.uuid4()),
         "title": upper_tr(payload.title)[:300],

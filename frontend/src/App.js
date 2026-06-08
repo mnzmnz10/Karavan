@@ -16,9 +16,38 @@ import { toast } from 'sonner';
 import { Toaster } from './components/ui/sonner';
 import LazyImage from './components/LazyImage';
 import { CacheManager, debounce } from './utils/cache';
+import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors, useDroppable } from '@dnd-kit/core';
+import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
+
+// Sözleşme kalem satırı — dnd-kit ile sürükle-bırak (telefon uygulaması gibi animasyonlu yeniden sıralama).
+// children render-prop'una drag dinleyicileri verilir (sadece tutamaca bağlanır, input'lar serbest kalır).
+function SortableItemRow({ id, disabled, children }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.6 : 1,
+    boxShadow: isDragging ? '0 8px 24px rgba(0,0,0,0.18)' : undefined,
+    background: isDragging ? '#ecfdf5' : undefined,
+    position: isDragging ? 'relative' : undefined,
+    zIndex: isDragging ? 30 : undefined,
+  };
+  return (
+    <tr ref={setNodeRef} style={style} {...attributes} className="hover:bg-emerald-50/40">
+      {children(listeners)}
+    </tr>
+  );
+}
+
+// Bölüm sonu bırakma hedefi (kalemi bölümün en sonuna / boş bölüme taşımak için) — "Kalem Ekle" satırı.
+function SectionEndDrop({ id, disabled, children }) {
+  const { setNodeRef, isOver } = useDroppable({ id, disabled });
+  return <tr ref={setNodeRef} className={isOver ? 'bg-emerald-100/70' : undefined}>{children}</tr>;
+}
 
 // ============================================================================
 // AKÜ TEST RAPORU BİLEŞENİ (Gemini AI ile)
@@ -494,6 +523,11 @@ function App() {
   const [contractDataSaving, setContractDataSaving] = useState(false);
   const [contractHistory, setContractHistory] = useState([]); // undo geçmişi
   const [activeSearchCell, setActiveSearchCell] = useState({ si: -1, ii: -1, query: '' }); // autocomplete arama hücresi
+  // dnd-kit sensörleri: masaüstü fare (5px sonra), mobil uzun-bas (200ms) — böylece dikey kaydırma bozulmaz
+  const dndSensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 6 } })
+  );
   const [newContractDialogOpen, setNewContractDialogOpen] = useState(false); // sıfırdan sözleşme oluşturma dialogu
   const [newContractForm, setNewContractForm] = useState({ title: '', customer_name: '', notes: '', kur: '35.00' });
   const [newContractCreating, setNewContractCreating] = useState(false);
@@ -2188,6 +2222,8 @@ function App() {
       d.specs = specs;
       d.notes = remaining;
     }
+    // Sürükle-bırak için her kaleme stabil _uid ata (animasyon sürekliliği)
+    (d.sections || []).forEach((sec) => (sec.items || []).forEach((it) => { if (!it._uid) it._uid = newId(); }));
     setContractDraft(d);
     setContractDirty(false);
     setContractSimRate(''); // düzenlemede simülasyon kapalı
@@ -2248,12 +2284,50 @@ function App() {
     setContractDirty(true);
   };
 
+  // dnd-kit bırakınca kalemi taşı. over.id bir kalem _uid'i veya `sec-end-<si>` (bölüm sonu/boş bölüm). Bölüm içi + bölümler arası.
+  const handleContractItemDragEnd = (event) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setContractHistory((prev) => [...prev, JSON.parse(JSON.stringify(contractDraft))]);
+    setContractDraft((prev) => {
+      const d = JSON.parse(JSON.stringify(prev));
+      let from = null;
+      d.sections.forEach((sec, si) => (sec.items || []).forEach((it, ii) => { if (it._uid === active.id) from = { si, ii }; }));
+      if (!from) return prev;
+      const overId = String(over.id);
+      const isEnd = overId.startsWith('sec-end-');
+      let toSi, toIi;
+      if (isEnd) {
+        toSi = parseInt(overId.slice(8), 10);
+        toIi = d.sections[toSi] ? d.sections[toSi].items.length : 0;
+      } else {
+        let t = null;
+        d.sections.forEach((sec, si) => (sec.items || []).forEach((it, ii) => { if (it._uid === over.id) t = { si, ii }; }));
+        if (!t) return prev;
+        toSi = t.si; toIi = t.ii;
+      }
+      if (from.si === toSi) {
+        const target = isEnd ? d.sections[toSi].items.length - 1 : toIi;
+        d.sections[from.si].items = arrayMove(d.sections[from.si].items, from.ii, target);
+      } else {
+        const [moved] = d.sections[from.si].items.splice(from.ii, 1);
+        const insertAt = isEnd ? d.sections[toSi].items.length : toIi;
+        d.sections[toSi].items.splice(insertAt, 0, moved);
+      }
+      let cnt = 1;
+      d.sections.forEach((sec) => (sec.items || []).forEach((it) => { it.sno = String(cnt++); }));
+      return recalcDraftTotals(d);
+    });
+    setContractDirty(true);
+  };
+
   const saveContractDraft = async () => {
     if (!contractDraft) return;
     try {
       setContractDataSaving(true);
       // İlave/tahsilat/fatura farkı için EUR karşılığı snapshot'ı (TL=söz kuru, USD=güncel kur) — PDF/total tutarlılığı
       const draftToSave = JSON.parse(JSON.stringify(contractDraft));
+      (draftToSave.sections || []).forEach((sec) => (sec.items || []).forEach((it) => { delete it._uid; })); // dahili sürükle id'sini kaydetme
       const crv = parseFloat(draftToSave.kur) || 0;
       const eurOf = (amount, currency, rate) => {
         const a = parseFloat(amount); if (isNaN(a)) return null;
@@ -2269,6 +2343,17 @@ function App() {
           draftToSave.invoiceDiff.amount = Math.abs(amt).toString();
         }
         draftToSave.invoiceDiff.amountEUR = eurOf(draftToSave.invoiceDiff.amount, draftToSave.invoiceDiff.currency, draftToSave.invoiceDiff.rate);
+      }
+      // Şablon editörü: gerçek sözleşme değil — doğrudan varsayılan şablona yaz
+      if (viewingContract?.isTemplate) {
+        await axios.put(`${API}/contracts/template`, { data: draftToSave });
+        setViewingContract((vc) => ({ ...vc, data: draftToSave }));
+        setContractEditMode(false);
+        setContractDirty(false);
+        setContractDraft(null);
+        setContractHistory([]);
+        toast.success('Varsayılan şablon kaydedildi — "Sıfırdan Sözleşme" artık bununla açılacak');
+        return;
       }
       const payload = { data: draftToSave };
       if (draftToSave.generalNotes !== undefined) {
@@ -2294,11 +2379,32 @@ function App() {
     }
   };
 
+  // Ayrı "Şablon Sözleşme" editörünü aç — gerçek sözleşme OLUŞTURMAZ, doğrudan varsayılan şablonu düzenler
+  const openTemplateEditor = async () => {
+    try {
+      setContractLoadingView(true);
+      setContractSimRate('');
+      setContractEditMode(false); setContractDraft(null); setContractDirty(false); setContractHistory([]);
+      const liveKur = parseFloat(exchangeRates?.EUR) || 40;
+      const r = await axios.get(`${API}/contracts/template-data`, { params: { kur: liveKur } });
+      const data = r.data?.data;
+      if (!data) { toast.error('Şablon verisi alınamadı'); return; }
+      setViewingContract({ id: '__template__', isTemplate: true, title: 'ŞABLON SÖZLEŞME', customer_name: null, notes: null, sheets: [], data });
+      setContractRawView(false);
+      enterContractEdit(data);
+    } catch (error) {
+      console.error('Şablon editörü açılamadı:', error);
+      toast.error('Şablon editörü açılamadı');
+    } finally {
+      setContractLoadingView(false);
+    }
+  };
+
   const addDraftItem = (si) => {
     setContractHistory(prev => [...prev, JSON.parse(JSON.stringify(contractDraft))]);
     setContractDraft((prev) => {
       const d = JSON.parse(JSON.stringify(prev));
-      const nextItem = { sno: '', name: '', qty: 1, eurUnit: 0, tlUnit: 0, total: 0 };
+      const nextItem = { _uid: newId(), sno: '', name: '', qty: 1, eurUnit: 0, tlUnit: 0, total: 0 };
       d.sections[si].items.push(nextItem);
       
       // Sürekli numaralandırma
@@ -5102,6 +5208,9 @@ function App() {
                     <label htmlFor="contract-bulk-input" className={`inline-flex items-center justify-center px-4 h-10 rounded-xl font-bold text-sm cursor-pointer transition-colors ${bulkUploading ? 'bg-slate-200 text-slate-500 pointer-events-none' : 'bg-slate-800 hover:bg-slate-900 text-white'}`}>
                       <Upload className="w-4 h-4 mr-2" /> {bulkUploading ? `Yükleniyor ${bulkProgress.done}/${bulkProgress.total}` : 'Toplu Yükle'}
                     </label>
+                    <Button onClick={openTemplateEditor} variant="outline" className="border-amber-300 text-amber-700 hover:bg-amber-50 font-bold rounded-xl" title='"Sıfırdan Sözleşme"de açılacak varsayılan şablonu düzenle'>
+                      <Star className="w-4 h-4 mr-2" /> Şablon Sözleşme
+                    </Button>
                   </div>
                 </div>
 
@@ -5257,6 +5366,9 @@ function App() {
                 const simActive = !contractEditMode && !!currentKur && !isNaN(simRateNum) && simRateNum > 0 && Math.abs(simRateNum - currentKur) > 1e-9;
                 const kurFactor = simActive ? simRateNum / currentKur : 1;
                 const adj = (v) => (v == null ? null : v * kurFactor);
+                // Teklif aşamasındaki sözleşmelerde ödeme yok → Tahsilat/Kalan paneli gizlenir (liste kart rozeti ile tutarlı)
+                const isAgreed = (viewingContract.stage || 'proposal') === 'agreed';
+                const isTpl = !!viewingContract.isTemplate; // şablon düzenleyici: sadece kalemler + notlar; ilave/tahsilat/teslim/spec gizli
                 return (
                   <div className="space-y-4">
                     {/* Sabit alt-orta aksiyon çubuğu — yukarı çıkmadan düzenle/kaydet */}
@@ -5268,8 +5380,8 @@ function App() {
                             {contractHistory.length > 0 && (
                               <Button size="sm" variant="outline" onClick={undoContractChange} className="border-slate-300 text-slate-700 hover:bg-slate-50 rounded-full"><X className="w-4 h-4 mr-1" /> Geri Al</Button>
                             )}
-                            <Button size="sm" onClick={saveContractDraft} disabled={contractDataSaving || !contractDirty} className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-full"><Save className="w-4 h-4 mr-1.5" /> {contractDataSaving ? 'Kaydediliyor...' : 'Kaydet'}</Button>
-                            <Button size="sm" variant="outline" onClick={exitContractEdit} disabled={contractDataSaving} className="rounded-full">Bitir</Button>
+                            <Button size="sm" onClick={saveContractDraft} disabled={contractDataSaving || !contractDirty} className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-full"><Save className="w-4 h-4 mr-1.5" /> {contractDataSaving ? 'Kaydediliyor...' : (isTpl ? 'Şablonu Kaydet' : 'Kaydet')}</Button>
+                            <Button size="sm" variant="outline" onClick={isTpl ? backFromContract : exitContractEdit} disabled={contractDataSaving} className="rounded-full">Bitir</Button>
                           </>
                         ) : (
                           <Button size="sm" onClick={() => enterContractEdit(baseData)} className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-full"><Edit className="w-4 h-4 mr-1.5" /> Kalemleri Düzenle</Button>
@@ -5288,9 +5400,9 @@ function App() {
                               </Button>
                             )}
                             <Button size="sm" onClick={saveContractDraft} disabled={contractDataSaving || !contractDirty} className="bg-emerald-600 hover:bg-emerald-700 text-white">
-                              <Save className="w-4 h-4 mr-2" /> {contractDataSaving ? 'Kaydediliyor...' : 'Kaydet'}
+                              <Save className="w-4 h-4 mr-2" /> {contractDataSaving ? 'Kaydediliyor...' : (isTpl ? 'Şablonu Kaydet' : 'Kaydet')}
                             </Button>
-                            <Button variant="outline" size="sm" onClick={exitContractEdit} disabled={contractDataSaving}>Bitir</Button>
+                            <Button variant="outline" size="sm" onClick={isTpl ? backFromContract : exitContractEdit} disabled={contractDataSaving}>Bitir</Button>
                           </>
                         ) : (
                           <>
@@ -5363,6 +5475,7 @@ function App() {
                         {/* Bölümler + kalemler (Excel benzeri tek liste tablosu) */}
                         <div className="px-4 sm:px-8 py-6 bg-white">
                           <div className="ring-1 ring-slate-300 rounded-lg overflow-x-auto">
+                            <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleContractItemDragEnd}>
                             <table className="w-full border-collapse text-[13px] min-w-[620px]">
                               <thead>
                                 <tr className="bg-[#1B3A5C] text-white text-[11px] uppercase tracking-wider">
@@ -5383,9 +5496,22 @@ function App() {
                                           {String(si + 1).padStart(2, '0')} · {sec.name}
                                         </td>
                                       </tr>
+                                      <SortableContext items={(sec.items || []).map((it, ii) => it._uid || `pos-${si}-${ii}`)} strategy={verticalListSortingStrategy} disabled={!contractEditMode}>
                                       {sec.items.map((it, ii) => (
-                                        <tr key={ii} className="hover:bg-emerald-50/40">
-                                          <td className="px-2 py-1 text-slate-400 tabular-nums border border-slate-200 align-top">{it.sno}</td>
+                                        <SortableItemRow key={it._uid || `pos-${si}-${ii}`} id={it._uid || `pos-${si}-${ii}`} disabled={!contractEditMode}>
+                                          {(dragListeners) => (<>
+                                          <td className="px-2 py-1 text-slate-400 tabular-nums border border-slate-200 align-top">
+                                            {contractEditMode ? (
+                                              <div className="flex items-center gap-1">
+                                                <span
+                                                  {...dragListeners}
+                                                  className="cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-500 shrink-0 touch-none"
+                                                  title="Sürükleyip taşı"
+                                                ><GripVertical className="w-3.5 h-3.5" /></span>
+                                                <span className="tabular-nums">{it.sno}</span>
+                                              </div>
+                                            ) : it.sno}
+                                          </td>
                                           <td className="px-2 py-1 text-slate-700 border border-slate-200">
                                             {contractEditMode ? (
                                               <div className="flex items-center gap-1.5">
@@ -5476,11 +5602,13 @@ function App() {
                                           </td>
                                           <td className={`px-2 py-1 text-right tabular-nums border border-slate-200 ${simActive ? 'text-emerald-700' : 'text-slate-500'}`}>{it.tlUnit != null ? `₺ ${formatPrice(adj(it.tlUnit))}` : ''}</td>
                                           <td className={`px-2 py-1 text-right font-semibold tabular-nums border border-slate-200 ${simActive ? 'text-emerald-700' : 'text-[#1B3A5C]'}`}>{it.total != null ? `₺ ${formatPrice(adj(it.total))}` : ''}</td>
-                                        </tr>
+                                          </>)}
+                                        </SortableItemRow>
                                       ))}
-                                      {/* Kalem Ekle Row (Düzenlemede) */}
+                                      </SortableContext>
+                                      {/* Kalem Ekle Row (Düzenlemede) — sürüklenen kalem buraya bırakılırsa bölüm sonuna / boş bölüme eklenir */}
                                       {contractEditMode && (
-                                        <tr>
+                                        <SectionEndDrop id={`sec-end-${si}`}>
                                           <td colSpan={6} className="px-2 py-1 text-left border border-slate-200 bg-slate-50/20">
                                             <Button
                                               type="button"
@@ -5492,13 +5620,14 @@ function App() {
                                               <Plus className="w-3.5 h-3.5 mr-1" /> Kalem Ekle
                                             </Button>
                                           </td>
-                                        </tr>
+                                        </SectionEndDrop>
                                       )}
                                     </React.Fragment>
                                   );
                                 })}
                               </tbody>
                             </table>
+                            </DndContext>
                           </div>
                           {/* Yeni Bölüm Ekleme Seçeneği (Düzenlemede) */}
                           {contractEditMode && (
@@ -5519,6 +5648,7 @@ function App() {
                           )}
                         </div>
 
+                        {!isTpl && (<>
                         {/* Müşteri Seçimleri (Renk / Malzeme) — kalemlerden sonra, kur simülasyonundan önce */}
                         <div className="px-4 sm:px-8 pb-4 bg-[#FBFCFD]">
                           <div className="rounded-xl border border-slate-200 bg-white p-4">
@@ -5723,7 +5853,7 @@ function App() {
                         <div className="px-4 sm:px-8 pb-6 bg-[#FBFCFD] space-y-5">
                           {/* Özet / Kalan */}
                           <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#1B3A5C] to-[#15293f] text-white px-5 py-5 shadow-lg space-y-4">
-                            {(contractEditMode || (parsed.collections || []).length > 0) && (
+                            {isAgreed && (contractEditMode || (parsed.collections || []).length > 0) && (
                               <div>
                                 <div className="flex items-center justify-between mb-3 pb-3 border-b border-white/15">
                                   <div className="font-bold text-white text-xs uppercase tracking-wider flex items-center gap-2"><DollarSign className="w-3.5 h-3.5 text-emerald-300" /> Tahsilatlar <span className="text-white/45 font-semibold normal-case">· {(parsed.collections || []).length} ödeme</span></div>
@@ -5835,6 +5965,7 @@ function App() {
                                   <span className="tabular-nums text-emerald-300 font-extrabold">€ {formatPrice(fin.grandEUR)}</span>
                                 </div>
                               </div>
+                              {isAgreed && (
                               <div className="flex flex-col justify-center sm:items-end">
                                 <div className="text-sm font-medium mb-2"><span className="text-white/55">Tahsil Edilen </span><span className="tabular-nums font-bold text-emerald-300">€ {formatPrice(fin.collectedEUR)}</span></div>
                                 <div className="text-[11px] uppercase tracking-[0.2em] text-emerald-300 font-bold">Kalan Tutar</div>
@@ -5848,9 +5979,11 @@ function App() {
                                 })()}
                                 {fin.grandEUR > 0 && (<div className="w-full sm:w-44 h-2 bg-white/15 rounded-full mt-2 overflow-hidden"><div className="h-full bg-emerald-400 rounded-full" style={{ width: `${fin.pct}%` }} /></div>)}
                               </div>
+                              )}
                             </div>
                           </div>
                         </div>
+                        </>)}
 
                         {/* Notlar + imza */}
                         <div className="px-4 sm:px-8 pb-8 bg-[#FBFCFD] space-y-6">
