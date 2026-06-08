@@ -488,9 +488,16 @@ function App() {
   // AI ürün çıkarma (PDF/Excel/görsel -> önizleme -> onay)
   const [aiExtracting, setAiExtracting] = useState(false); // çıkarma sürüyor mu
   const [aiPreviewProducts, setAiPreviewProducts] = useState(null); // çıkarılan ürünler (önizleme); null = önizleme yok
+  const [aiImportSession, setAiImportSession] = useState(null); // CRM'e yazmadan once saklanan onizleme oturumu
   const [aiPreviewCompanyId, setAiPreviewCompanyId] = useState(''); // önizlemenin ait olduğu firma
   const [termosaCats, setTermosaCats] = useState(''); // Termosa kategori URL'leri (satır satır)
   const [termosaScraping, setTermosaScraping] = useState(false);
+  const [termosaSyncSetting, setTermosaSyncSetting] = useState(null);
+  const [termosaSyncEnabled, setTermosaSyncEnabled] = useState(false);
+  const [termosaSyncInterval, setTermosaSyncInterval] = useState(24);
+  const [termosaSyncSaving, setTermosaSyncSaving] = useState(false);
+  const [termosaSyncRunning, setTermosaSyncRunning] = useState(false);
+  const [importDefaultCategoryId, setImportDefaultCategoryId] = useState('');
   const [aiSaving, setAiSaving] = useState(false); // kaydetme sürüyor mu
   // Servis (tadilat/bakim) sekmesi
   const emptyServiceForm = { customer_name: '', phone: '', vehicle_brand: '', vehicle_model: '', plate: '', is_trailer: false, arrival_date: '', delivery_date: '', operations: '', items: [], photos: [], notes: '', cost: '', advance_amount: '', collections: [], payment_account: '', warranty_months: '', warranty_note: '', status: 'received' };
@@ -1103,6 +1110,12 @@ function App() {
     }
   }, [isAuthenticated]);
 
+  useEffect(() => {
+    if (isAuthenticated && useExistingCompany && selectedCompany) {
+      loadTermosaSyncSetting(selectedCompany);
+    }
+  }, [isAuthenticated, useExistingCompany, selectedCompany]);
+
   const loadInitialData = async () => {
     setLoading(true);
     try {
@@ -1590,6 +1603,21 @@ function App() {
   };
 
   // 1. ADIM: Dosyayı (PDF/Excel/görsel) yapay zekâya gönder, ürünleri çıkar ve ÖNİZLEME göster (kaydetmez)
+  const createProductImportSession = async ({ companyId, products, source, filename, currency = null }) => {
+    const sessionResponse = await axios.post(`${API}/companies/${companyId}/import-sessions/from-products`, {
+      products,
+      source,
+      filename,
+      currency,
+      discount: uploadDiscount || '0'
+    });
+    const session = sessionResponse.data;
+    setAiImportSession(session);
+    setAiPreviewProducts(session.rows || []);
+    setAiPreviewCompanyId(companyId);
+    return session;
+  };
+
   const aiExtractProducts = async () => {
     let companyId = null;
     let companyName = '';
@@ -1647,7 +1675,14 @@ function App() {
         return;
       }
 
-      setAiPreviewProducts(products);
+      const session = await createProductImportSession({
+        companyId,
+        products,
+        source: 'ai-file',
+        filename: response.data.filename || uploadFile.name || 'AI-import',
+        currency: null
+      });
+      setAiPreviewProducts(session.rows || []);
       setAiPreviewCompanyId(companyId);
       toast.success(`${products.length} ürün bulundu. Lütfen kontrol edip onaylayın.`);
     } catch (error) {
@@ -1669,7 +1704,7 @@ function App() {
       companyName = uploadCompanyName.trim();
     }
     const urls = (termosaCats || '').split('\n').map((s) => s.trim()).filter(Boolean);
-    if (urls.length === 0) { toast.error('En az bir kategori URL/yolu girin'); return; }
+    const scrapeUrls = urls.length > 0 ? urls : ['urunler'];
     try {
       setTermosaScraping(true);
       if (!useExistingCompany) {
@@ -1680,7 +1715,7 @@ function App() {
         setSelectedCompany(companyId);
         setUseExistingCompany(true);
       }
-      const r = await axios.post(`${API}/companies/${companyId}/scrape-termosa`, { category_urls: urls });
+      const r = await axios.post(`${API}/companies/${companyId}/scrape-termosa`, { category_urls: scrapeUrls });
       const products = (r.data.products || []).map((p) => ({
         name: p.name || '', brand: p.brand || '',
         list_price: p.list_price ?? '', discounted_price: p.discounted_price ?? '',
@@ -1688,7 +1723,14 @@ function App() {
       }));
       if (products.length === 0) { toast.error('Ürün çekilemedi.'); return; }
       setUploadCurrency('EUR');
-      setAiPreviewProducts(products);
+      const session = await createProductImportSession({
+        companyId,
+        products,
+        source: 'termosa-b2b',
+        filename: 'Termosa B2B',
+        currency: null
+      });
+      setAiPreviewProducts(session.rows || []);
       setAiPreviewCompanyId(companyId);
       toast.success(`${products.length} ürün çekildi. Kontrol edip onaylayın.`);
     } catch (error) {
@@ -1699,6 +1741,87 @@ function App() {
     }
   };
 
+  const loadTermosaSyncSetting = async (companyId) => {
+    if (!companyId) return;
+    try {
+      const response = await axios.get(`${API}/companies/${companyId}/supplier-sync/termosa`);
+      const setting = response.data;
+      setTermosaSyncSetting(setting);
+      setTermosaSyncEnabled(Boolean(setting?.enabled));
+      setTermosaSyncInterval(setting?.interval_hours || 24);
+      if (setting?.category_urls?.length) {
+        setTermosaCats(setting.category_urls.join('\n'));
+      }
+    } catch (error) {
+      if (error.response?.status !== 404) {
+        console.error('Termosa sync setting load error:', error);
+      }
+      setTermosaSyncSetting(null);
+      setTermosaSyncEnabled(false);
+      setTermosaSyncInterval(24);
+    }
+  };
+
+  const saveTermosaSyncSetting = async ({ silent = false } = {}) => {
+    const companyId = useExistingCompany ? selectedCompany : aiPreviewCompanyId;
+    if (!companyId) { toast.error('Lütfen önce firma seçin'); return null; }
+    const urls = (termosaCats || '').split('\n').map((item) => item.trim()).filter(Boolean);
+    try {
+      setTermosaSyncSaving(true);
+      const response = await axios.put(`${API}/companies/${companyId}/supplier-sync/termosa`, {
+        enabled: termosaSyncEnabled,
+        category_urls: urls,
+        interval_hours: parseInt(termosaSyncInterval, 10) || 24
+      });
+      setTermosaSyncSetting(response.data);
+      if (!silent) {
+        toast.success(termosaSyncEnabled ? 'Otomatik fiyat kontrolü kaydedildi' : 'Otomatik fiyat kontrolü kapatıldı');
+      }
+      return response.data;
+    } catch (error) {
+      console.error('Termosa sync save error:', error);
+      toast.error(error.response?.data?.detail || 'Otomatik kontrol kaydedilemedi');
+      return null;
+    } finally {
+      setTermosaSyncSaving(false);
+    }
+  };
+
+  const runTermosaSyncNow = async () => {
+    const companyId = useExistingCompany ? selectedCompany : aiPreviewCompanyId;
+    if (!companyId) { toast.error('Lütfen önce firma seçin'); return; }
+    const urls = (termosaCats || '').split('\n').map((item) => item.trim()).filter(Boolean);
+
+    let setting = termosaSyncSetting;
+    if (!setting?.id) {
+      setting = await saveTermosaSyncSetting({ silent: true });
+    }
+    if (!setting?.id) {
+      return;
+    }
+    try {
+      setTermosaSyncRunning(true);
+      const response = await axios.post(`${API}/companies/${companyId}/supplier-sync/termosa/run`);
+      const session = response.data.import_session;
+      if (session) {
+        setAiImportSession(session);
+        setAiPreviewProducts(session.rows || []);
+        setAiPreviewCompanyId(companyId);
+        setTermosaSyncSetting((prev) => prev ? {
+          ...prev,
+          last_session_id: session.id,
+          last_error: null,
+          last_run_at: new Date().toISOString()
+        } : prev);
+      }
+      toast.success(response.data.message || 'Fiyat kontrolü tamamlandı');
+    } catch (error) {
+      console.error('Termosa sync run error:', error);
+      toast.error(error.response?.data?.detail || 'Fiyat kontrolü başarısız');
+    } finally {
+      setTermosaSyncRunning(false);
+    }
+  };
   // Önizlemedeki bir ürünün alanını düzenle
   const updateAiPreviewProduct = (index, field, value) => {
     setAiPreviewProducts((prev) => {
@@ -1709,6 +1832,11 @@ function App() {
   };
 
   // Önizlemeden bir ürünü çıkar
+  const applyImportDefaultCategory = (categoryId) => {
+    const normalized = categoryId === 'none' ? '' : categoryId;
+    setImportDefaultCategoryId(normalized);
+    setAiPreviewProducts((prev) => prev ? prev.map((row) => ({ ...row, category_id: normalized || '' })) : prev);
+  };
   const removeAiPreviewProduct = (index) => {
     setAiPreviewProducts((prev) => prev.filter((_, i) => i !== index));
   };
@@ -1716,6 +1844,7 @@ function App() {
   // Önizlemeyi iptal et
   const cancelAiPreview = () => {
     setAiPreviewProducts(null);
+    setAiImportSession(null);
     setAiPreviewCompanyId('');
   };
 
@@ -1725,9 +1854,8 @@ function App() {
       toast.error('Kaydedilecek ürün yok');
       return;
     }
-    // Geçerli ürünler: isim ve 0'dan büyük fiyat
     const valid = aiPreviewProducts.filter(
-      (p) => (p.name || '').trim() && parseFloat(p.list_price) > 0
+      (p) => (p.action === 'skip') || ((p.name || '').trim() && parseFloat(p.list_price) > 0)
     );
     if (valid.length === 0) {
       toast.error('En az bir ürün için isim ve geçerli fiyat girin');
@@ -1736,23 +1864,24 @@ function App() {
 
     try {
       setAiSaving(true);
-      const response = await axios.post(`${API}/companies/${aiPreviewCompanyId}/ai-confirm-products`, {
-        products: valid.map((p) => ({
-          name: p.name,
-          brand: p.brand,
-          list_price: parseFloat(p.list_price),
-          discounted_price: p.discounted_price !== '' && p.discounted_price != null ? parseFloat(p.discounted_price) : null,
-          currency: p.currency,
-          description: p.description || null,
-          image_url: p.image_url || null
-        })),
-        currency: null, // her ürünün kendi (önizlemede düzenlenebilir) para birimi geçerli
-        discount: uploadDiscount || '0',
-        filename: uploadFile?.name || 'AI-import'
-      });
+      const normalizedRows = valid.map((p) => ({
+        ...p,
+        list_price: parseFloat(p.list_price) || 0,
+        discounted_price: p.discounted_price !== '' && p.discounted_price != null ? parseFloat(p.discounted_price) : null,
+        currency: p.currency || 'USD',
+        action: p.action || (p.matched_product_id ? 'update' : 'create')
+      }));
+      const response = aiImportSession?.id
+        ? await axios.post(`${API}/import-sessions/${aiImportSession.id}/apply`, { rows: normalizedRows })
+        : await axios.post(`${API}/companies/${aiPreviewCompanyId}/ai-confirm-products`, {
+            products: normalizedRows.filter((p) => p.action !== 'skip'),
+            currency: null,
+            discount: uploadDiscount || '0',
+            filename: uploadFile?.name || 'AI-import'
+          });
 
-      // Temizle
       setAiPreviewProducts(null);
+      setAiImportSession(null);
       setAiPreviewCompanyId('');
       setUploadFile(null);
       setUploadCompanyName('');
@@ -1760,13 +1889,12 @@ function App() {
       await loadProducts(1, true);
       toast.success(response.data.message || 'Ürünler kaydedildi');
     } catch (error) {
-      console.error('AI kaydetme hatası:', error);
+      console.error('AI kaydetme hatasi:', error);
       toast.error(error.response?.data?.detail || 'Ürünler kaydedilemedi');
     } finally {
       setAiSaving(false);
     }
   };
-
   // ===================== SERVİS (Tadilat/Bakım) =====================
   const SERVICE_STATUS_META = {
     received: { label: 'Bekliyor', badge: 'bg-amber-100 text-amber-700 border-amber-200', dot: 'bg-amber-500' },
@@ -4879,6 +5007,8 @@ function App() {
                       <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
                       Kurları Güncelle
                     </Button>
+
+
                   </div>
                 </div>
 
@@ -7451,7 +7581,7 @@ function App() {
                   {/* Termosa B2B'den çek */}
                   <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-4 space-y-2">
                     <div className="flex items-center gap-2 text-sm font-bold text-amber-800"><Download className="w-4 h-4" /> Termosa B2B'den Çek</div>
-                    <p className="text-xs text-amber-700">Yukarıda firmayı seçin, sonra <strong>kategori yollarını satır satır</strong> yazın. <code>bayi.termosa.com/urunler</code> sonrasını yazmanız yeter (ör. <code>banyo-tuvalet/musluklar</code>). Tam URL de olur. Üst kategori yazarsanız alt kategoriler de gezilir. Liste + peşin fiyat € (%20 KDV eklenmiş; peşin = indirimli).</p>
+                    <p className="text-xs text-amber-700">Manuel ürün çekiminde bu alan boşsa Termosa’daki tüm ürünler listelenir. Otomatik fiyat kontrolünde ise boş bırakılırsa tüm Termosa taranır ama yalnızca bu firmaya daha önce eklediğiniz/eşleşen ürünler kontrol edilir.</p>
                     <textarea
                       value={termosaCats}
                       onChange={(e) => setTermosaCats(e.target.value)}
@@ -7461,12 +7591,72 @@ function App() {
                     />
                     <Button
                       onClick={scrapeTermosaProducts}
-                      disabled={termosaScraping || (!selectedCompany && useExistingCompany) || (!uploadCompanyName.trim() && !useExistingCompany) || !termosaCats.trim()}
+                      disabled={termosaScraping || (!selectedCompany && useExistingCompany) || (!uploadCompanyName.trim() && !useExistingCompany)}
                       className="w-full bg-amber-600 hover:bg-amber-700 text-white"
                     >
                       <Download className="w-4 h-4 mr-2" />
                       {termosaScraping ? 'Çekiliyor (1-2 dk sürebilir)...' : 'Termosa\'dan Çek'}
                     </Button>
+                    <div className="mt-4 rounded-lg border border-slate-200 bg-white/80 p-3 space-y-3">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <div className="text-sm font-bold text-slate-800">Otomatik fiyat kontrolü</div>
+                          <div className="text-xs text-slate-500">Sistem fiyatları çeker, fark varsa onay bekleyen liste oluşturur.</div>
+                        </div>
+                        <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={termosaSyncEnabled}
+                            onChange={(e) => setTermosaSyncEnabled(e.target.checked)}
+                            className="h-4 w-4 accent-emerald-600"
+                          />
+                          Aktif
+                        </label>
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-[160px_1fr] sm:items-end">
+                        <div>
+                          <Label className="text-xs">Kontrol aralığı</Label>
+                          <select
+                            value={termosaSyncInterval}
+                            onChange={(e) => setTermosaSyncInterval(e.target.value)}
+                            className="mt-1 h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-sm"
+                          >
+                            <option value={6}>6 saatte bir</option>
+                            <option value={12}>12 saatte bir</option>
+                            <option value={24}>Günde 1 kez</option>
+                            <option value={48}>2 gunde 1 kez</option>
+                            <option value={168}>Haftada 1 kez</option>
+                          </select>
+                        </div>
+                        <div className="flex flex-col gap-2 sm:flex-row">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={saveTermosaSyncSetting}
+                            disabled={termosaSyncSaving}
+                            className="flex-1"
+                          >
+                            {termosaSyncSaving ? 'Kaydediliyor...' : 'Ayarı Kaydet'}
+                          </Button>
+                          <Button
+                            type="button"
+                            onClick={runTermosaSyncNow}
+                            disabled={termosaSyncRunning || termosaSyncSaving}
+                            className="flex-1 bg-slate-800 hover:bg-slate-900 text-white"
+                          >
+                            {termosaSyncRunning ? 'Kontrol ediliyor...' : 'Şimdi Kontrol Et'}
+                          </Button>
+                        </div>
+                      </div>
+                      {termosaSyncSetting && (
+                        <div className="grid gap-2 text-xs text-slate-500 sm:grid-cols-3">
+                          <div><span className="font-semibold text-slate-700">Durum:</span> {termosaSyncSetting.enabled ? 'Aktif' : 'Kapalı'}</div>
+                          <div><span className="font-semibold text-slate-700">Son kontrol:</span> {termosaSyncSetting.last_run_at ? new Date(termosaSyncSetting.last_run_at).toLocaleString('tr-TR') : 'Yok'}</div>
+                          <div><span className="font-semibold text-slate-700">Sonraki:</span> {termosaSyncSetting.next_run_at ? new Date(termosaSyncSetting.next_run_at).toLocaleString('tr-TR') : '-'}</div>
+                          {termosaSyncSetting.last_error && <div className="sm:col-span-3 text-rose-600">Son hata: {termosaSyncSetting.last_error}</div>}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -7481,42 +7671,127 @@ function App() {
                         İptal
                       </Button>
                     </div>
-                    <div className="overflow-x-auto rounded-lg border">
+                    {aiImportSession?.summary && (
+                      <div className="mb-4 grid gap-3 sm:grid-cols-4">
+                        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+                          <div className="text-xs font-semibold text-emerald-700">Yeni ürün</div>
+                          <div className="text-xl font-black text-emerald-900">{aiImportSession.summary.new_products || 0}</div>
+                        </div>
+                        <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2">
+                          <div className="text-xs font-semibold text-blue-700">Eşleşen ürün</div>
+                          <div className="text-xl font-black text-blue-900">{aiImportSession.summary.matched_products || 0}</div>
+                        </div>
+                        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                          <div className="text-xs font-semibold text-amber-700">Fiyat değişimi</div>
+                          <div className="text-xl font-black text-amber-900">{aiImportSession.summary.price_changes || 0}</div>
+                        </div>
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                          <div className="text-xs font-semibold text-slate-600">Durum</div>
+                          <div className="text-sm font-bold text-slate-900">CRM henüz değişmedi</div>
+                        </div>
+                      </div>
+                    )}
+                    <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <Label className="text-xs font-bold text-slate-600">Tüm ürünlere kategori ata</Label>
+                      <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(220px,360px)_1fr] sm:items-center">
+                        <Select value={importDefaultCategoryId || "none"} onValueChange={applyImportDefaultCategory}>
+                          <SelectTrigger className="h-10 bg-white">
+                            <SelectValue placeholder="Kategori seç" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">Kategorisiz</SelectItem>
+                            {categories
+                              .slice()
+                              .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || a.name.localeCompare(b.name))
+                              .map((category) => (
+                                <SelectItem key={category.id} value={category.id}>
+                                  {category.name}
+                                </SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
+                        <div className="text-xs text-slate-500">İstersen aşağıdaki tabloda her ürüne ayrı kategori de seçebilirsin.</div>
+                      </div>
+                    </div>
+                    <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
                       <table className="w-full text-sm">
                         <thead className="bg-slate-50 text-slate-600">
                           <tr>
-                            <th className="px-2 py-2 text-left font-medium">Ürün Adı</th>
+                            <th className="px-2 py-2 text-left font-medium">Ürün</th>
                             <th className="px-2 py-2 text-left font-medium">Marka</th>
-                            <th className="px-2 py-2 text-right font-medium">Liste Fiyatı</th>
-                            <th className="px-2 py-2 text-right font-medium">İnd. Fiyat</th>
+                            <th className="px-2 py-2 text-right font-medium">Liste</th>
+                            <th className="px-2 py-2 text-right font-medium">Ind.</th>
                             <th className="px-2 py-2 text-left font-medium">Birim</th>
+                            <th className="px-2 py-2 text-left font-medium">Kategori</th>
+                            <th className="px-2 py-2 text-left font-medium">Aksiyon</th>
                             <th className="px-2 py-2"></th>
                           </tr>
                         </thead>
                         <tbody>
                           {aiPreviewProducts.map((p, i) => (
-                            <tr key={i} className="border-t">
-                              <td className="px-1 py-1">
-                                <Input value={p.name} onChange={(e) => updateAiPreviewProduct(i, 'name', e.target.value)} className="h-8 min-w-[180px]" />
+                            <tr key={p.row_id || i} className="border-t align-top">
+                              <td className="px-1 py-1 min-w-[240px]">
+                                <Input value={p.name} onChange={(e) => updateAiPreviewProduct(i, 'name', e.target.value)} className="h-8 min-w-[220px]" disabled={p.action === 'skip'} />
+                                <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
+                                  {p.matched_product_id ? (
+                                    <span className="rounded-full bg-blue-50 px-2 py-0.5 font-semibold text-blue-700 ring-1 ring-blue-100">Eşleşen: {p.matched_product_name || p.name}</span>
+                                  ) : (
+                                    <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700 ring-1 ring-emerald-100">Yeni ürün</span>
+                                  )}
+                                  {p.price_change_percent != null && (
+                                    <span className={`rounded-full px-2 py-0.5 font-semibold ring-1 ${p.price_change_amount > 0 ? 'bg-rose-50 text-rose-700 ring-rose-100' : 'bg-emerald-50 text-emerald-700 ring-emerald-100'}`}>
+                                      {p.price_change_amount > 0 ? '+' : ''}{p.price_change_percent}%
+                                    </span>
+                                  )}
+                                </div>
                               </td>
                               <td className="px-1 py-1">
-                                <Input value={p.brand} onChange={(e) => updateAiPreviewProduct(i, 'brand', e.target.value)} className="h-8 min-w-[100px]" />
+                                <Input value={p.brand || ''} onChange={(e) => updateAiPreviewProduct(i, 'brand', e.target.value)} className="h-8 min-w-[100px]" disabled={p.action === 'skip'} />
                               </td>
                               <td className="px-1 py-1">
-                                <Input type="number" step="0.01" value={p.list_price} onChange={(e) => updateAiPreviewProduct(i, 'list_price', e.target.value)} className="h-8 w-24 text-right" />
+                                <Input type="number" step="0.01" value={p.list_price} onChange={(e) => updateAiPreviewProduct(i, 'list_price', e.target.value)} className="h-8 w-28 text-right" disabled={p.action === 'skip'} />
+                                {p.old_list_price != null && <div className="mt-1 text-right text-[11px] text-slate-400">Eski: {p.old_currency || p.currency} {formatPrice(p.old_list_price)}</div>}
                               </td>
                               <td className="px-1 py-1">
-                                <Input type="number" step="0.01" value={p.discounted_price} onChange={(e) => updateAiPreviewProduct(i, 'discounted_price', e.target.value)} className="h-8 w-24 text-right" placeholder="-" />
+                                <Input type="number" step="0.01" value={p.discounted_price ?? ''} onChange={(e) => updateAiPreviewProduct(i, 'discounted_price', e.target.value)} className="h-8 w-28 text-right" placeholder="-" disabled={p.action === 'skip'} />
                               </td>
                               <td className="px-1 py-1">
                                 <select
                                   value={p.currency}
                                   onChange={(e) => updateAiPreviewProduct(i, 'currency', e.target.value)}
                                   className="h-8 border rounded px-1"
+                                  disabled={p.action === 'skip'}
                                 >
                                   <option value="USD">USD</option>
                                   <option value="EUR">EUR</option>
                                   <option value="TRY">TRY</option>
+                                </select>
+                              </td>
+                              <td className="px-1 py-1">
+                                <select
+                                  value={p.category_id || "none"}
+                                  onChange={(e) => updateAiPreviewProduct(i, 'category_id', e.target.value === 'none' ? '' : e.target.value)}
+                                  className="h-8 min-w-[140px] rounded-md border border-slate-300 bg-white px-2 text-xs font-semibold text-slate-700"
+                                  disabled={p.action === 'skip'}
+                                >
+                                  <option value="none">Kategorisiz</option>
+                                  {categories
+                                    .slice()
+                                    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || a.name.localeCompare(b.name))
+                                    .map((category) => (
+                                      <option key={category.id} value={category.id}>{category.name}</option>
+                                    ))}
+                                </select>
+                              </td>
+                              <td className="px-1 py-1">
+                                <select
+                                  value={p.action || (p.matched_product_id ? 'update' : 'create')}
+                                  onChange={(e) => updateAiPreviewProduct(i, 'action', e.target.value)}
+                                  className="h-8 min-w-[116px] rounded-md border border-slate-300 bg-white px-2 text-xs font-semibold text-slate-700"
+                                >
+                                  {p.matched_product_id && <option value="update">Güncelle</option>}
+                                  {!p.matched_product_id && <option value="create">Ekle</option>}
+                                  <option value="skip">Atla</option>
                                 </select>
                               </td>
                               <td className="px-1 py-1 text-center">

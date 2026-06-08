@@ -158,6 +158,12 @@ async def create_indexes():
         # Sozlesmeler
         await db.contracts.create_index("created_at")
 
+        # Tedarikci otomatik fiyat kontrol ayarlari
+        await db.supplier_sync_settings.create_index([("company_id", 1), ("supplier", 1)], unique=True)
+        await db.supplier_sync_settings.create_index([("enabled", 1), ("next_run_at", 1)])
+        await db.import_sessions.create_index("id", unique=True)
+        await db.import_sessions.create_index([("company_id", 1), ("created_at", -1)])
+
         logger.info("PERFORMANCE: Database indexes created successfully")
         
     except Exception as e:
@@ -488,6 +494,35 @@ class UploadHistoryResponse(BaseModel):
     currency_distribution: Dict[str, int]
     price_changes: List[Dict[str, Any]]
     status: str
+
+class ImportSessionResponse(BaseModel):
+    id: str
+    company_id: str
+    company_name: str
+    source: str
+    filename: str
+    status: str
+    total_products: int
+    rows: List[Dict[str, Any]]
+    summary: Dict[str, Any]
+    created_at: datetime
+    updated_at: datetime
+
+class SupplierSyncSettingResponse(BaseModel):
+    id: str
+    company_id: str
+    company_name: str
+    supplier: str
+    enabled: bool
+    category_urls: List[str]
+    interval_hours: int
+    auto_apply: bool = False
+    last_run_at: Optional[datetime] = None
+    next_run_at: Optional[datetime] = None
+    last_session_id: Optional[str] = None
+    last_error: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
 
 class QuoteCreate(BaseModel):
     name: str
@@ -899,6 +934,11 @@ class BackgroundScheduler:
                     )
                     fut.result(timeout=90)  # tamamlanmayı bekle ki hatalar yakalansın
                     logger.info("Background exchange rate update completed")
+                    sync_fut = asyncio.run_coroutine_threadsafe(
+                        _run_due_supplier_syncs(),
+                        self.loop,
+                    )
+                    sync_fut.result(timeout=600)
                 else:
                     logger.warning("Background scheduler: ana event loop yok/çalışmıyor, atlandı")
 
@@ -5472,6 +5512,613 @@ class ScrapeTermosaRequest(BaseModel):
     max_products: int = 600
 
 
+class ImportSessionCreateRequest(BaseModel):
+    products: List[Dict[str, Any]]
+    source: str = "manual"
+    filename: Optional[str] = "import-preview"
+    currency: Optional[str] = None
+    discount: Optional[str] = "0"
+
+
+class ImportSessionApplyRequest(BaseModel):
+    rows: Optional[List[Dict[str, Any]]] = None
+
+
+class SupplierSyncSettingRequest(BaseModel):
+    enabled: bool = True
+    category_urls: List[str] = Field(default_factory=list)
+    interval_hours: int = Field(24, ge=1, le=168)
+
+
+def _normalize_product_name_for_match(name: str) -> str:
+    return re.sub(r"\s+", " ", (name or "").strip()).casefold()
+
+
+def _normalize_termosa_url_key(value: str) -> str:
+    if not value:
+        return ""
+    return str(value).strip().split("?", 1)[0].rstrip("/").casefold()
+
+
+def _safe_float(value, default: float = 0.0) -> float:
+    try:
+        if value in (None, ""):
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _parse_discount_percentage(value) -> float:
+    try:
+        if value is None or str(value).strip() == "":
+            return 0.0
+        parsed = float(value)
+        if parsed < 0 or parsed > 100:
+            raise ValueError()
+        return parsed
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Geçersiz iskonto değeri (0-100 olmalı).")
+
+
+async def _build_import_session(company: Dict[str, Any], products_data: List[Dict[str, Any]], source: str, filename: str, user_selected_currency: Optional[str], discount_percentage: float):
+    company_id = company["id"]
+    await currency_service.get_exchange_rates()
+
+    existing_cursor = db.products.find({"company_id": company_id})
+    existing_by_name = {}
+    async for product in existing_cursor:
+        existing_by_name[_normalize_product_name_for_match(product.get("name", ""))] = product
+
+    rows = []
+    currency_distribution = {}
+    new_count = 0
+    update_count = 0
+    price_change_count = 0
+
+    for idx, product_data in enumerate(products_data):
+        name = (product_data.get("name") or "").strip()
+        if not name:
+            continue
+
+        list_price = _safe_float(product_data.get("list_price"))
+        if list_price <= 0:
+            continue
+
+        final_currency = (user_selected_currency or product_data.get("currency") or "USD").upper()
+        if final_currency not in ["USD", "EUR", "TRY"]:
+            final_currency = "USD"
+
+        discounted_price = None
+        if discount_percentage > 0:
+            discounted_price = round(list_price - (list_price * discount_percentage / 100), 2)
+        else:
+            raw_discounted = product_data.get("discounted_price")
+            if raw_discounted not in (None, "", 0, "0"):
+                discounted_price = _safe_float(raw_discounted)
+
+        list_price_try = await currency_service.convert_to_try(Decimal(str(list_price)), final_currency)
+        discounted_price_try = None
+        if discounted_price is not None:
+            discounted_price_try = await currency_service.convert_to_try(Decimal(str(discounted_price)), final_currency)
+
+        existing = existing_by_name.get(_normalize_product_name_for_match(name))
+        action = "update" if existing else "create"
+        match_status = "matched" if existing else "new"
+        if existing:
+            update_count += 1
+        else:
+            new_count += 1
+
+        old_price = _safe_float(existing.get("list_price")) if existing else None
+        change_amount = None
+        change_percent = None
+        change_type = None
+        if existing and old_price is not None and old_price != list_price:
+            change_amount = round(list_price - old_price, 2)
+            change_percent = round(((list_price - old_price) / old_price * 100), 2) if old_price > 0 else 0
+            change_type = "increase" if change_amount > 0 else "decrease"
+            price_change_count += 1
+
+        currency_distribution[final_currency] = currency_distribution.get(final_currency, 0) + 1
+        rows.append({
+            "row_id": str(uuid.uuid4()),
+            "source_index": idx,
+            "action": action,
+            "match_status": match_status,
+            "matched_product_id": existing.get("id") if existing else None,
+            "matched_product_name": existing.get("name") if existing else None,
+            "old_list_price": old_price,
+            "old_discounted_price": _safe_float(existing.get("discounted_price")) if existing and existing.get("discounted_price") is not None else None,
+            "old_currency": existing.get("currency") if existing else None,
+            "old_list_price_try": _safe_float(existing.get("list_price_try")) if existing and existing.get("list_price_try") is not None else None,
+            "old_category_id": existing.get("category_id") if existing else None,
+            "name": name,
+            "brand": (product_data.get("brand") or "").strip(),
+            "category_id": product_data.get("category_id") or (existing.get("category_id") if existing else None),
+            "description": product_data.get("description"),
+            "image_url": product_data.get("image_url"),
+            "code": product_data.get("code"),
+            "source_url": product_data.get("source_url"),
+            "list_price": list_price,
+            "discounted_price": discounted_price,
+            "currency": final_currency,
+            "list_price_try": float(list_price_try),
+            "discounted_price_try": float(discounted_price_try) if discounted_price_try is not None else None,
+            "price_change_amount": change_amount,
+            "price_change_percent": change_percent,
+            "change_type": change_type,
+        })
+
+    if not rows:
+        raise HTTPException(status_code=422, detail="Önizleme için geçerli ürün bulunamadı.")
+
+    now = datetime.now(timezone.utc)
+    session = {
+        "id": str(uuid.uuid4()),
+        "company_id": company_id,
+        "company_name": company["name"],
+        "source": source,
+        "filename": filename or "import-preview",
+        "status": "preview",
+        "total_products": len(rows),
+        "rows": rows,
+        "summary": {
+            "total_products": len(rows),
+            "new_products": new_count,
+            "matched_products": update_count,
+            "price_changes": price_change_count,
+            "currency_distribution": currency_distribution,
+        },
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.import_sessions.insert_one(session)
+    return _strip_mongo_id(session)
+
+
+async def _apply_import_session(session: Dict[str, Any], rows_override: Optional[List[Dict[str, Any]]] = None):
+    if session.get("status") == "applied":
+        raise HTTPException(status_code=409, detail="Bu aktarım daha önce uygulanmış.")
+
+    company_id = session["company_id"]
+    company = await db.companies.find_one({"id": company_id})
+    if not company:
+        raise HTTPException(status_code=404, detail="Firma bulunamadı")
+
+    rows = rows_override if rows_override is not None else session.get("rows", [])
+    if not rows:
+        raise HTTPException(status_code=400, detail="Uygulanacak satır yok.")
+
+    await currency_service.get_exchange_rates()
+    new_products = 0
+    updated_products = 0
+    skipped_products = 0
+    price_changes = []
+    currency_distribution = {}
+
+    for row in rows:
+        action = (row.get("action") or "skip").lower()
+        if action == "skip":
+            skipped_products += 1
+            continue
+
+        name = (row.get("name") or "").strip()
+        list_price = _safe_float(row.get("list_price"))
+        if not name or list_price <= 0:
+            skipped_products += 1
+            continue
+
+        currency = (row.get("currency") or "USD").upper()
+        if currency not in ["USD", "EUR", "TRY"]:
+            currency = "USD"
+        discounted_price = row.get("discounted_price")
+        discounted_price = _safe_float(discounted_price) if discounted_price not in (None, "", 0, "0") else None
+        category_id = row.get("category_id") or None
+        if category_id:
+            category = await db.categories.find_one({"id": category_id})
+            if not category:
+                raise HTTPException(status_code=404, detail=f"Kategori bulunamadı: {category_id}")
+        list_price_try = await currency_service.convert_to_try(Decimal(str(list_price)), currency)
+        discounted_price_try = None
+        if discounted_price is not None:
+            discounted_price_try = await currency_service.convert_to_try(Decimal(str(discounted_price)), currency)
+        currency_distribution[currency] = currency_distribution.get(currency, 0) + 1
+
+        matched_id = row.get("matched_product_id")
+        existing = await db.products.find_one({"id": matched_id, "company_id": company_id}) if matched_id else None
+        if action == "update" and existing:
+            old_price = _safe_float(existing.get("list_price"))
+            if old_price != list_price:
+                change_amount = list_price - old_price
+                price_changes.append({
+                    "product_name": existing.get("name") or name,
+                    "old_price": old_price,
+                    "new_price": list_price,
+                    "change_amount": round(change_amount, 2),
+                    "change_percent": round(((list_price - old_price) / old_price * 100), 2) if old_price > 0 else 0,
+                    "currency": currency,
+                    "change_type": "increase" if change_amount > 0 else "decrease",
+                })
+            update_data = {
+                "brand": row.get("brand") or existing.get("brand", ""),
+                "list_price": list_price,
+                "discounted_price": discounted_price,
+                "currency": currency,
+                "category_id": category_id,
+                "list_price_try": float(list_price_try),
+                "discounted_price_try": float(discounted_price_try) if discounted_price_try is not None else None,
+                "updated_at": datetime.now(timezone.utc),
+            }
+            if row.get("image_url"):
+                update_data["image_url"] = row.get("image_url")
+            if row.get("description"):
+                update_data["description"] = row.get("description")
+            if row.get("code"):
+                update_data["code"] = row.get("code")
+            if row.get("source_url"):
+                update_data["source_url"] = row.get("source_url")
+            await db.products.update_one({"id": existing["id"]}, {"$set": update_data})
+            updated_products += 1
+        elif action == "create":
+            product_dict = {
+                "id": str(uuid.uuid4()),
+                "name": name,
+                "company_id": company_id,
+                "brand": row.get("brand") or "",
+                "category_id": category_id,
+                "description": row.get("description"),
+                "image_url": row.get("image_url"),
+                "code": row.get("code"),
+                "source_url": row.get("source_url"),
+                "list_price": list_price,
+                "discounted_price": discounted_price,
+                "currency": currency,
+                "list_price_try": float(list_price_try),
+                "discounted_price_try": float(discounted_price_try) if discounted_price_try is not None else None,
+                "created_at": datetime.now(timezone.utc),
+            }
+            await db.products.insert_one(product_dict)
+            new_products += 1
+        else:
+            skipped_products += 1
+
+    upload_history = {
+        "id": str(uuid.uuid4()),
+        "company_id": company_id,
+        "company_name": company["name"],
+        "filename": session.get("filename") or "import-session",
+        "upload_date": datetime.now(timezone.utc),
+        "total_products": len(rows),
+        "new_products": new_products,
+        "updated_products": updated_products,
+        "currency_distribution": currency_distribution,
+        "price_changes": price_changes,
+        "status": "completed",
+    }
+    await db.upload_history.insert_one(upload_history)
+
+    await db.import_sessions.update_one(
+        {"id": session["id"]},
+        {"$set": {
+            "status": "applied",
+            "rows": rows,
+            "applied_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+            "upload_history_id": upload_history["id"],
+        }}
+    )
+    invalidate_cache()
+
+    messages = []
+    if new_products:
+        messages.append(f"{new_products} yeni ürün eklendi")
+    if updated_products:
+        messages.append(f"{updated_products} ürün güncellendi")
+    if skipped_products:
+        messages.append(f"{skipped_products} satır atlandı")
+    if price_changes:
+        messages.append(f"{len(price_changes)} fiyat değişikliği kaydedildi")
+
+    return {
+        "success": True,
+        "message": ". ".join(messages) if messages else "Aktarım uygulandı",
+        "upload_id": upload_history["id"],
+        "import_session_id": session["id"],
+        "summary": {
+            "total_products": len(rows),
+            "new_products": new_products,
+            "updated_products": updated_products,
+            "skipped_products": skipped_products,
+            "price_changes": len(price_changes),
+            "currency_distribution": currency_distribution,
+        }
+    }
+
+
+def _as_aware_utc(dt):
+    if not dt:
+        return None
+    if isinstance(dt, str):
+        try:
+            dt = datetime.fromisoformat(dt.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _sanitize_category_urls(category_urls: List[str]) -> List[str]:
+    cleaned = []
+    for url in category_urls or []:
+        value = (url or "").strip()
+        if value and value not in cleaned:
+            cleaned.append(value)
+    return cleaned
+
+
+def _termosa_default_category_urls(category_urls: List[str]) -> List[str]:
+    cleaned = _sanitize_category_urls(category_urls)
+    return cleaned or ["urunler"]
+
+
+def _termosa_is_whole_tree_scope(category_urls: List[str]) -> bool:
+    cleaned = _sanitize_category_urls(category_urls)
+    return not cleaned or cleaned == ["urunler"]
+
+
+def _strip_mongo_id(doc: Dict[str, Any]):
+    if isinstance(doc, dict):
+        doc.pop("_id", None)
+    return doc
+
+
+async def _filter_termosa_products_for_company(company_id: str, scraped_products: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    existing_names = set()
+    existing_codes = set()
+    existing_images = set()
+    existing_sources = set()
+    async for existing_product in db.products.find({"company_id": company_id}, {"name": 1, "code": 1, "image_url": 1, "source_url": 1}):
+        existing_names.add(_normalize_product_name_for_match(existing_product.get("name", "")))
+        code = (existing_product.get("code") or "").strip().casefold()
+        image = _normalize_termosa_url_key(existing_product.get("image_url"))
+        source = _normalize_termosa_url_key(existing_product.get("source_url"))
+        if code:
+            existing_codes.add(code)
+        if image:
+            existing_images.add(image)
+        if source:
+            existing_sources.add(source)
+
+    if not (existing_names or existing_codes or existing_images or existing_sources):
+        return []
+
+    matches = []
+    for product in scraped_products:
+        name = _normalize_product_name_for_match(product.get("name", ""))
+        code = (product.get("code") or "").strip().casefold()
+        image = _normalize_termosa_url_key(product.get("image_url"))
+        source = _normalize_termosa_url_key(product.get("source_url"))
+        if (
+            name in existing_names
+            or (code and code in existing_codes)
+            or (image and image in existing_images)
+            or (source and source in existing_sources)
+        ):
+            matches.append(product)
+    return matches
+
+
+async def _resolve_termosa_company_for_existing_products(company: Dict[str, Any], scraped_products: List[Dict[str, Any]]):
+    products = await _filter_termosa_products_for_company(company["id"], scraped_products)
+    if products:
+        return company, products
+
+    selected_name_key = _normalize_product_name_for_match(company.get("name", ""))
+    best_company = None
+    best_products = []
+    async for candidate in db.companies.find({}, {"id": 1, "name": 1}):
+        if candidate.get("id") == company.get("id"):
+            continue
+        if _normalize_product_name_for_match(candidate.get("name", "")) != selected_name_key:
+            continue
+        candidate_products = await _filter_termosa_products_for_company(candidate["id"], scraped_products)
+        if len(candidate_products) > len(best_products):
+            best_company = candidate
+            best_products = candidate_products
+
+    if best_company and best_products:
+        return best_company, best_products
+
+    return company, []
+
+
+async def _run_termosa_sync_setting(setting: Dict[str, Any], manual: bool = False):
+    company = await db.companies.find_one({"id": setting["company_id"]})
+    if not company:
+        raise HTTPException(status_code=404, detail="Firma bulunamadı")
+
+    saved_category_urls = setting.get("category_urls") or []
+    whole_tree_existing_only = _termosa_is_whole_tree_scope(saved_category_urls)
+    category_urls = _termosa_default_category_urls(saved_category_urls)
+
+    now = datetime.now(timezone.utc)
+    try:
+        loop = asyncio.get_running_loop()
+        products = await loop.run_in_executor(None, _termosa_scrape, category_urls, 600)
+        if not products:
+            raise HTTPException(status_code=422, detail="Termosa kontrolünde ürün bulunamadı.")
+
+        if whole_tree_existing_only:
+            company, products = await _resolve_termosa_company_for_existing_products(company, products)
+            if not products:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Bu firma için Termosa’dan daha önce eklenmiş veya eşleşen ürün bulunamadı."
+                )
+        session = await _build_import_session(
+            company=company,
+            products_data=products,
+            source="termosa-auto-check" if not manual else "termosa-manual-check",
+            filename=f"Termosa fiyat kontrolü - {now.strftime('%Y-%m-%d %H:%M')}",
+            user_selected_currency=None,
+            discount_percentage=0,
+        )
+        next_run_at = now + timedelta(hours=int(setting.get("interval_hours") or 24))
+        await db.supplier_sync_settings.update_one(
+            {"id": setting["id"]},
+            {"$set": {
+                "last_run_at": now,
+                "next_run_at": next_run_at,
+                "last_session_id": session["id"],
+                "last_error": None,
+                "updated_at": now,
+            }}
+        )
+        return {
+            "success": True,
+            "message": "Fiyat kontrolü tamamlandı. CRM'e yazmadan önizleme oluşturuldu.",
+            "import_session": session,
+            "summary": session.get("summary", {}),
+        }
+    except HTTPException as e:
+        next_run_at = now + timedelta(hours=int(setting.get("interval_hours") or 24))
+        await db.supplier_sync_settings.update_one(
+            {"id": setting["id"]},
+            {"$set": {
+                "last_run_at": now,
+                "next_run_at": next_run_at,
+                "last_error": str(e.detail),
+                "updated_at": now,
+            }}
+        )
+        raise
+    except Exception as e:
+        next_run_at = now + timedelta(hours=int(setting.get("interval_hours") or 24))
+        await db.supplier_sync_settings.update_one(
+            {"id": setting["id"]},
+            {"$set": {
+                "last_run_at": now,
+                "next_run_at": next_run_at,
+                "last_error": str(e),
+                "updated_at": now,
+            }}
+        )
+        logger.error(f"Termosa supplier sync failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Termosa fiyat kontrolü başarısız: {e}")
+
+
+async def _run_due_supplier_syncs():
+    now = datetime.now(timezone.utc)
+    cursor = db.supplier_sync_settings.find({
+        "enabled": True,
+        "supplier": "termosa",
+        "$or": [
+            {"next_run_at": {"$lte": now}},
+            {"next_run_at": None},
+            {"next_run_at": {"$exists": False}},
+        ],
+    }).limit(3)
+    async for setting in cursor:
+        try:
+            logger.info(f"Running due supplier sync: {setting.get('id')}")
+            await _run_termosa_sync_setting(setting, manual=False)
+        except Exception as e:
+            logger.error(f"Due supplier sync failed for {setting.get('id')}: {e}")
+
+
+@api_router.post("/companies/{company_id}/import-sessions/from-products", response_model=ImportSessionResponse)
+async def create_import_session_from_products(company_id: str, payload: ImportSessionCreateRequest):
+    company = await db.companies.find_one({"id": company_id})
+    if not company:
+        raise HTTPException(status_code=404, detail="Firma bulunamadı")
+    if not payload.products:
+        raise HTTPException(status_code=400, detail="Önizlenecek ürün yok.")
+
+    user_selected_currency = None
+    if payload.currency and payload.currency.upper() in ["USD", "EUR", "TRY"]:
+        user_selected_currency = payload.currency.upper()
+
+    session = await _build_import_session(
+        company=company,
+        products_data=payload.products,
+        source=payload.source or "manual",
+        filename=payload.filename or "import-preview",
+        user_selected_currency=user_selected_currency,
+        discount_percentage=_parse_discount_percentage(payload.discount),
+    )
+    return session
+
+
+@api_router.get("/import-sessions/{session_id}", response_model=ImportSessionResponse)
+async def get_import_session(session_id: str):
+    session = await db.import_sessions.find_one({"id": session_id})
+    if not session:
+        raise HTTPException(status_code=404, detail="Aktarım önizlemesi bulunamadı")
+    return session
+
+
+@api_router.post("/import-sessions/{session_id}/apply")
+async def apply_import_session(session_id: str, payload: ImportSessionApplyRequest):
+    session = await db.import_sessions.find_one({"id": session_id})
+    if not session:
+        raise HTTPException(status_code=404, detail="Aktarım önizlemesi bulunamadı")
+    return await _apply_import_session(session, payload.rows)
+
+
+@api_router.get("/companies/{company_id}/supplier-sync/termosa", response_model=Optional[SupplierSyncSettingResponse])
+async def get_termosa_supplier_sync(company_id: str):
+    company = await db.companies.find_one({"id": company_id})
+    if not company:
+        raise HTTPException(status_code=404, detail="Firma bulunamadı")
+    setting = await db.supplier_sync_settings.find_one({"company_id": company_id, "supplier": "termosa"})
+    return setting
+
+
+@api_router.put("/companies/{company_id}/supplier-sync/termosa", response_model=SupplierSyncSettingResponse)
+async def save_termosa_supplier_sync(company_id: str, payload: SupplierSyncSettingRequest):
+    company = await db.companies.find_one({"id": company_id})
+    if not company:
+        raise HTTPException(status_code=404, detail="Firma bulunamadı")
+
+    category_urls = _sanitize_category_urls(payload.category_urls)
+
+    now = datetime.now(timezone.utc)
+    existing = await db.supplier_sync_settings.find_one({"company_id": company_id, "supplier": "termosa"})
+    next_run_at = now + timedelta(hours=payload.interval_hours) if payload.enabled else None
+    setting = {
+        "id": existing.get("id") if existing else str(uuid.uuid4()),
+        "company_id": company_id,
+        "company_name": company["name"],
+        "supplier": "termosa",
+        "enabled": payload.enabled,
+        "category_urls": category_urls,
+        "interval_hours": payload.interval_hours,
+        "auto_apply": False,
+        "last_run_at": existing.get("last_run_at") if existing else None,
+        "next_run_at": next_run_at,
+        "last_session_id": existing.get("last_session_id") if existing else None,
+        "last_error": None,
+        "created_at": existing.get("created_at") if existing else now,
+        "updated_at": now,
+    }
+    await db.supplier_sync_settings.replace_one(
+        {"company_id": company_id, "supplier": "termosa"},
+        setting,
+        upsert=True,
+    )
+    return setting
+
+
+@api_router.post("/companies/{company_id}/supplier-sync/termosa/run")
+async def run_termosa_supplier_sync(company_id: str):
+    setting = await db.supplier_sync_settings.find_one({"company_id": company_id, "supplier": "termosa"})
+    if not setting:
+        raise HTTPException(status_code=404, detail="Termosa otomatik kontrol ayarı bulunamadı")
+    return await _run_termosa_sync_setting(setting, manual=True)
+
+
 @api_router.post("/companies/{company_id}/ai-extract-products")
 async def ai_extract_products(company_id: str, file: UploadFile = File(...)):
     """PDF / Excel / Görsel yükle -> GPT-4o mini ile ürünleri çıkar.
@@ -6658,6 +7305,8 @@ def _termosa_scrape(category_urls: list, max_products: int = 600) -> list:
             found.append({'name': name, 'list_eur': list_eur, 'id': pid, 'type': ptype, 'code': code, 'image_url': isrc})
         return found
 
+    pending = []
+    seen_pages = set()
     for cu in category_urls:
         cu = (cu or '').strip()
         if not cu:
@@ -6669,6 +7318,14 @@ def _termosa_scrape(category_urls: list, max_products: int = 600) -> list:
             if not p.startswith('urunler'):
                 p = 'urunler/' + p  # kullanıcı /urunler yazmasa da ekle
             full = TERMOSA_BASE + '/' + p
+        pending.append(full.split('?', 1)[0].rstrip('/'))
+
+    page_limit = 180
+    while pending and len(cards) < max_products and len(seen_pages) < page_limit:
+        full = pending.pop(0)
+        if full in seen_pages:
+            continue
+        seen_pages.add(full)
         try:
             r = s.get(full, timeout=30)
         except requests.RequestException as e:
@@ -6684,16 +7341,12 @@ def _termosa_scrape(category_urls: list, max_products: int = 600) -> list:
             if a.find_parent(class_=re.compile('product-card|product-image')):
                 continue
             h = (a.get('href') or '').split('?')[0].rstrip('/')
-            if h.startswith(path + '/') and h.count('/') == path.count('/') + 1 and h not in sub_links:
+            if h.startswith(path + '/') and h not in sub_links:
                 sub_links.append(h)
-        for sub in sub_links[:60]:
-            try:
-                rr = s.get(TERMOSA_BASE + sub, timeout=30)
-                page_cards += _collect_cards(BeautifulSoup(rr.content, 'lxml'))
-            except requests.RequestException:
-                continue
-            if len(cards) + len(page_cards) >= max_products:
-                break
+        for sub in sub_links[:80]:
+            next_url = (TERMOSA_BASE + sub).rstrip('/')
+            if next_url not in seen_pages and next_url not in pending:
+                pending.append(next_url)
         if sub_links:
             logger.info(f"Termosa {full}: {len(sub_links)} alt kategori gezildi")
         logger.info(f"Termosa kategori {full}: {len(page_cards)} kart bulundu")
