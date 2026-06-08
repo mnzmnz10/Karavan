@@ -489,6 +489,8 @@ function App() {
   const [aiExtracting, setAiExtracting] = useState(false); // çıkarma sürüyor mu
   const [aiPreviewProducts, setAiPreviewProducts] = useState(null); // çıkarılan ürünler (önizleme); null = önizleme yok
   const [aiPreviewCompanyId, setAiPreviewCompanyId] = useState(''); // önizlemenin ait olduğu firma
+  const [termosaCats, setTermosaCats] = useState(''); // Termosa kategori URL'leri (satır satır)
+  const [termosaScraping, setTermosaScraping] = useState(false);
   const [aiSaving, setAiSaving] = useState(false); // kaydetme sürüyor mu
   // Servis (tadilat/bakim) sekmesi
   const emptyServiceForm = { customer_name: '', phone: '', vehicle_brand: '', vehicle_model: '', plate: '', is_trailer: false, arrival_date: '', delivery_date: '', operations: '', items: [], photos: [], notes: '', cost: '', advance_amount: '', collections: [], payment_account: '', warranty_months: '', warranty_note: '', status: 'received' };
@@ -496,6 +498,7 @@ function App() {
   const [serviceForm, setServiceForm] = useState(emptyServiceForm);
   const [serviceEditingId, setServiceEditingId] = useState(null); // düzenlenen kayıt id (null = yeni)
   const [serviceDialogOpen, setServiceDialogOpen] = useState(false);
+  const [viewingService, setViewingService] = useState(null); // detay önizleme (sözleşmeler gibi)
   const [serviceStatusFilter, setServiceStatusFilter] = useState('all');
   const [serviceSearch, setServiceSearch] = useState('');
   const [serviceSaving, setServiceSaving] = useState(false);
@@ -514,6 +517,7 @@ function App() {
   const [viewingContract, setViewingContract] = useState(null); // önizlenen sözleşme (sheets dahil)
   const [contractPayFilter, setContractPayFilter] = useState('all'); // sözleşme ödeme filtresi: all | open | done
   const [contractStageFilter, setContractStageFilter] = useState('agreed'); // sözleşme aşama filtresi (varsayılan: anlaşılanlar): agreed | proposal | all
+  const [contractSearch, setContractSearch] = useState(''); // sözleşme arama (müşteri/başlık/dosya)
   const [contractLoadingView, setContractLoadingView] = useState(false);
   const [contractRawView, setContractRawView] = useState(false); // tasarım / ham tablo
   const [contractSimRate, setContractSimRate] = useState(''); // kur simülasyonu (boş = orijinal kur)
@@ -1654,6 +1658,47 @@ function App() {
     }
   };
 
+  // Termosa B2B'den seçili kategorileri çek -> AI önizleme tablosunu doldur (aynı onay akışı)
+  const scrapeTermosaProducts = async () => {
+    let companyId = null, companyName = '';
+    if (useExistingCompany) {
+      if (!selectedCompany) { toast.error('Lütfen bir firma seçin'); return; }
+      companyId = selectedCompany;
+    } else {
+      if (!uploadCompanyName.trim()) { toast.error('Lütfen firma adını girin'); return; }
+      companyName = uploadCompanyName.trim();
+    }
+    const urls = (termosaCats || '').split('\n').map((s) => s.trim()).filter(Boolean);
+    if (urls.length === 0) { toast.error('En az bir kategori URL/yolu girin'); return; }
+    try {
+      setTermosaScraping(true);
+      if (!useExistingCompany) {
+        const cr = await axios.post(`${API}/companies`, { name: companyName });
+        companyId = cr.data.id;
+        toast.success(`"${companyName}" firması oluşturuldu`);
+        await loadCompanies();
+        setSelectedCompany(companyId);
+        setUseExistingCompany(true);
+      }
+      const r = await axios.post(`${API}/companies/${companyId}/scrape-termosa`, { category_urls: urls });
+      const products = (r.data.products || []).map((p) => ({
+        name: p.name || '', brand: p.brand || '',
+        list_price: p.list_price ?? '', discounted_price: p.discounted_price ?? '',
+        currency: p.currency || 'EUR', description: '', image_url: p.image_url || ''
+      }));
+      if (products.length === 0) { toast.error('Ürün çekilemedi.'); return; }
+      setUploadCurrency('EUR');
+      setAiPreviewProducts(products);
+      setAiPreviewCompanyId(companyId);
+      toast.success(`${products.length} ürün çekildi. Kontrol edip onaylayın.`);
+    } catch (error) {
+      console.error('Termosa çekme hatası:', error);
+      toast.error(error.response?.data?.detail || 'Termosa çekme başarısız');
+    } finally {
+      setTermosaScraping(false);
+    }
+  };
+
   // Önizlemedeki bir ürünün alanını düzenle
   const updateAiPreviewProduct = (index, field, value) => {
     setAiPreviewProducts((prev) => {
@@ -1698,7 +1743,8 @@ function App() {
           list_price: parseFloat(p.list_price),
           discounted_price: p.discounted_price !== '' && p.discounted_price != null ? parseFloat(p.discounted_price) : null,
           currency: p.currency,
-          description: p.description || null
+          description: p.description || null,
+          image_url: p.image_url || null
         })),
         currency: null, // her ürünün kendi (önizlemede düzenlenebilir) para birimi geçerli
         discount: uploadDiscount || '0',
@@ -1750,6 +1796,9 @@ function App() {
     setServiceHistory([]);
     setServiceDialogOpen(true);
   };
+
+  const openServiceView = (svc) => { setViewingService(svc); };
+  const backFromServiceView = () => { setViewingService(null); };
 
   // Aynı araç/müşterinin geçmiş servis kayıtları
   const loadServiceHistory = async (svc) => {
@@ -1909,6 +1958,7 @@ function App() {
         toast.success('Servis kaydı eklendi');
       }
       setServiceDialogOpen(false);
+      setViewingService(null);
       await loadServices();
     } catch (error) {
       console.error('Servis kaydedilemedi:', error);
@@ -4625,7 +4675,9 @@ function App() {
                   <Label htmlFor="username">Kullanıcı Adı</Label>
                   <Input
                     id="username"
+                    name="username"
                     type="text"
+                    autoComplete="username"
                     value={loginForm.username}
                     onChange={(e) => setLoginForm({...loginForm, username: e.target.value})}
                     placeholder="Kullanıcı adınızı girin"
@@ -4637,7 +4689,9 @@ function App() {
                   <Label htmlFor="password">Şifre</Label>
                   <Input
                     id="password"
+                    name="password"
                     type="password"
+                    autoComplete="current-password"
                     value={loginForm.password}
                     onChange={(e) => setLoginForm({...loginForm, password: e.target.value})}
                     placeholder="Şifrenizi girin"
@@ -4685,22 +4739,22 @@ function App() {
                 <div className="space-y-2">
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2">Menü</p>
                   <TabsList className="flex flex-col gap-1.5 w-full h-auto p-0 bg-transparent border-0 shadow-none">
-                    <TabsTrigger 
-                      value="products" 
-                      className="flex items-center justify-start gap-3 w-full h-11 px-4 text-sm font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100 rounded-xl data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
+                    <TabsTrigger
+                      value="products"
+                      className="group flex items-center justify-start gap-3 w-full h-11 px-4 text-sm font-semibold text-slate-700 transition-all duration-200 hover:bg-emerald-50 rounded-xl data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
                     >
-                      <Package className="w-4 h-4" />
+                      <Package className="w-4 h-4 text-emerald-500 group-data-[state=active]:text-white" />
                       <span>Ürünler</span>
                     </TabsTrigger>
-                    
-                    <TabsTrigger 
-                      value="quotes" 
-                      className="flex items-center justify-start gap-3 w-full h-11 px-4 text-sm font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100 rounded-xl data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
+
+                    <TabsTrigger
+                      value="quotes"
+                      className="group flex items-center justify-start gap-3 w-full h-11 px-4 text-sm font-semibold text-slate-700 transition-all duration-200 hover:bg-amber-50 rounded-xl data-[state=active]:bg-amber-500 data-[state=active]:text-white data-[state=active]:shadow-sm"
                     >
-                      <FileText className="w-4 h-4" />
+                      <FileText className="w-4 h-4 text-amber-500 group-data-[state=active]:text-white" />
                       <span className="flex-1 text-left">Teklifler</span>
                       {selectedProducts.size > 0 && (
-                        <Badge className="ml-auto bg-amber-500 hover:bg-amber-600 text-white text-[10px] px-1.5 py-0.5 font-bold">
+                        <Badge className="ml-auto bg-amber-500 hover:bg-amber-600 text-white text-[10px] px-1.5 py-0.5 font-bold group-data-[state=active]:bg-white group-data-[state=active]:text-amber-600">
                           {selectedProducts.size}
                         </Badge>
                       )}
@@ -4717,58 +4771,63 @@ function App() {
                           setActiveTab('contracts');
                         }
                       }}
-                      className="flex items-center justify-start gap-3 w-full h-11 px-4 text-sm font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100 rounded-xl data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
+                      className="group flex items-center justify-start gap-3 w-full h-11 px-4 text-sm font-semibold text-slate-700 transition-all duration-200 hover:bg-blue-50 rounded-xl data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
                     >
-                      <FileText className="w-4 h-4" />
+                      <FileText className="w-4 h-4 text-blue-500 group-data-[state=active]:text-white" />
                       <span>Sözleşmeler</span>
                     </TabsTrigger>
 
-                    <TabsTrigger 
-                      value="companies" 
-                      className="flex items-center justify-start gap-3 w-full h-11 px-4 text-sm font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100 rounded-xl data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
+                    <TabsTrigger
+                      value="upload"
+                      className="group flex items-center justify-start gap-3 w-full h-11 px-4 text-sm font-semibold text-slate-700 transition-all duration-200 hover:bg-violet-50 rounded-xl data-[state=active]:bg-violet-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
                     >
-                      <Building2 className="w-4 h-4" />
-                      <span>Firmalar</span>
-                    </TabsTrigger>
-
-                    <TabsTrigger 
-                      value="categories" 
-                      className="flex items-center justify-start gap-3 w-full h-11 px-4 text-sm font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100 rounded-xl data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
-                    >
-                      <Tags className="w-4 h-4" />
-                      <span>Kategoriler</span>
-                    </TabsTrigger>
-
-                    <TabsTrigger 
-                      value="upload" 
-                      className="flex items-center justify-start gap-3 w-full h-11 px-4 text-sm font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100 rounded-xl data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
-                    >
-                      <Upload className="w-4 h-4" />
+                      <Upload className="w-4 h-4 text-violet-500 group-data-[state=active]:text-white" />
                       <span>Ürün Ekle (AI)</span>
                     </TabsTrigger>
 
-                    <TabsTrigger 
-                      value="battery-test" 
-                      className="flex items-center justify-start gap-3 w-full h-11 px-4 text-sm font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100 rounded-xl data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
+                    <TabsTrigger
+                      value="battery-test"
+                      className="group flex items-center justify-start gap-3 w-full h-11 px-4 text-sm font-semibold text-slate-700 transition-all duration-200 hover:bg-teal-50 rounded-xl data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
                     >
-                      <Battery className="w-4 h-4" />
+                      <Battery className="w-4 h-4 text-teal-500 group-data-[state=active]:text-white" />
                       <span>Akü Test</span>
                     </TabsTrigger>
 
                     <TabsTrigger
                       value="wiring-diagram"
-                      className="flex items-center justify-start gap-3 w-full h-11 px-4 text-sm font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100 rounded-xl data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
+                      className="group flex items-center justify-start gap-3 w-full h-11 px-4 text-sm font-semibold text-slate-700 transition-all duration-200 hover:bg-cyan-50 rounded-xl data-[state=active]:bg-cyan-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
                     >
-                      <Cable className="w-4 h-4" />
+                      <Cable className="w-4 h-4 text-cyan-500 group-data-[state=active]:text-white" />
                       <span>Kablo Şeması</span>
                     </TabsTrigger>
 
                     <TabsTrigger
                       value="service"
-                      className="flex items-center justify-start gap-3 w-full h-11 px-4 text-sm font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100 rounded-xl data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
+                      className="group flex items-center justify-start gap-3 w-full h-11 px-4 text-sm font-semibold text-slate-700 transition-all duration-200 hover:bg-orange-50 rounded-xl data-[state=active]:bg-orange-500 data-[state=active]:text-white data-[state=active]:shadow-sm"
                     >
-                      <Wrench className="w-4 h-4" />
+                      <Wrench className="w-4 h-4 text-orange-500 group-data-[state=active]:text-white" />
                       <span>Servis</span>
+                    </TabsTrigger>
+
+                    {/* Tanımlar — en altta */}
+                    <div className="mt-2 pt-2 border-t border-slate-200">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 mb-1.5">Tanımlar</p>
+                    </div>
+
+                    <TabsTrigger
+                      value="companies"
+                      className="group flex items-center justify-start gap-3 w-full h-11 px-4 text-sm font-semibold text-slate-700 transition-all duration-200 hover:bg-indigo-50 rounded-xl data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
+                    >
+                      <Building2 className="w-4 h-4 text-indigo-500 group-data-[state=active]:text-white" />
+                      <span>Firmalar</span>
+                    </TabsTrigger>
+
+                    <TabsTrigger
+                      value="categories"
+                      className="group flex items-center justify-start gap-3 w-full h-11 px-4 text-sm font-semibold text-slate-700 transition-all duration-200 hover:bg-rose-50 rounded-xl data-[state=active]:bg-rose-500 data-[state=active]:text-white data-[state=active]:shadow-sm"
+                    >
+                      <Tags className="w-4 h-4 text-rose-500 group-data-[state=active]:text-white" />
+                      <span>Kategoriler</span>
                     </TabsTrigger>
                   </TabsList>
                 </div>
@@ -5248,11 +5307,22 @@ function App() {
                         })}
                       </div>
                     )}
+                    {/* Arama — her aşamada (teklif + anlaşılan) */}
+                    <div className="relative max-w-md">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                      <input
+                        value={contractSearch}
+                        onChange={(e) => setContractSearch(e.target.value)}
+                        placeholder="Müşteri, araç türü veya dosya adı ara..."
+                        className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                      />
+                    </div>
                   </div>
                 )}
 
                 {(() => {
-                  const filtered = contracts.filter((c) => (contractStageFilter === 'all' || (c.stage || 'proposal') === contractStageFilter) && (contractStageFilter !== 'agreed' || contractPayFilter === 'all' || contractPayClass(c) === contractPayFilter));
+                  const sq = contractSearch.trim().toLocaleLowerCase('tr-TR');
+                  const filtered = contracts.filter((c) => (contractStageFilter === 'all' || (c.stage || 'proposal') === contractStageFilter) && (contractStageFilter !== 'agreed' || contractPayFilter === 'all' || contractPayClass(c) === contractPayFilter) && (!sq || [c.customer_name, c.title, c.file_name].filter(Boolean).some((v) => String(v).toLocaleLowerCase('tr-TR').includes(sq))));
                   const proposalCount = contracts.filter((c) => (c.stage || 'proposal') === 'proposal').length;
                   return (
                   <>
@@ -7377,6 +7447,27 @@ function App() {
                     <Upload className="w-4 h-4 mr-2" />
                     {aiExtracting ? 'Yapay zekâ okuyor...' : '✨ Ürünleri Çıkar'}
                   </Button>
+
+                  {/* Termosa B2B'den çek */}
+                  <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-4 space-y-2">
+                    <div className="flex items-center gap-2 text-sm font-bold text-amber-800"><Download className="w-4 h-4" /> Termosa B2B'den Çek</div>
+                    <p className="text-xs text-amber-700">Yukarıda firmayı seçin, sonra <strong>kategori yollarını satır satır</strong> yazın. <code>bayi.termosa.com/urunler</code> sonrasını yazmanız yeter (ör. <code>banyo-tuvalet/musluklar</code>). Tam URL de olur. Üst kategori yazarsanız alt kategoriler de gezilir. Liste + peşin fiyat € (%20 KDV eklenmiş; peşin = indirimli).</p>
+                    <textarea
+                      value={termosaCats}
+                      onChange={(e) => setTermosaCats(e.target.value)}
+                      rows={4}
+                      placeholder={"elektrik-elektronik-enerji-sistemler/prizler\nbanyo-tuvalet/musluklar"}
+                      className="w-full px-3 py-2 border border-amber-300 rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    />
+                    <Button
+                      onClick={scrapeTermosaProducts}
+                      disabled={termosaScraping || (!selectedCompany && useExistingCompany) || (!uploadCompanyName.trim() && !useExistingCompany) || !termosaCats.trim()}
+                      className="w-full bg-amber-600 hover:bg-amber-700 text-white"
+                    >
+                      <Download className="w-4 h-4 mr-2" />
+                      {termosaScraping ? 'Çekiliyor (1-2 dk sürebilir)...' : 'Termosa\'dan Çek'}
+                    </Button>
+                  </div>
                 </div>
 
                 {/* ÖNİZLEME: çıkarılan ürünler — kontrol/düzeltme + onay */}
@@ -9534,8 +9625,8 @@ function App() {
                 </button>
 
                 <div className="rounded-3xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-                  {/* Emerald accent başlık bandı */}
-                  <div className="relative overflow-hidden bg-gradient-to-r from-emerald-700 via-emerald-600 to-teal-600 px-6 py-5">
+                  {/* Lacivert başlık bandı (sözleşmeler gibi) */}
+                  <div className="relative overflow-hidden bg-gradient-to-br from-[#1B3A5C] to-[#15293f] px-6 py-5">
                     <div className="absolute right-[-50px] top-[-50px] h-36 w-36 rounded-full bg-white/10" />
                     <div className="relative flex items-center gap-3">
                       <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/20 bg-white/10">
@@ -9787,34 +9878,6 @@ function App() {
                           </div>
                         );
                       })()}
-                      <div className="mt-4">
-                        <Label>Ödeme Hesabı / Notu <span className="font-normal text-slate-400">— sadece sizde görünür, PDF'te yer almaz</span></Label>
-                        <textarea
-                          value={serviceForm.payment_account}
-                          onChange={(e) => setServiceForm({ ...serviceForm, payment_account: e.target.value })}
-                          rows={2}
-                          placeholder="Nakit veya X Hesaba İban"
-                          className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                        />
-                        <p className="mt-1 text-[11px] text-slate-400">Tahsilat ve ödeme hesabı bilgisi teslim formuna (PDF) yansımaz.</p>
-                      </div>
-                    </div>
-
-                    {/* Garanti */}
-                    <div>
-                      <div className="mb-3 flex items-center gap-2 text-[11px] font-black uppercase tracking-wider text-emerald-700">
-                        <Check className="w-3.5 h-3.5" /> Garanti
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <div>
-                          <Label>Garanti Süresi (ay)</Label>
-                          <Input type="number" min="0" step="1" value={serviceForm.warranty_months} onChange={(e) => setServiceForm({ ...serviceForm, warranty_months: e.target.value })} placeholder="örn. 12" />
-                        </div>
-                        <div className="sm:col-span-2">
-                          <Label>Garanti Kapsam Notu</Label>
-                          <Input value={serviceForm.warranty_note} onChange={(e) => setServiceForm({ ...serviceForm, warranty_note: e.target.value })} placeholder="örn. Panellere ve işçiliğe garanti" />
-                        </div>
-                      </div>
                     </div>
 
                     {/* Notlar (serbest metin) */}
@@ -9874,6 +9937,128 @@ function App() {
                   </div>
                 </div>
               </div>
+            ) : viewingService ? (
+              (() => {
+                const s = viewingService;
+                const meta = SERVICE_STATUS_META[s.status] || SERVICE_STATUS_META.received;
+                const isTrailer = s.is_trailer || !(s.plate || '').trim();
+                const vehicle = [s.vehicle_brand, s.vehicle_model].filter(Boolean).join(' ') || (isTrailer ? 'Çekme Karavan' : 'Araç belirtilmemiş');
+                const total = (s.items || []).length > 0 ? serviceItemsTotal(s.items) : (s.cost != null ? s.cost : 0);
+                const collected = (s.advance_amount || 0) + serviceCollectedTRY(s.collections);
+                const remaining = Math.max(total - collected, 0);
+                const pct = total > 0 ? Math.max(0, Math.min(100, Math.round(collected / total * 100))) : 0;
+                const payStatus = total <= 0 ? null : (remaining <= 0.01 ? { t: 'TAMAMLANDI', c: 'bg-emerald-500' } : (collected > 0.01 ? { t: `ÖDEME %${pct}`, c: 'bg-amber-500' } : { t: 'ÖDENMEDİ', c: 'bg-rose-500' }));
+                return (
+                  <div className="space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <Button variant="ghost" size="sm" onClick={backFromServiceView} className="text-slate-500">← Listeye dön</Button>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Button variant="outline" size="sm" onClick={() => openEditServiceDialog(s)} className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"><Edit className="w-4 h-4 mr-2" /> Düzenle</Button>
+                        <Button variant="outline" size="sm" onClick={() => window.open(`${API}/services/${s.id}/pdf`, '_blank')} className="border-blue-300 text-blue-700 hover:bg-blue-50"><Download className="w-4 h-4 mr-2" /> PDF İndir</Button>
+                      </div>
+                    </div>
+
+                    <div className="rounded-3xl border border-slate-200 bg-white shadow-sm overflow-hidden max-w-4xl mx-auto">
+                      <div className="relative overflow-hidden bg-gradient-to-br from-[#1B3A5C] to-[#15293f] text-white px-6 sm:px-8 py-7">
+                        <div className="absolute right-[-40px] top-[-40px] h-40 w-40 rounded-full bg-white/5" />
+                        <div className="relative flex items-start justify-between gap-4">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 text-emerald-300 text-[11px] font-bold uppercase tracking-[0.18em] mb-2"><Wrench className="w-3.5 h-3.5" /> Servis Kaydı{s.order_no ? ` · ${s.order_no}` : ''}</div>
+                            <h2 style={{ fontFamily: "'Fraunces', Georgia, serif" }} className="text-3xl sm:text-4xl font-semibold leading-tight">{vehicle}</h2>
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                              {isTrailer ? <span className="px-2 py-0.5 bg-amber-400/20 text-amber-100 rounded text-xs font-bold border border-amber-300/30">Çekme Karavan</span> : (s.plate && <span className="px-2 py-0.5 bg-white/10 rounded text-xs font-mono font-bold tracking-wider">{s.plate}</span>)}
+                              <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${meta.badge}`}><span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} /> {meta.label}</span>
+                            </div>
+                          </div>
+                          <div className="text-right text-sm shrink-0 space-y-2">
+                            <div><div className="text-white/45 text-[10px] uppercase tracking-widest">Geliş</div><div className="font-semibold tabular-nums">{s.arrival_date || '—'}</div></div>
+                            <div><div className="text-white/45 text-[10px] uppercase tracking-widest">Teslim</div><div className="font-semibold tabular-nums">{s.delivery_date || '—'}</div></div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {(s.customer_name || s.phone) && (
+                        <div className="px-6 sm:px-8 py-4 bg-[#FBFCFD] border-b border-slate-100 flex flex-wrap gap-x-8 gap-y-2 text-sm">
+                          {s.customer_name && <div className="flex items-center gap-2"><Users className="w-4 h-4 text-slate-400" /><span className="font-semibold text-slate-800">{s.customer_name}</span></div>}
+                          {s.phone && <div className="flex items-center gap-2"><Phone className="w-4 h-4 text-slate-400" /><span className="text-slate-700">{s.phone}</span></div>}
+                        </div>
+                      )}
+
+                      <div className="px-4 sm:px-8 py-6 bg-white">
+                        <div className="mb-3 flex items-center gap-2 text-[11px] font-black uppercase tracking-wider text-[#1B3A5C]"><Package className="w-3.5 h-3.5" /> Yapılan İşlemler / Parçalar</div>
+                        {(s.items || []).length > 0 ? (
+                          <div className="ring-1 ring-slate-300 rounded-lg overflow-x-auto">
+                            <table className="w-full border-collapse text-[13px]">
+                              <thead><tr className="bg-[#1B3A5C] text-white text-[11px] uppercase tracking-wider">
+                                <th className="px-2 py-1.5 text-left font-semibold border border-[#2E5A86] w-8">#</th>
+                                <th className="px-2 py-1.5 text-left font-semibold border border-[#2E5A86]">İşlem / Parça</th>
+                                <th className="px-2 py-1.5 text-center font-semibold border border-[#2E5A86] w-14">Adet</th>
+                                <th className="px-2 py-1.5 text-right font-semibold border border-[#2E5A86] w-28">Birim ₺</th>
+                                <th className="px-2 py-1.5 text-right font-semibold border border-[#2E5A86] w-28">Tutar ₺</th>
+                              </tr></thead>
+                              <tbody>
+                                {(s.items || []).map((it, i) => {
+                                  const qty = parseFloat(it.qty) || 0; const up = parseFloat(it.unit_price) || 0;
+                                  return (<tr key={i} className="hover:bg-emerald-50/40">
+                                    <td className="px-2 py-1 text-slate-400 tabular-nums border border-slate-200">{i + 1}</td>
+                                    <td className="px-2 py-1 text-slate-700 border border-slate-200">{it.name}</td>
+                                    <td className="px-2 py-1 text-center text-slate-500 tabular-nums border border-slate-200">{qty || ''}</td>
+                                    <td className="px-2 py-1 text-right text-slate-500 tabular-nums border border-slate-200">₺ {formatPrice(up)}</td>
+                                    <td className="px-2 py-1 text-right font-semibold text-[#1B3A5C] tabular-nums border border-slate-200">₺ {formatPrice(qty * up)}</td>
+                                  </tr>);
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : s.operations ? (
+                          <div className="text-sm text-slate-700 bg-slate-50 rounded-lg p-4 whitespace-pre-wrap break-words">{s.operations}</div>
+                        ) : <p className="text-sm text-slate-400 italic">İşlem girilmemiş.</p>}
+                      </div>
+
+                      {Array.isArray(s.photos) && s.photos.length > 0 && (
+                        <div className="px-4 sm:px-8 pb-6 bg-white">
+                          <div className="mb-3 flex items-center gap-2 text-[11px] font-black uppercase tracking-wider text-[#1B3A5C]"><Eye className="w-3.5 h-3.5" /> Fotoğraflar ({s.photos.length})</div>
+                          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+                            {s.photos.map((src, i) => (
+                              <a key={i} href={src} target="_blank" rel="noreferrer" className="block aspect-square rounded-lg overflow-hidden ring-1 ring-slate-200 hover:ring-emerald-400">
+                                <img src={src} alt={`foto ${i + 1}`} className="w-full h-full object-cover" />
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {total > 0 && (
+                        <div className="px-4 sm:px-8 pb-6 bg-[#FBFCFD]">
+                          <div className="rounded-2xl bg-gradient-to-br from-[#1B3A5C] to-[#15293f] text-white px-5 py-5 shadow-lg grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="space-y-2 text-sm">
+                              <div className="flex justify-between text-white/65"><span>Toplam</span><span className="tabular-nums font-semibold text-white">₺ {formatPrice(total)}</span></div>
+                              <div className="flex justify-between text-white/65"><span>Tahsil Edilen</span><span className="tabular-nums font-semibold text-emerald-300">₺ {formatPrice(collected)}</span></div>
+                            </div>
+                            <div className="flex flex-col justify-center sm:items-end">
+                              <div className="text-[11px] uppercase tracking-[0.2em] text-emerald-300 font-bold">Kalan Tutar</div>
+                              <div className="text-4xl font-black tabular-nums text-white mt-0.5">₺ {formatPrice(remaining)}</div>
+                              {payStatus && <div className="mt-3"><span className={`text-[11px] font-bold px-2.5 py-1 rounded-full text-white ${payStatus.c}`}>{payStatus.t}</span></div>}
+                              <div className="w-full sm:w-44 h-2 bg-white/15 rounded-full mt-2 overflow-hidden"><div className="h-full bg-emerald-400 rounded-full" style={{ width: `${pct}%` }} /></div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {s.notes && (
+                        <div className="px-4 sm:px-8 pb-8 bg-[#FBFCFD] space-y-3">
+                          {s.notes && (
+                            <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4 text-sm">
+                              <div className="font-bold text-amber-800 text-xs uppercase tracking-wider mb-1">Notlar</div>
+                              <div className="text-amber-900 whitespace-pre-wrap">{s.notes}</div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()
             ) : (
             <>
             {/* Başlık + Yeni kayıt */}
@@ -9889,26 +10074,26 @@ function App() {
               </Button>
             </div>
 
-            {/* Durum filtre sekmeleri */}
-            <div className="flex flex-wrap gap-2">
+            {/* Durum filtresi (segmented — sözleşmeler gibi) */}
+            <div className="inline-flex flex-wrap rounded-xl bg-slate-100 p-1 gap-1">
               {[
-                { key: 'all', label: 'Tümü' },
-                { key: 'received', label: 'Bekliyor' },
-                { key: 'in_progress', label: 'Devam Ediyor' },
-                { key: 'delivered', label: 'Teslim Edildi' },
-              ].map((f) => (
-                <button
-                  key={f.key}
-                  onClick={() => setServiceStatusFilter(f.key)}
-                  className={`px-4 py-2 rounded-full text-sm font-semibold border transition-all ${
-                    serviceStatusFilter === f.key
-                      ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
-                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  {f.label} <span className="opacity-70">({serviceCounts[f.key]})</span>
-                </button>
-              ))}
+                { key: 'received', label: 'Bekliyor', Icon: Folder },
+                { key: 'in_progress', label: 'Devam Ediyor', Icon: Wrench },
+                { key: 'delivered', label: 'Teslim Edildi', Icon: CheckCircle2 },
+                { key: 'all', label: 'Tümü', Icon: FileText },
+              ].map(({ key, label, Icon }) => {
+                const active = serviceStatusFilter === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setServiceStatusFilter(key)}
+                    className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${active ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                  >
+                    <Icon className="w-4 h-4" /> {label} <span className="text-slate-400 font-semibold">{serviceCounts[key]}</span>
+                  </button>
+                );
+              })}
             </div>
 
             {/* Arama */}
@@ -9944,36 +10129,45 @@ function App() {
                 );
               }
               return (
-                <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {filtered.map((s) => {
                     const meta = SERVICE_STATUS_META[s.status] || SERVICE_STATUS_META.received;
                     const isTrailer = s.is_trailer || !(s.plate || '').trim();
                     const vehicle = [s.vehicle_brand, s.vehicle_model].filter(Boolean).join(' ') || (isTrailer ? 'Çekme Karavan' : 'Araç belirtilmemiş');
-                    const total = s.cost != null ? s.cost : 0;
+                    const total = (s.items || []).length > 0 ? serviceItemsTotal(s.items) : (s.cost != null ? s.cost : 0);
                     const collected = (s.advance_amount || 0) + serviceCollectedTRY(s.collections);
                     const remaining = Math.max(total - collected, 0);
-                    const payStatus = total <= 0 ? null : (remaining <= 0 ? { label: 'Ödendi', cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' } : (collected > 0 ? { label: 'Kısmi Ödeme', cls: 'bg-amber-100 text-amber-700 border-amber-200' } : { label: 'Ödenmedi', cls: 'bg-rose-100 text-rose-700 border-rose-200' }));
+                    const pct = total > 0 ? Math.max(0, Math.min(100, Math.round(collected / total * 100))) : 0;
+                    const payStatus = total <= 0 ? null : (collected - total > 0.01 ? { t: 'FAZLA ÖDEME', c: 'bg-violet-500 text-white' } : (remaining <= 0.01 ? { t: 'TAMAMLANDI', c: 'bg-emerald-500 text-white' } : (collected > 0.01 ? { t: `ÖDEME %${pct}`, c: 'bg-amber-500 text-white' } : { t: 'ÖDENMEDİ', c: 'bg-rose-500 text-white' })));
                     return (
-                      <div key={s.id} className={`bg-white rounded-2xl border border-slate-200 border-l-4 shadow-sm hover:shadow-md transition-shadow p-5 flex flex-col gap-3 ${s.status === 'received' ? 'border-l-amber-400' : s.status === 'in_progress' ? 'border-l-blue-500' : 'border-l-emerald-500'}`}>
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            {s.order_no && <div className="text-[10px] font-black tracking-wider text-emerald-700/80 mb-0.5">{s.order_no}</div>}
-                            <div className="font-bold text-slate-800 truncate">{vehicle}</div>
-                            {isTrailer ? (
-                              <div className="inline-block mt-1 px-2 py-0.5 bg-amber-50 text-amber-700 rounded text-xs font-bold border border-amber-200">Çekme Karavan</div>
-                            ) : (
-                              s.plate && <div className="inline-block mt-1 px-2 py-0.5 bg-slate-100 rounded text-xs font-mono font-bold tracking-wider text-slate-700">{s.plate}</div>
-                            )}
+                      <div key={s.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow p-5 flex flex-col gap-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-start gap-3 min-w-0 flex-1">
+                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${s.status === 'received' ? 'bg-amber-50 text-amber-600' : s.status === 'in_progress' ? 'bg-blue-50 text-blue-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                              <Wrench className="w-5 h-5" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              {s.order_no && <div className="text-[10px] font-black tracking-wider text-slate-400 mb-0.5">{s.order_no}</div>}
+                              <div className="font-bold text-slate-800 truncate" title={s.customer_name || vehicle}>{s.customer_name || vehicle}</div>
+                              <div className="text-sm text-slate-500 truncate" title={vehicle}>{vehicle}</div>
+                              {isTrailer ? (
+                                <div className="inline-block mt-1 px-2 py-0.5 bg-amber-50 text-amber-700 rounded text-xs font-bold border border-amber-200">Çekme Karavan</div>
+                              ) : (
+                                s.plate && <div className="inline-block mt-1 px-2 py-0.5 bg-slate-100 rounded text-xs font-mono font-bold tracking-wider text-slate-700">{s.plate}</div>
+                              )}
+                            </div>
                           </div>
-                          <span className={`shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.badge}`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} /> {meta.label}
-                          </span>
+                          <div className="flex flex-col items-end gap-1 shrink-0">
+                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.badge}`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} /> {meta.label}
+                            </span>
+                            {payStatus && <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-bold ${payStatus.c}`}>{payStatus.t}</span>}
+                          </div>
                         </div>
 
-                        {(s.customer_name || s.phone) && (
-                          <div className="text-sm text-slate-600 space-y-0.5">
-                            {s.customer_name && <div className="flex items-center gap-1.5"><Users className="w-3.5 h-3.5 text-slate-400" /> {s.customer_name}</div>}
-                            {s.phone && <div className="flex items-center gap-1.5"><Phone className="w-3.5 h-3.5 text-slate-400" /> {s.phone}</div>}
+                        {s.phone && (
+                          <div className="text-sm text-slate-600">
+                            <div className="flex items-center gap-1.5"><Phone className="w-3.5 h-3.5 text-slate-400" /> {s.phone}</div>
                           </div>
                         )}
 
@@ -9995,14 +10189,16 @@ function App() {
                             <div className="flex items-center justify-between"><span className="text-slate-500">Toplam</span><span className="font-bold text-slate-700 tabular-nums">₺ {formatPrice(total)}</span></div>
                             {collected > 0 && <div className="flex items-center justify-between"><span className="text-slate-500">Tahsil Edilen</span><span className="font-semibold text-slate-600 tabular-nums">₺ {formatPrice(collected)}</span></div>}
                             <div className="flex items-center justify-between"><span className="text-slate-500">Kalan</span><span className="font-black text-emerald-700 tabular-nums">₺ {formatPrice(remaining)}</span></div>
-                            {payStatus && <div className="pt-1"><span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-bold border ${payStatus.cls}`}>{payStatus.label}</span></div>}
                           </div>
                         )}
 
-                        <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+                        <div className="flex items-center gap-2 pt-2 border-t border-slate-100 mt-auto">
+                          <Button size="sm" className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs" onClick={() => openServiceView(s)}>
+                            <Eye className="w-4 h-4 mr-1" /> Görüntüle
+                          </Button>
                           {s.status !== 'delivered' && (
-                            <Button size="sm" variant="outline" className="flex-1 text-xs" onClick={() => setServiceStatus(s.id, s.status === 'received' ? 'in_progress' : 'delivered')}>
-                              {s.status === 'received' ? 'İşleme Al' : 'Teslim Et'}
+                            <Button size="sm" variant="ghost" className="text-slate-600" onClick={() => setServiceStatus(s.id, s.status === 'received' ? 'in_progress' : 'delivered')} title={s.status === 'received' ? 'İşleme Al' : 'Teslim Et'}>
+                              {s.status === 'received' ? <Wrench className="w-4 h-4" /> : <Check className="w-4 h-4" />}
                             </Button>
                           )}
                           <Button size="sm" variant="ghost" className="text-blue-600 hover:text-blue-800" onClick={() => window.open(`${API}/services/${s.id}/pdf`, '_blank')} title="Teslim Formu (PDF)">

@@ -5373,6 +5373,8 @@ async def _save_products_smart(company, products_data, user_selected_currency, d
                         "discounted_price_try": float(discounted_price_try) if discounted_price_try else None,
                         "updated_at": datetime.now(timezone.utc)
                     }
+                    if product_data.get('image_url'):  # görsel varsa güncelle (boşsa mevcut korunur)
+                        update_data["image_url"] = product_data.get('image_url')
                     
                     await db.products.update_one(
                         {"id": existing_product['id']},
@@ -5388,7 +5390,7 @@ async def _save_products_smart(company, products_data, user_selected_currency, d
                         "company_id": target_company_id,
                         "brand": product_data.get('brand', ''),  # Marka alanı
                         "description": product_data.get('description'),
-                        "image_url": None,
+                        "image_url": product_data.get('image_url'),
                         "list_price": float(list_price),
                         "discounted_price": float(discounted_price) if discounted_price else None,
                         "currency": final_currency,
@@ -5463,6 +5465,11 @@ class AIConfirmRequest(BaseModel):
     currency: Optional[str] = None
     discount: Optional[str] = "0"
     filename: Optional[str] = "AI-import"
+
+
+class ScrapeTermosaRequest(BaseModel):
+    category_urls: List[str] = Field(default_factory=list)  # tam URL veya /urunler/... yolu, satır satır
+    max_products: int = 600
 
 
 @api_router.post("/companies/{company_id}/ai-extract-products")
@@ -5545,6 +5552,7 @@ async def ai_confirm_products(company_id: str, payload: AIConfirmRequest):
             'list_price': list_price,
             'discounted_price': discounted_price,
             'currency': (p.get('currency') or 'USD'),
+            'image_url': (p.get('image_url') or None),
         })
 
     if not products_data:
@@ -6575,12 +6583,188 @@ class ScrapedProduct(BaseModel):
     brand: Optional[str] = None
     currency: Optional[str] = "TRY"
 
+TERMOSA_BASE = "https://bayi.termosa.com"
+
+def _termosa_price_to_float(text: str):
+    """'1.234,56' / '387,00' -> 1234.56 / 387.0. Yoksa None."""
+    import re as _re
+    m = _re.search(r'([\d.]+,\d{2})', text or "")
+    if not m:
+        m2 = _re.search(r'(\d[\d.]*)', text or "")
+        if not m2:
+            return None
+        raw = m2.group(1).replace('.', '')
+        try: return float(raw)
+        except ValueError: return None
+    raw = m.group(1).replace('.', '').replace(',', '.')
+    try: return float(raw)
+    except ValueError: return None
+
+
+def _termosa_login():
+    """Bayi girişi yap, oturumlu requests.Session döndür. Kimlik .env'den (TERMOSA_USER/TERMOSA_PASS)."""
+    import re as _re
+    user = os.environ.get('TERMOSA_USER'); pw = os.environ.get('TERMOSA_PASS')
+    if not user or not pw:
+        raise HTTPException(status_code=400, detail="Termosa kimlik bilgisi yok. backend/.env'e TERMOSA_USER ve TERMOSA_PASS ekleyin.")
+    s = requests.Session()
+    s.headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+    try:
+        r = s.get(f"{TERMOSA_BASE}/account/login?ReturnUrl=%2F", timeout=30)
+        mt = _re.search(r'name="__RequestVerificationToken"[^>]*value="([^"]+)"', r.text)
+        if not mt:
+            raise HTTPException(status_code=502, detail="Termosa login formu okunamadı (token yok).")
+        s.post(f"{TERMOSA_BASE}/account/login?ReturnUrl=%2F",
+               data={'Email': user, 'Password': pw, '__RequestVerificationToken': mt.group(1)},
+               timeout=30, allow_redirects=True)
+        home = s.get(f"{TERMOSA_BASE}/", timeout=30).text.lower()
+        if 'cikis' not in home and 'hesab' not in home:
+            raise HTTPException(status_code=401, detail="Termosa girişi başarısız (kimlik bilgisi hatalı olabilir).")
+        return s
+    except requests.RequestException as e:
+        raise HTTPException(status_code=502, detail=f"Termosa'ya bağlanılamadı: {e}")
+
+
+TERMOSA_KDV = 1.20  # %20 KDV ekle (liste fiyatı T.E.S.F. ve peşin fiyat KDV hariç gelir)
+
+def _termosa_scrape(category_urls: list, max_products: int = 600) -> list:
+    """Listeden hızlı çek: isim + liste fiyatı (€, kart) + data-id; sonra tek /home/checkdiscounts ile peşin fiyat (€).
+    list_price = liste×1.20, discounted_price = peşin×1.20. Para birimi EUR. Ürün sayfası gezilmez (hızlı)."""
+    from bs4 import BeautifulSoup
+    import json as _json
+    s = _termosa_login()
+    cards = []  # {name, list_eur, id, type, code}
+    seen_ids = set()
+
+    def _collect_cards(so):
+        found = []
+        for c in so.select('.product-card'):
+            nel = c.select_one('.product-card__name')
+            name = nel.get_text(' ', strip=True) if nel else None
+            if not name:
+                continue
+            btn = c.select_one('.product-card__addtocart[data-id]')
+            pid = btn.get('data-id') if btn else None
+            ptype = (btn.get('data-type') if btn else 'p') or 'p'
+            pel = c.select_one('.product-card__prices')
+            list_eur = _termosa_price_to_float(pel.get_text(' ', strip=True)) if pel else None
+            qv = c.select_one('[data-href]')
+            url = qv.get('data-href') if qv else None
+            code = url.rstrip('/').split('/')[-1] if url else (pid or '')
+            img = c.select_one('.product-image__img')
+            isrc = img.get('src') if img else None
+            if isrc and isrc.startswith('/'):
+                isrc = TERMOSA_BASE + isrc
+            found.append({'name': name, 'list_eur': list_eur, 'id': pid, 'type': ptype, 'code': code, 'image_url': isrc})
+        return found
+
+    for cu in category_urls:
+        cu = (cu or '').strip()
+        if not cu:
+            continue
+        if cu.startswith('http'):
+            full = cu
+        else:
+            p = cu.lstrip('/')
+            if not p.startswith('urunler'):
+                p = 'urunler/' + p  # kullanıcı /urunler yazmasa da ekle
+            full = TERMOSA_BASE + '/' + p
+        try:
+            r = s.get(full, timeout=30)
+        except requests.RequestException as e:
+            logger.warning(f"Termosa kategori indirilemedi {full}: {e}")
+            continue
+        so = BeautifulSoup(r.content, 'lxml')
+        page_cards = _collect_cards(so)
+        # Üst/alt kategori: ürün-kartı DIŞINDAKİ alt kategori linklerini (1 seviye derin) de gez.
+        # Leaf sayfada bu liste boştur (ürün linkleri product-card içindedir) -> ekstra istek olmaz.
+        path = full.split('termosa.com', 1)[-1].split('?')[0].rstrip('/')
+        sub_links = []
+        for a in so.select('a[href^="/urunler/"]'):
+            if a.find_parent(class_=re.compile('product-card|product-image')):
+                continue
+            h = (a.get('href') or '').split('?')[0].rstrip('/')
+            if h.startswith(path + '/') and h.count('/') == path.count('/') + 1 and h not in sub_links:
+                sub_links.append(h)
+        for sub in sub_links[:60]:
+            try:
+                rr = s.get(TERMOSA_BASE + sub, timeout=30)
+                page_cards += _collect_cards(BeautifulSoup(rr.content, 'lxml'))
+            except requests.RequestException:
+                continue
+            if len(cards) + len(page_cards) >= max_products:
+                break
+        if sub_links:
+            logger.info(f"Termosa {full}: {len(sub_links)} alt kategori gezildi")
+        logger.info(f"Termosa kategori {full}: {len(page_cards)} kart bulundu")
+        for card in page_cards:
+            if card['id'] and card['id'] in seen_ids:
+                continue
+            if card['id']:
+                seen_ids.add(card['id'])
+            cards.append(card)
+        if len(cards) >= max_products:
+            break
+    cards = cards[:max_products]
+    # Peşin (cash) fiyatları toplu çek — /home/checkdiscounts?pi=[{I:id,T:type}]
+    cash = {}
+    ids = [(c['id'], c['type']) for c in cards if c['id']]
+    for k in range(0, len(ids), 50):
+        chunk = ids[k:k + 50]
+        pi = [{'I': int(i), 'T': t} for i, t in chunk]
+        try:
+            rd = s.get(f"{TERMOSA_BASE}/home/checkdiscounts", params={'pi': _json.dumps(pi)},
+                       headers={'X-Requested-With': 'XMLHttpRequest'}, timeout=30)
+            for pair in rd.json():
+                v = pair.get('Value') or {}
+                cpi = v.get('CashPriceItem') or {}
+                pr = cpi.get('Price')
+                if pr and pr > 0:
+                    cash[str(pair['Key']['I'])] = float(pr)
+        except Exception as e:
+            logger.warning(f"Termosa checkdiscounts hata: {e}")
+    out = []
+    for c in cards:
+        if not c['list_eur'] or c['list_eur'] <= 0:
+            continue
+        lp = round(c['list_eur'] * TERMOSA_KDV, 2)
+        cp = cash.get(c['id'])
+        dp = round(cp * TERMOSA_KDV, 2) if cp else None
+        brand = ''
+        first = c['name'].split()[0] if c['name'] else ''
+        if first.isupper() and len(first) > 2:
+            brand = first
+        out.append({
+            'name': c['name'], 'brand': brand,
+            'list_price': lp, 'discounted_price': dp,
+            'currency': 'EUR', 'unit': 'adet',
+            'code': c['code'], 'image_url': c.get('image_url'),
+            'source_url': TERMOSA_BASE + '/',
+        })
+    return out
+
+
+@api_router.post("/companies/{company_id}/scrape-termosa")
+async def scrape_termosa(company_id: str, request: ScrapeTermosaRequest):
+    """Termosa B2B'den seçili kategorilerin ürünlerini çek (login + crawl). KAYDETMEZ; önizleme döner."""
+    company = await db.companies.find_one({"id": company_id})
+    if not company:
+        raise HTTPException(status_code=404, detail="Firma bulunamadı")
+    if not request.category_urls:
+        raise HTTPException(status_code=400, detail="En az bir kategori URL'i girin.")
+    loop = asyncio.get_event_loop()
+    products = await loop.run_in_executor(None, _termosa_scrape, request.category_urls, request.max_products)
+    if not products:
+        raise HTTPException(status_code=422, detail="Ürün çekilemedi (kategori boş, fiyatlar kapalı veya giriş başarısız).")
+    return {"success": True, "count": len(products), "products": products}
+
+
 @api_router.post("/scrape-products")
 async def scrape_products(request: ScrapeRequest):
     """Web sitesinden ürünleri scrape eder"""
     from bs4 import BeautifulSoup
     import re
-    
+
     try:
         logger.info(f"Scraping URL: {request.url}")
 
