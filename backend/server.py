@@ -243,10 +243,14 @@ async def create_supplies_category():
 api_router = APIRouter(prefix="/api")
 
 # Configure CORS
+# Varsayılan artık wildcard DEĞİL: credentials'lı isteklerde '*' fiilen
+# "her origin'e cookie'li erişim" demekti. Deployment same-origin (nginx/proxy)
+# olduğu için CORS zaten nadiren devreye girer; gerekirse CORS_ORIGINS env'i ile genişlet.
+_default_cors = "https://corlukaravan.shop,http://localhost:3000,http://127.0.0.1:3000,http://localhost:8089,http://127.0.0.1:8089"
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_origins=[o.strip() for o in os.environ.get('CORS_ORIGINS', _default_cors).split(',') if o.strip()],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -7231,19 +7235,27 @@ async def downloads_page():
 @api_router.get("/atlas-downloads/{filename}")
 async def download_file(filename: str):
     """Serve JSON files for download"""
-    file_path = f"/app/downloads/{filename}"
-    
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail=f"File {filename} not found")
-    
-    if not filename.endswith('.json'):
+    # Path traversal koruması: sadece dosya adı, dizin bileşeni yok
+    safe_name = os.path.basename(filename)
+    if safe_name != filename or not safe_name or safe_name.startswith('.'):
+        raise HTTPException(status_code=400, detail="Geçersiz dosya adı")
+
+    if not safe_name.endswith('.json'):
         raise HTTPException(status_code=400, detail="Only JSON files are allowed for download")
-    
+
+    base_dir = os.path.realpath("/app/downloads")
+    file_path = os.path.realpath(os.path.join(base_dir, safe_name))
+    if not file_path.startswith(base_dir + os.sep):
+        raise HTTPException(status_code=400, detail="Geçersiz dosya yolu")
+
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found")
+
     return FileResponse(
         file_path,
         media_type="application/json",
-        filename=filename,
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
+        filename=safe_name,
+        headers={"Content-Disposition": f"attachment; filename={safe_name}"}
     )
 
 # Mount static files directory for any other files
@@ -7253,17 +7265,44 @@ except Exception as e:
     logger.warning(f"Could not mount static files: {e}")
 
 # Authentication Endpoints
+# Basit bellek-içi brute-force koruması (tek uvicorn instance varsayımı).
+# IP başına LOGIN_WINDOW saniyede en fazla LOGIN_MAX_FAILS başarısız deneme.
+_login_fail_log: Dict[str, List[float]] = {}
+LOGIN_MAX_FAILS = 5
+LOGIN_WINDOW = 300  # saniye
+
+def _login_client_ip(request: Request) -> str:
+    # nginx arkasında gerçek IP X-Forwarded-For'da
+    fwd = request.headers.get("x-forwarded-for")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+def _login_rate_check(ip: str) -> None:
+    now = time.time()
+    fails = [t for t in _login_fail_log.get(ip, []) if now - t < LOGIN_WINDOW]
+    _login_fail_log[ip] = fails
+    if len(fails) >= LOGIN_MAX_FAILS:
+        raise HTTPException(status_code=429, detail="Çok fazla başarısız deneme. 5 dakika sonra tekrar deneyin.")
+
+def _login_record_fail(ip: str) -> None:
+    _login_fail_log.setdefault(ip, []).append(time.time())
+
 @api_router.post("/auth/login", response_model=LoginResponse)
-async def login(login_request: LoginRequest, response: JSONResponse):
+async def login(login_request: LoginRequest, request: Request, response: JSONResponse):
     """User login endpoint"""
+    client_ip = _login_client_ip(request)
+    _login_rate_check(client_ip)
     try:
         # Find user in database
         user = await db.users.find_one({"username": login_request.username})
         if not user:
+            _login_record_fail(client_ip)
             raise HTTPException(status_code=401, detail="Geçersiz kullanıcı adı veya şifre")
-        
+
         # Verify password
         if not auth_service.verify_password(login_request.password, user["password_hash"]):
+            _login_record_fail(client_ip)
             raise HTTPException(status_code=401, detail="Geçersiz kullanıcı adı veya şifre")
         
         # Check if user is active
@@ -7279,6 +7318,7 @@ async def login(login_request: LoginRequest, response: JSONResponse):
             logger.info(f"Upgraded legacy password hash to bcrypt for user {user.get('username')}")
 
         # Create session
+        _login_fail_log.pop(client_ip, None)  # başarılı giriş -> sayaç sıfır
         session_token = await auth_service.create_session(login_request.username)
         
         # Set session cookie
@@ -7529,6 +7569,31 @@ async def scrape_termosa(company_id: str, request: ScrapeTermosaRequest):
     return {"success": True, "count": len(products), "products": products}
 
 
+def _validate_public_http_url(url: str) -> None:
+    """SSRF koruması: sadece http(s) ve herkese açık IP'lere izin ver.
+
+    Loopback/özel ağ/link-local adresler (ör. 127.0.0.1, 10.x, 169.254.x,
+    Mongo/Redis iç servisleri) engellenir."""
+    import socket
+    import ipaddress
+    from urllib.parse import urlparse
+
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Geçersiz URL")
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise HTTPException(status_code=400, detail="Sadece http/https URL kabul edilir")
+    try:
+        infos = socket.getaddrinfo(parsed.hostname, parsed.port or (443 if parsed.scheme == "https" else 80))
+    except socket.gaierror:
+        raise HTTPException(status_code=400, detail="Alan adı çözümlenemedi")
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified:
+            raise HTTPException(status_code=400, detail="İç ağ adreslerine istek engellendi")
+
+
 @api_router.post("/scrape-products")
 async def scrape_products(request: ScrapeRequest):
     """Web sitesinden ürünleri scrape eder"""
@@ -7537,6 +7602,7 @@ async def scrape_products(request: ScrapeRequest):
 
     try:
         logger.info(f"Scraping URL: {request.url}")
+        _validate_public_http_url(request.url)
 
         # URL'i fetch et
         headers = {
@@ -7719,6 +7785,8 @@ async def scrape_products(request: ScrapeRequest):
             "count": len(products)
         }
         
+    except HTTPException:
+        raise
     except requests.RequestException as e:
         print(f"❌ HTTP Hatası: {str(e)}")
         raise HTTPException(status_code=400, detail=f"URL'e erişilemedi: {str(e)}")
