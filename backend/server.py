@@ -7569,6 +7569,117 @@ async def scrape_termosa(company_id: str, request: ScrapeTermosaRequest):
     return {"success": True, "count": len(products), "products": products}
 
 
+AGUS_BASE = "https://www.agus.com.tr"
+
+def _agus_scrape(category_urls: list, max_products: int = 600) -> list:
+    """Agus (Ticimax) sitesinden kategori sayfalarını çek — login GEREKMEZ.
+
+    Kart yapısı: div.productItem içinde .productName.detailUrl a (isim+link, data-id),
+    .productStokKodu (kod), .productMarka (marka, gizli), .regularPriceSpan (üstü çizili
+    liste fiyatı, indirim varsa) + .discountPriceSpan (satış fiyatı), .productSliderImage
+    data-src (görsel). Fiyatlar ₺ KDV dahil -> currency TRY.
+    Sayfalama ?sayfa=N; site son sayfadan sonra aynı içeriği döndürür -> yeni data-id
+    çıkmayınca durulur. Alt kategoriler kökte ayrı path olduğu için otomatik gezilmez."""
+    from bs4 import BeautifulSoup
+    s = requests.Session()
+    s.headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+
+    out = []
+    seen_ids = set()
+    page_limit = 60
+
+    paths = []
+    for cu in category_urls:
+        cu = (cu or '').strip()
+        if not cu:
+            continue
+        if cu.startswith('http'):
+            cu = cu.split('agus.com.tr', 1)[-1]
+        paths.append('/' + cu.lstrip('/').split('?', 1)[0].rstrip('/'))
+
+    for path in paths:
+        page = 1
+        while len(out) < max_products and page <= page_limit:
+            url = f"{AGUS_BASE}{path}" + (f"?sayfa={page}" if page > 1 else "")
+            try:
+                r = s.get(url, timeout=30)
+                r.raise_for_status()
+            except requests.RequestException as e:
+                logger.warning(f"Agus kategori indirilemedi {url}: {e}")
+                break
+            so = BeautifulSoup(r.content, 'lxml')
+            new_on_page = 0
+            for card in so.select('div[class*="productItem"]'):
+                nel = card.select_one('.productName.detailUrl a')
+                if not nel:
+                    continue
+                name = (nel.get('title') or nel.get_text(' ', strip=True) or '').strip()
+                # Handlebars şablon stub'larını atla
+                if not name or '{{' in name:
+                    continue
+                pid_el = card.select_one('.productName.detailUrl[data-id]')
+                pid = pid_el.get('data-id') if pid_el else None
+                if pid and pid in seen_ids:
+                    continue
+
+                disc_el = card.select_one('.discountPriceSpan')
+                reg_el = card.select_one('.regularPriceSpan')
+                disc = _termosa_price_to_float(disc_el.get_text(' ', strip=True)) if disc_el else None
+                reg = _termosa_price_to_float(reg_el.get_text(' ', strip=True)) if reg_el else None
+                # regular (üstü çizili) varsa: liste=regular, indirimli=discount.
+                # Yoksa tek fiyat: liste=discountPrice, indirim yok.
+                if reg and reg > 0:
+                    list_price, discounted = reg, (disc if disc and disc < reg else None)
+                else:
+                    list_price, discounted = disc, None
+                if not list_price or list_price <= 0:
+                    continue
+
+                code_el = card.select_one('.productStokKodu span') or card.select_one('.productStokKodu')
+                brand_el = card.select_one('.productMarka')
+                img_el = card.select_one('.productSliderImage[data-src]') or card.select_one('img[data-src]')
+                img = img_el.get('data-src') if img_el else None
+                if img and img.startswith('/'):
+                    img = AGUS_BASE + img
+                href = nel.get('href') or ''
+
+                if pid:
+                    seen_ids.add(pid)
+                new_on_page += 1
+                out.append({
+                    'name': name[:500],
+                    'brand': (brand_el.get_text(' ', strip=True) if brand_el else '')[:200],
+                    'list_price': list_price,
+                    'discounted_price': discounted,
+                    'currency': 'TRY', 'unit': 'adet',
+                    'code': (code_el.get_text(' ', strip=True) if code_el else '') or (pid or ''),
+                    'image_url': img,
+                    'source_url': AGUS_BASE + href if href.startswith('/') else (href or AGUS_BASE + '/'),
+                })
+                if len(out) >= max_products:
+                    break
+            logger.info(f"Agus {url}: {new_on_page} yeni ürün")
+            if new_on_page == 0:
+                break  # son sayfa geçildi (site aynı içeriği tekrar döndürür)
+            page += 1
+    return out
+
+
+@api_router.post("/companies/{company_id}/scrape-agus")
+async def scrape_agus(company_id: str, request: ScrapeTermosaRequest):
+    """Agus.com.tr'den seçili kategorilerin ürünlerini çek (public site). KAYDETMEZ; önizleme döner."""
+    company = await db.companies.find_one({"id": company_id})
+    if not company:
+        raise HTTPException(status_code=404, detail="Firma bulunamadı")
+    if not request.category_urls:
+        raise HTTPException(status_code=400, detail="En az bir kategori yolu girin (ör. inverterler, solar-paneller).")
+    loop = asyncio.get_event_loop()
+    products = await loop.run_in_executor(None, _agus_scrape, request.category_urls, request.max_products)
+    if not products:
+        raise HTTPException(status_code=422, detail="Ürün çekilemedi (kategori yolu hatalı ya da sayfa yapısı değişmiş olabilir).")
+    return {"success": True, "count": len(products), "products": products}
+
+
 def _validate_public_http_url(url: str) -> None:
     """SSRF koruması: sadece http(s) ve herkese açık IP'lere izin ver.
 

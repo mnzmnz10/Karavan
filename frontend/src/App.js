@@ -492,6 +492,8 @@ function App() {
   const [aiPreviewCompanyId, setAiPreviewCompanyId] = useState(''); // önizlemenin ait olduğu firma
   const [termosaCats, setTermosaCats] = useState(''); // Termosa kategori URL'leri (satır satır)
   const [termosaScraping, setTermosaScraping] = useState(false);
+  const [agusCats, setAgusCats] = useState(''); // Agus kategori yolları (satır satır)
+  const [agusScraping, setAgusScraping] = useState(false);
   // MPPT hesaplayıcı
   const [mpptForm, setMpptForm] = useState({ productId: '', name: '', watt: '', voc: '', vmp: '', isc: '', imp: '', adet: '1', notes: '' });
   const [mpptSpecsSaving, setMpptSpecsSaving] = useState(false);
@@ -1753,6 +1755,54 @@ function App() {
       toast.error(error.response?.data?.detail || 'Termosa çekme başarısız');
     } finally {
       setTermosaScraping(false);
+    }
+  };
+
+  // Agus.com.tr'den seçili kategorileri çek -> AI önizleme tablosunu doldur (aynı onay akışı)
+  const scrapeAgusProducts = async () => {
+    let companyId = null, companyName = '';
+    if (useExistingCompany) {
+      if (!selectedCompany) { toast.error('Lütfen bir firma seçin'); return; }
+      companyId = selectedCompany;
+    } else {
+      if (!uploadCompanyName.trim()) { toast.error('Lütfen firma adını girin'); return; }
+      companyName = uploadCompanyName.trim();
+    }
+    const urls = (agusCats || '').split('\n').map((s) => s.trim()).filter(Boolean);
+    if (urls.length === 0) { toast.error('En az bir kategori yolu yazın (ör. inverterler)'); return; }
+    try {
+      setAgusScraping(true);
+      if (!useExistingCompany) {
+        const cr = await axios.post(`${API}/companies`, { name: companyName });
+        companyId = cr.data.id;
+        toast.success(`"${companyName}" firması oluşturuldu`);
+        await loadCompanies();
+        setSelectedCompany(companyId);
+        setUseExistingCompany(true);
+      }
+      const r = await axios.post(`${API}/companies/${companyId}/scrape-agus`, { category_urls: urls });
+      const products = (r.data.products || []).map((p) => ({
+        name: p.name || '', brand: p.brand || '',
+        list_price: p.list_price ?? '', discounted_price: p.discounted_price ?? '',
+        currency: p.currency || 'TRY', description: '', image_url: p.image_url || ''
+      }));
+      if (products.length === 0) { toast.error('Ürün çekilemedi.'); return; }
+      setUploadCurrency('TRY');
+      const session = await createProductImportSession({
+        companyId,
+        products,
+        source: 'agus-web',
+        filename: 'Agus.com.tr',
+        currency: null
+      });
+      setAiPreviewProducts(session.rows || []);
+      setAiPreviewCompanyId(companyId);
+      toast.success(`${products.length} ürün çekildi. Kontrol edip onaylayın.`);
+    } catch (error) {
+      console.error('Agus çekme hatası:', error);
+      toast.error(error.response?.data?.detail || 'Agus çekme başarısız');
+    } finally {
+      setAgusScraping(false);
     }
   };
 
@@ -7723,6 +7773,26 @@ function App() {
                         <Download className="w-4 h-4 mr-2" />
                         {termosaScraping ? 'Çekiliyor...' : "Termosa'dan Çek"}
                       </Button>
+                      {/* Agus.com.tr: public site, login gerekmez, fiyatlar ₺ KDV dahil */}
+                      <div className="pt-3 mt-2 border-t border-amber-200 space-y-2">
+                        <div className="flex items-center gap-2 text-sm font-bold text-sky-800"><Download className="w-4 h-4" /> Agus.com.tr'den Çek</div>
+                        <p className="text-xs text-sky-700">Kategori yollarını satır satır yazın. <code>agus.com.tr/</code> sonrası yeter (ör. <code>inverterler</code>, <code>solar-paneller</code>). Fiyatlar ₺ KDV dahil.</p>
+                        <textarea
+                          value={agusCats}
+                          onChange={(e) => setAgusCats(e.target.value)}
+                          rows={3}
+                          placeholder={"inverterler\nsolar-paneller\nakuler"}
+                          className="w-full px-3 py-2 border border-sky-300 rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-sky-400"
+                        />
+                        <Button
+                          onClick={scrapeAgusProducts}
+                          disabled={agusScraping || (!selectedCompany && useExistingCompany) || (!uploadCompanyName.trim() && !useExistingCompany)}
+                          className="w-full bg-sky-600 hover:bg-sky-700 text-white"
+                        >
+                          <Download className="w-4 h-4 mr-2" />
+                          {agusScraping ? 'Çekiliyor...' : "Agus'tan Çek"}
+                        </Button>
+                      </div>
                     </div>
                     {/* SAĞ: fiyat kontrol */}
                     <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-4 space-y-3 flex flex-col">
