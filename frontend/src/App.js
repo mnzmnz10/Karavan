@@ -492,6 +492,11 @@ function App() {
   const [aiPreviewCompanyId, setAiPreviewCompanyId] = useState(''); // önizlemenin ait olduğu firma
   const [termosaCats, setTermosaCats] = useState(''); // Termosa kategori URL'leri (satır satır)
   const [termosaScraping, setTermosaScraping] = useState(false);
+  // MPPT hesaplayıcı
+  const [mpptForm, setMpptForm] = useState({ productId: '', name: '', watt: '', voc: '', vmp: '', isc: '', imp: '', adet: '1', notes: '' });
+  const [mpptSpecsSaving, setMpptSpecsSaving] = useState(false);
+  const [mpptResult, setMpptResult] = useState(null);
+  const [mpptLoading, setMpptLoading] = useState(false);
   const [termosaSyncSetting, setTermosaSyncSetting] = useState(null);
   const [termosaSyncEnabled, setTermosaSyncEnabled] = useState(false);
   const [termosaSyncInterval, setTermosaSyncInterval] = useState(24);
@@ -594,6 +599,7 @@ function App() {
   });
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
+  const [selectedCompanyFilter, setSelectedCompanyFilter] = useState(''); // ürünlerde firma filtresi
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newCategoryDescription, setNewCategoryDescription] = useState('');
   const [newCategoryColor, setNewCategoryColor] = useState('#3B82F6');
@@ -825,18 +831,25 @@ function App() {
     return () => document.removeEventListener('fullscreenchange', onFsChange);
   }, []);
 
-  // Kablo Şeması sekmesine geçince tarayıcıyı tam ekrana al; çıkınca tam ekrandan çık.
+  // Sekme değişimi: wiring sekmesinden çıkınca tam ekrandaysa otomatik çık (otomatik tam ekrana ALMA yok).
   const handleTabChange = (val) => {
     setActiveTab(val);
     try {
-      if (val === 'wiring-diagram') {
-        if (!document.fullscreenElement) {
-          document.documentElement.requestFullscreen?.().catch(() => {});
-        }
-      } else if (document.fullscreenElement) {
+      if (val !== 'wiring-diagram' && document.fullscreenElement) {
         document.exitFullscreen?.().catch(() => {});
       }
-    } catch (e) { /* fullscreen desteklenmiyorsa yoksay */ }
+    } catch (e) { /* yoksay */ }
+  };
+
+  // Kablo şeması tam ekran aç/kapat (buton ile)
+  const toggleWiringFullscreen = () => {
+    try {
+      if (document.fullscreenElement) {
+        document.exitFullscreen?.().catch(() => {});
+      } else {
+        document.documentElement.requestFullscreen?.().catch(() => {});
+      }
+    } catch (e) { /* yoksay */ }
   };
 
   // Servis sekmesi aktif olunca (veya filtre değişince) kayıtları yükle.
@@ -1107,6 +1120,7 @@ function App() {
   useEffect(() => {
     if (isAuthenticated) {
       loadInitialData();
+      autoCheckTermosaOnLogin(); // her girişte açık Termosa fiyat kontrollerini çalıştır
     }
   }, [isAuthenticated]);
 
@@ -1233,6 +1247,7 @@ function App() {
       const params = new URLSearchParams();
       if (searchQuery) params.append('search', searchQuery);
       if (selectedCategory) params.append('category_id', selectedCategory);
+      if (selectedCompanyFilter) params.append('company_id', selectedCompanyFilter);
       // Load all products at once without pagination
       params.append('skip_pagination', 'true');
       
@@ -1822,6 +1837,42 @@ function App() {
       setTermosaSyncRunning(false);
     }
   };
+
+  // "Termosa Ürünlerini Kontrol Et": adı 'Termosa' olan firmayı otomatik bulur, firma seçmeye gerek yok
+  const checkTermosaPrices = async () => {
+    const urls = (termosaCats || '').split('\n').map((s) => s.trim()).filter(Boolean);
+    try {
+      setTermosaSyncRunning(true);
+      const r = await axios.post(`${API}/supplier-sync/termosa/check-auto`, { category_urls: urls });
+      const session = r.data.import_session;
+      if (session) {
+        setAiImportSession(session);
+        setAiPreviewProducts(session.rows || []);
+        setAiPreviewCompanyId(session.company_id);
+      }
+      const pc = r.data.summary?.price_changes ?? 0;
+      toast.success(pc > 0 ? `${r.data.company_name || 'Termosa'}: ${pc} üründe fiyat değişti — önizlemeyi kontrol edin` : 'Fiyat kontrolü tamam, değişiklik yok');
+    } catch (error) {
+      console.error('Termosa kontrol hatası:', error);
+      toast.error(error.response?.data?.detail || 'Fiyat kontrolü başarısız');
+    } finally {
+      setTermosaSyncRunning(false);
+    }
+  };
+
+  // Sisteme her girişte: açık Termosa kontrollerini sessizce çalıştır
+  const autoCheckTermosaOnLogin = async () => {
+    try {
+      const r = await axios.post(`${API}/supplier-sync/termosa/run-all`);
+      if ((r.data?.checked || 0) > 0) {
+        const tc = r.data.total_changed || 0;
+        if (tc > 0) toast.info(`Termosa otomatik kontrol: ${tc} üründe fiyat değişti`);
+      }
+    } catch (error) {
+      console.warn('Termosa otomatik kontrol atlandı:', error?.response?.status);
+    }
+  };
+
   // Önizlemedeki bir ürünün alanını düzenle
   const updateAiPreviewProduct = (index, field, value) => {
     setAiPreviewProducts((prev) => {
@@ -1895,6 +1946,71 @@ function App() {
       setAiSaving(false);
     }
   };
+  // MPPT öner — panel özelliklerini AI'a gönder, uygun şarj kontrol cihazını al
+  const numOrNull = (v) => (v !== '' && v != null && !isNaN(parseFloat(v)) ? parseFloat(v) : null);
+
+  const callMppt = async () => {
+    const watt = parseFloat(mpptForm.watt);
+    if (!watt || watt <= 0) { toast.error('Önce sistemden bir panel seçin (W bilgisi gerekli)'); return; }
+    const adet = parseInt(mpptForm.adet, 10) || 1;
+    try {
+      setMpptLoading(true);
+      setMpptResult(null);
+      const r = await axios.post(`${API}/mppt/recommend`, {
+        panel: { name: mpptForm.name || null, watt, voc: numOrNull(mpptForm.voc), vmp: numOrNull(mpptForm.vmp), isc: numOrNull(mpptForm.isc), imp: numOrNull(mpptForm.imp) },
+        series: 1,
+        parallel: adet,
+        battery_voltage: 12,
+        notes: mpptForm.notes || null,
+      });
+      setMpptResult(r.data);
+    } catch (error) {
+      console.error('MPPT öneri hatası:', error);
+      toast.error(error.response?.data?.detail || 'MPPT önerisi alınamadı');
+    } finally {
+      setMpptLoading(false);
+    }
+  };
+
+  // Üründen panel seç -> isim + watt (isimden), kayıtlı Voc/Vmp/Isc/Imp varsa otomatik doldur
+  const pickMpptPanelFromProduct = async (productId) => {
+    const prod = (products || []).find((p) => p.id === productId);
+    if (!prod) return;
+    const wm = String(prod.name || '').match(/(\d{2,4})\s?w/i);
+    setMpptForm((f) => ({ ...f, productId, name: prod.name || '', watt: wm ? wm[1] : '', voc: '', vmp: '', isc: '', imp: '' }));
+    setMpptResult(null);
+    try {
+      const r = await axios.get(`${API}/mppt/panel-specs/${productId}`);
+      if (r.data?.exists) {
+        const s = r.data;
+        setMpptForm((f) => ({
+          ...f,
+          watt: s.watt != null ? String(s.watt) : f.watt,
+          voc: s.voc != null ? String(s.voc) : '',
+          vmp: s.vmp != null ? String(s.vmp) : '',
+          isc: s.isc != null ? String(s.isc) : '',
+          imp: s.imp != null ? String(s.imp) : '',
+        }));
+      }
+    } catch (e) { /* kayıt yoksa sorun değil */ }
+  };
+
+  // Panel elektriksel değerlerini bu ürüne kaydet
+  const savePanelSpecs = async () => {
+    if (!mpptForm.productId) { toast.error('Önce panel seçin'); return; }
+    try {
+      setMpptSpecsSaving(true);
+      await axios.put(`${API}/mppt/panel-specs/${mpptForm.productId}`, {
+        watt: numOrNull(mpptForm.watt), voc: numOrNull(mpptForm.voc), vmp: numOrNull(mpptForm.vmp), isc: numOrNull(mpptForm.isc), imp: numOrNull(mpptForm.imp),
+      });
+      toast.success('Panel değerleri kaydedildi — sonraki seçimlerde otomatik gelecek');
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Kaydedilemedi');
+    } finally {
+      setMpptSpecsSaving(false);
+    }
+  };
+
   // ===================== SERVİS (Tadilat/Bakım) =====================
   const SERVICE_STATUS_META = {
     received: { label: 'Bekliyor', badge: 'bg-amber-100 text-amber-700 border-amber-200', dot: 'bg-amber-500' },
@@ -3207,7 +3323,7 @@ function App() {
     }, searchQuery.length >= 2 ? 200 : 400); // HIZLANDIRILDI: Daha hızlı tepki
 
     return () => clearTimeout(delayedSearch);
-  }, [searchQuery, selectedCategory]);
+  }, [searchQuery, selectedCategory, selectedCompanyFilter]);
 
   // Category dialog search effect - OPTİMİZE EDİLDİ
   React.useEffect(() => {
@@ -4919,6 +5035,14 @@ function App() {
                     >
                       <Battery className="w-4 h-4 text-teal-500 group-data-[state=active]:text-white" />
                       <span>Akü Test</span>
+                    </TabsTrigger>
+
+                    <TabsTrigger
+                      value="mppt"
+                      className="group flex items-center justify-start gap-3 w-full h-11 px-4 text-sm font-semibold text-slate-700 transition-all duration-200 hover:bg-lime-50 rounded-xl data-[state=active]:bg-lime-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
+                    >
+                      <Calculator className="w-4 h-4 text-lime-600 group-data-[state=active]:text-white" />
+                      <span>MPPT Hesapla</span>
                     </TabsTrigger>
 
                     <TabsTrigger
@@ -7578,82 +7702,44 @@ function App() {
                     {aiExtracting ? 'Yapay zekâ okuyor...' : '✨ Ürünleri Çıkar'}
                   </Button>
 
-                  {/* Termosa B2B'den çek */}
-                  <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-4 space-y-2">
-                    <div className="flex items-center gap-2 text-sm font-bold text-amber-800"><Download className="w-4 h-4" /> Termosa B2B'den Çek</div>
-                    <p className="text-xs text-amber-700">Manuel ürün çekiminde bu alan boşsa Termosa’daki tüm ürünler listelenir. Otomatik fiyat kontrolünde ise boş bırakılırsa tüm Termosa taranır ama yalnızca bu firmaya daha önce eklediğiniz/eşleşen ürünler kontrol edilir.</p>
-                    <textarea
-                      value={termosaCats}
-                      onChange={(e) => setTermosaCats(e.target.value)}
-                      rows={4}
-                      placeholder={"elektrik-elektronik-enerji-sistemler/prizler\nbanyo-tuvalet/musluklar"}
-                      className="w-full px-3 py-2 border border-amber-300 rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-400"
-                    />
-                    <Button
-                      onClick={scrapeTermosaProducts}
-                      disabled={termosaScraping || (!selectedCompany && useExistingCompany) || (!uploadCompanyName.trim() && !useExistingCompany)}
-                      className="w-full bg-amber-600 hover:bg-amber-700 text-white"
-                    >
-                      <Download className="w-4 h-4 mr-2" />
-                      {termosaScraping ? 'Çekiliyor (1-2 dk sürebilir)...' : 'Termosa\'dan Çek'}
-                    </Button>
-                    <div className="mt-4 rounded-lg border border-slate-200 bg-white/80 p-3 space-y-3">
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                          <div className="text-sm font-bold text-slate-800">Otomatik fiyat kontrolü</div>
-                          <div className="text-xs text-slate-500">Sistem fiyatları çeker, fark varsa onay bekleyen liste oluşturur.</div>
-                        </div>
-                        <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
-                          <input
-                            type="checkbox"
-                            checked={termosaSyncEnabled}
-                            onChange={(e) => setTermosaSyncEnabled(e.target.checked)}
-                            className="h-4 w-4 accent-emerald-600"
-                          />
-                          Aktif
-                        </label>
-                      </div>
-                      <div className="grid gap-3 sm:grid-cols-[160px_1fr] sm:items-end">
-                        <div>
-                          <Label className="text-xs">Kontrol aralığı</Label>
-                          <select
-                            value={termosaSyncInterval}
-                            onChange={(e) => setTermosaSyncInterval(e.target.value)}
-                            className="mt-1 h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-sm"
-                          >
-                            <option value={6}>6 saatte bir</option>
-                            <option value={12}>12 saatte bir</option>
-                            <option value={24}>Günde 1 kez</option>
-                            <option value={48}>2 gunde 1 kez</option>
-                            <option value={168}>Haftada 1 kez</option>
-                          </select>
-                        </div>
-                        <div className="flex flex-col gap-2 sm:flex-row">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={saveTermosaSyncSetting}
-                            disabled={termosaSyncSaving}
-                            className="flex-1"
-                          >
-                            {termosaSyncSaving ? 'Kaydediliyor...' : 'Ayarı Kaydet'}
-                          </Button>
-                          <Button
-                            type="button"
-                            onClick={runTermosaSyncNow}
-                            disabled={termosaSyncRunning || termosaSyncSaving}
-                            className="flex-1 bg-slate-800 hover:bg-slate-900 text-white"
-                          >
-                            {termosaSyncRunning ? 'Kontrol ediliyor...' : 'Şimdi Kontrol Et'}
-                          </Button>
-                        </div>
-                      </div>
+                  {/* Termosa: çek + fiyat kontrol (yan yana) */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* SOL: ürün çek */}
+                    <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-4 space-y-2 flex flex-col">
+                      <div className="flex items-center gap-2 text-sm font-bold text-amber-800"><Download className="w-4 h-4" /> Termosa B2B'den Çek</div>
+                      <p className="text-xs text-amber-700">Kategori yollarını satır satır yazın (boşsa tüm Termosa). <code>bayi.termosa.com/urunler</code> sonrası yeter.</p>
+                      <textarea
+                        value={termosaCats}
+                        onChange={(e) => setTermosaCats(e.target.value)}
+                        rows={5}
+                        placeholder={"elektrik-elektronik-enerji-sistemler/prizler\nbanyo-tuvalet/musluklar"}
+                        className="w-full px-3 py-2 border border-amber-300 rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      />
+                      <Button
+                        onClick={scrapeTermosaProducts}
+                        disabled={termosaScraping || (!selectedCompany && useExistingCompany) || (!uploadCompanyName.trim() && !useExistingCompany)}
+                        className="w-full bg-amber-600 hover:bg-amber-700 text-white mt-auto"
+                      >
+                        <Download className="w-4 h-4 mr-2" />
+                        {termosaScraping ? 'Çekiliyor...' : "Termosa'dan Çek"}
+                      </Button>
+                    </div>
+                    {/* SAĞ: fiyat kontrol */}
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-4 space-y-3 flex flex-col">
+                      <div className="flex items-center gap-2 text-sm font-bold text-emerald-800"><RefreshCw className="w-4 h-4" /> Termosa Fiyat Kontrol</div>
+                      <p className="text-xs text-emerald-700">Adı <strong>Termosa</strong> olan firmayı otomatik bulur — firma seçmeye gerek yok. Güncel fiyatları çeker, değişenleri onay listesi gösterir. <strong>Sisteme her girişte otomatik</strong> çalışır.</p>
+                      <Button
+                        onClick={checkTermosaPrices}
+                        disabled={termosaSyncRunning}
+                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
+                      >
+                        <RefreshCw className={`w-4 h-4 mr-2 ${termosaSyncRunning ? 'animate-spin' : ''}`} />
+                        {termosaSyncRunning ? 'Kontrol ediliyor...' : 'Termosa Ürünlerini Kontrol Et'}
+                      </Button>
                       {termosaSyncSetting && (
-                        <div className="grid gap-2 text-xs text-slate-500 sm:grid-cols-3">
-                          <div><span className="font-semibold text-slate-700">Durum:</span> {termosaSyncSetting.enabled ? 'Aktif' : 'Kapalı'}</div>
+                        <div className="text-xs text-slate-500 mt-auto space-y-0.5">
                           <div><span className="font-semibold text-slate-700">Son kontrol:</span> {termosaSyncSetting.last_run_at ? new Date(termosaSyncSetting.last_run_at).toLocaleString('tr-TR') : 'Yok'}</div>
-                          <div><span className="font-semibold text-slate-700">Sonraki:</span> {termosaSyncSetting.next_run_at ? new Date(termosaSyncSetting.next_run_at).toLocaleString('tr-TR') : '-'}</div>
-                          {termosaSyncSetting.last_error && <div className="sm:col-span-3 text-rose-600">Son hata: {termosaSyncSetting.last_error}</div>}
+                          {termosaSyncSetting.last_error && <div className="text-rose-600">Son hata: {termosaSyncSetting.last_error}</div>}
                         </div>
                       )}
                     </div>
@@ -8185,12 +8271,27 @@ function App() {
                           ))}
                       </SelectContent>
                     </Select>
-                    {(searchQuery || selectedCategory) && (
+                    <Select value={selectedCompanyFilter || "all"} onValueChange={(v) => setSelectedCompanyFilter(v === "all" ? '' : v)}>
+                      <SelectTrigger className="h-14 rounded-2xl border-2 border-slate-100 bg-slate-50 px-4 font-bold text-slate-700 shadow-sm">
+                        <SelectValue placeholder="Firma seç" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Tüm Firmalar</SelectItem>
+                        {(companies || [])
+                          .slice()
+                          .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                          .map((co) => (
+                            <SelectItem key={co.id} value={co.id}>{co.name}</SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                    {(searchQuery || selectedCategory || selectedCompanyFilter) && (
                       <Button
                         variant="outline"
                         onClick={() => {
                           handleSearch('');
                           handleCategoryFilter('');
+                          setSelectedCompanyFilter('');
                         }}
                         className="h-14 rounded-2xl border-slate-200 bg-white px-5 font-bold text-slate-600 hover:bg-slate-50"
                       >
@@ -8205,6 +8306,11 @@ function App() {
                     {selectedCategory && (
                       <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">
                         Kategori filtresi aktif
+                      </span>
+                    )}
+                    {selectedCompanyFilter && (
+                      <span className="rounded-full bg-indigo-50 px-3 py-1 text-indigo-700 ring-1 ring-indigo-100">
+                        Firma: {(companies.find((c) => c.id === selectedCompanyFilter) || {}).name || '—'}
                       </span>
                     )}
                   </div>
@@ -8406,94 +8512,177 @@ function App() {
                           <div className="overflow-hidden bg-white border border-slate-100 rounded-2xl shadow-sm">
                             <Table className="table-fixed w-full">
                               <TableHeader>
-                                <TableRow className="bg-slate-50/80 hover:bg-slate-50/80 border-b border-slate-200">
-                                  <TableHead className="w-16 text-center font-bold text-slate-500 text-xs">SEÇ / ADET</TableHead>
-                                  <TableHead className="w-72 font-bold text-slate-500 text-xs">ÜRÜN BİLGİSİ</TableHead>
-                                  <TableHead className="w-28 font-bold text-slate-500 text-xs">FİRMA</TableHead>
-                                  <TableHead className="w-28 font-bold text-slate-500 text-xs">MARKA</TableHead>
-                                  <TableHead className="w-28 font-extrabold text-slate-700 text-xs">FİYAT (ASIL)</TableHead>
-                                  <TableHead className="w-28 font-bold text-slate-500 text-xs text-primary font-black">TL FİYAT</TableHead>
-                                  {showDiscountedPrices && (
-                                    <>
-                                      <TableHead className="w-28 font-bold text-amber-600 text-xs">İNDİRİMLİ</TableHead>
-                                      <TableHead className="w-28 font-bold text-rose-600 text-xs">TL İNDİRİMLİ</TableHead>
-                                    </>
-                                  )}
-                                  <TableHead className="w-28 font-bold text-slate-500 text-xs text-center">İŞLEMLER</TableHead>
+                                <TableRow>
+                                  <TableHead className="w-12">
+                                    <div className="flex items-center gap-2">
+                                      <input
+                                        type="checkbox"
+                                        className="rounded border-gray-300"
+                                        checked={visibleProducts.every(p => selectedProducts.has(p.id))}
+                                        onChange={(e) => {
+                                          if (e.target.checked) {
+                                            const newSelected = new Map(selectedProducts);
+                                            visibleProducts.forEach(p => newSelected.set(p.id, 1));
+                                            setSelectedProducts(newSelected);
+                                          } else {
+                                            const newSelected = new Map(selectedProducts);
+                                            visibleProducts.forEach(p => newSelected.delete(p.id));
+                                            setSelectedProducts(newSelected);
+                                          }
+                                        }}
+                                      />
+                                      <span className="text-xs">Seç / Adet</span>
+                                    </div>
+                                  </TableHead>
+                                  <TableHead className="w-80">Ürün</TableHead>
+                                  <TableHead className="w-32">Firma</TableHead>
+                                  <TableHead className="w-28">Marka</TableHead>
+                                  <TableHead className="w-28">Liste Fiyatı</TableHead>
+                                  {showDiscountedPrices && <TableHead className="w-28">İndirimli Fiyat</TableHead>}
+                                  <TableHead className="w-24">Para Birimi</TableHead>
+                                  <TableHead className="w-28">TL Fiyat</TableHead>
+                                  {showDiscountedPrices && <TableHead className="w-28">TL İndirimli</TableHead>}
+                                  <TableHead className="w-24">Stok</TableHead>
+                                  <TableHead className="w-16">Toplu</TableHead>
+                                  <TableHead className="w-24">İşlemler</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
                                 {visibleProducts.map((product) => {
                                   const company = companies.find(c => c.id === product.company_id);
                                   const isEditing = editingProduct === product.id;
-                                  const isSelectedForOffer = selectedProducts.has(product.id);
-                                  const isSelectedForBulk = selectedProductsForBulk.has(product.id);
-
-                                  if (isEditing) {
-                                    return (
-                                      <TableRow key={product.id} className="bg-slate-50/50 border-b border-slate-100">
-                                        {/* Selection Checkbox (disabled during edit) */}
-                                        <TableCell className="text-center">
-                                          <span className="text-[10px] font-bold text-slate-400">---</span>
-                                        </TableCell>
-                                        
-                                        {/* Name & Description Inputs */}
-                                        <TableCell className="p-3">
-                                          <div className="space-y-1.5">
+                                  
+                                  return (
+                                    <TableRow 
+                                      key={product.id}
+                                      className={selectedProducts.has(product.id) ? 'bg-blue-50 border-blue-200' : ''}
+                                    >
+                                      <TableCell>
+                                        <div className="flex items-center gap-3 relative z-10">
+                                          {/* Teklif için checkbox */}
+                                          <input
+                                            type="checkbox"
+                                            className="rounded border-gray-300 relative z-20 flex-shrink-0"
+                                            checked={selectedProducts.has(product.id)}
+                                            onChange={(e) => {
+                                              if (e.target.checked) {
+                                                toggleProductSelection(product.id, 1);
+                                              } else {
+                                                toggleProductSelection(product.id, 0);
+                                              }
+                                            }}
+                                            title="Teklif için seç"
+                                          />
+                                          {selectedProducts.has(product.id) && (
+                                            <input
+                                              type="number"
+                                              min="1"
+                                              value={selectedProducts.get(product.id) || 1}
+                                              onChange={(e) => {
+                                                const quantity = parseInt(e.target.value) || 1;
+                                                toggleProductSelection(product.id, quantity);
+                                              }}
+                                              className="w-10 px-1 py-0.5 text-xs border rounded relative z-30 bg-white flex-shrink-0"
+                                              placeholder="1"
+                                            />
+                                          )}
+                                        </div>
+                                      </TableCell>
+                                      <TableCell className="font-medium">
+                                        {isEditing ? (
+                                          <div className="space-y-2">
                                             <Input
                                               value={editForm.name}
                                               onChange={(e) => setEditForm({...editForm, name: e.target.value})}
-                                              className="w-full text-xs font-semibold py-1 h-8"
+                                              className="min-w-[200px]"
                                               placeholder="Ürün adı"
                                             />
                                             <Input
                                               value={editForm.description}
                                               onChange={(e) => setEditForm({...editForm, description: e.target.value})}
-                                              className="w-full text-[11px] py-1 h-8"
+                                              className="min-w-[200px]"
                                               placeholder="Açıklama (opsiyonel)"
+                                            />
+                                            <Input
+                                              value={editForm.brand}
+                                              onChange={(e) => setEditForm({...editForm, brand: e.target.value})}
+                                              className="min-w-[200px]"
+                                              placeholder="Marka (opsiyonel)"
                                             />
                                             <Input
                                               value={editForm.image_url}
                                               onChange={(e) => setEditForm({...editForm, image_url: e.target.value})}
-                                              className="w-full text-[10px] py-0.5 h-7 font-mono"
+                                              className="min-w-[200px]"
                                               placeholder="Görsel URL (opsiyonel)"
                                               type="url"
                                             />
-                                            <div className="pt-1">
-                                              <Select 
-                                                value={editForm.category_id || "none"} 
-                                                onValueChange={(value) => setEditForm({...editForm, category_id: value === "none" ? "" : value})}
-                                              >
-                                                <SelectTrigger className="w-full text-[11px] h-7">
-                                                  <SelectValue placeholder="Kategori" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                  <SelectItem value="none">Kategorisiz</SelectItem>
-                                                  {categories
-                                                    .sort((a, b) => {
-                                                      if (a.sort_order !== b.sort_order) {
-                                                        return a.sort_order - b.sort_order;
-                                                      }
-                                                      return a.name.localeCompare(b.name);
-                                                    })
-                                                    .map((category) => (
-                                                    <SelectItem key={category.id} value={category.id}>
-                                                      {category.name}
-                                                    </SelectItem>
-                                                  ))}
-                                                </SelectContent>
-                                              </Select>
+                                            <Select 
+                                              value={editForm.category_id || "none"} 
+                                              onValueChange={(value) => setEditForm({...editForm, category_id: value === "none" ? "" : value})}
+                                            >
+                                              <SelectTrigger className="min-w-[200px]">
+                                                <SelectValue placeholder="Kategori" />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                <SelectItem value="none">Kategorisiz</SelectItem>
+                                                {categories
+                                                  .sort((a, b) => {
+                                                    if (a.sort_order !== b.sort_order) {
+                                                      return a.sort_order - b.sort_order;
+                                                    }
+                                                    return a.name.localeCompare(b.name);
+                                                  })
+                                                  .map((category) => (
+                                                  <SelectItem key={category.id} value={category.id}>
+                                                    {category.name}
+                                                  </SelectItem>
+                                                ))}
+                                              </SelectContent>
+                                            </Select>
+                                          </div>
+                                        ) : (
+                                          <div className="space-y-1">
+                                            <div className="flex items-start gap-3 relative z-0 ml-2">
+                                              {product.image_url && (
+                                                <img 
+                                                  src={product.image_url} 
+                                                  alt={product.name}
+                                                  className="w-12 h-12 object-cover rounded border cursor-pointer hover:opacity-75 transition-opacity relative z-0 flex-shrink-0"
+                                                  onError={(e) => {e.target.style.display = 'none'}}
+                                                  onClick={() => openImagePreview(product.image_url, product.name)}
+                                                  title="Görseli büyük boyutta görüntülemek için tıklayın"
+                                                />
+                                              )}
+                                              <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-2">
+                                                  <div className="font-medium truncate pr-2" title={product.name}>{product.name}</div>
+                                                  <button
+                                                    onClick={() => toggleProductFavorite(product.id)}
+                                                    className={`flex-shrink-0 p-1 rounded-full hover:bg-gray-100 transition-colors ${
+                                                      product.is_favorite ? 'text-amber-500' : 'text-gray-300 hover:text-amber-400'
+                                                    }`}
+                                                    title={product.is_favorite ? 'Favorilerden çıkar' : 'Favorilere ekle'}
+                                                  >
+                                                    <svg className="w-4 h-4" fill={product.is_favorite ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                                      <path strokeLinecap="round" strokeLinejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                                                    </svg>
+                                                  </button>
+                                                </div>
+                                                {product.description && (
+                                                  <div className="text-sm text-slate-500 mt-1 truncate" title={product.description}>{product.description}</div>
+                                                )}
+                                              </div>
                                             </div>
                                           </div>
-                                        </TableCell>
-
-                                        {/* Company Selector */}
-                                        <TableCell className="p-2">
+                                        )}
+                                      </TableCell>
+                                      <TableCell className="w-32">
+                                        {isEditing ? (
                                           <Select 
                                             value={editForm.company_id} 
                                             onValueChange={(value) => setEditForm({...editForm, company_id: value})}
                                           >
-                                            <SelectTrigger className="w-full text-xs h-8">
+                                            <SelectTrigger className="w-28">
                                               <SelectValue placeholder="Firma" />
                                             </SelectTrigger>
                                             <SelectContent>
@@ -8504,278 +8693,160 @@ function App() {
                                               ))}
                                             </SelectContent>
                                           </Select>
-                                        </TableCell>
-
-                                        {/* Brand Input */}
-                                        <TableCell className="p-2">
+                                        ) : (
+                                          <div className="space-y-1">
+                                            <Badge variant="outline" className="truncate" title={company?.name || 'Unknown'}>{company?.name || 'Unknown'}</Badge>
+                                          </div>
+                                        )}
+                                      </TableCell>
+                                      <TableCell className="w-28">
+                                        {isEditing ? (
                                           <Input
                                             value={editForm.brand}
                                             onChange={(e) => setEditForm({...editForm, brand: e.target.value})}
-                                            className="w-full text-xs h-8"
+                                            className="w-24"
                                             placeholder="Marka"
                                           />
-                                        </TableCell>
-
-                                        {/* Original List Price & Currency Selector */}
-                                        <TableCell className="p-2">
-                                          <div className="space-y-1">
+                                        ) : (
+                                          product.brand && (
+                                            <Badge variant="secondary" className="truncate" title={product.brand}>
+                                              {product.brand}
+                                            </Badge>
+                                          )
+                                        )}
+                                      </TableCell>
+                                      <TableCell className="w-28">
+                                        {isEditing ? (
+                                          <Input
+                                            type="number"
+                                            step="0.01"
+                                            value={editForm.list_price}
+                                            onChange={(e) => setEditForm({...editForm, list_price: e.target.value})}
+                                            className="w-24"
+                                          />
+                                        ) : (
+                                          `${getCurrencySymbol(product.currency)} ${formatPrice(product.list_price)}`
+                                        )}
+                                      </TableCell>
+                                      {showDiscountedPrices && (
+                                        <TableCell>
+                                          {isEditing ? (
                                             <Input
                                               type="number"
                                               step="0.01"
-                                              value={editForm.list_price}
-                                              onChange={(e) => setEditForm({...editForm, list_price: e.target.value})}
-                                              className="w-full text-xs h-8"
-                                              placeholder="Liste fiyatı"
-                                            />
-                                            <Select 
-                                              value={editForm.currency} 
-                                              onValueChange={(value) => setEditForm({...editForm, currency: value})}
-                                            >
-                                              <SelectTrigger className="w-full text-[10px] h-7 font-bold">
-                                                <SelectValue />
-                                              </SelectTrigger>
-                                              <SelectContent>
-                                                <SelectItem value="USD">USD</SelectItem>
-                                                <SelectItem value="EUR">EUR</SelectItem>
-                                                <SelectItem value="TRY">TRY</SelectItem>
-                                              </SelectContent>
-                                            </Select>
-                                          </div>
-                                        </TableCell>
-
-                                        {/* Converted TL Price indicator (reads list_price placeholder) */}
-                                        <TableCell className="p-2 text-center">
-                                          <span className="text-[11px] font-bold text-slate-400">Otomatik</span>
-                                        </TableCell>
-
-                                        {/* Discounted Price Fields (if active) */}
-                                        {showDiscountedPrices && (
-                                          <>
-                                            <TableCell className="p-2">
-                                              <Input
-                                                type="number"
-                                                step="0.01"
-                                                value={editForm.discounted_price}
-                                                onChange={(e) => setEditForm({...editForm, discounted_price: e.target.value})}
-                                                className="w-full text-xs h-8"
-                                                placeholder="İndirimli fiyat"
-                                              />
-                                            </TableCell>
-                                            <TableCell className="p-2 text-center">
-                                              <span className="text-[11px] font-bold text-slate-400">Otomatik</span>
-                                            </TableCell>
-                                          </>
-                                        )}
-
-                                        {/* Save & Cancel Row Actions */}
-                                        <TableCell className="p-2 text-center">
-                                          <div className="flex justify-center gap-1.5">
-                                            <Button 
-                                              size="sm" 
-                                              onClick={saveEditProduct}
-                                              disabled={loading}
-                                              className="bg-green-600 hover:bg-green-700 text-white p-1.5 h-8 w-8 rounded-lg flex items-center justify-center"
-                                              title="Değişiklikleri Kaydet"
-                                            >
-                                              <Save className="w-4 h-4" />
-                                            </Button>
-                                            <Button 
-                                              size="sm" 
-                                              variant="outline" 
-                                              onClick={cancelEditProduct}
-                                              className="border-slate-200 text-slate-600 hover:bg-slate-50 p-1.5 h-8 w-8 rounded-lg flex items-center justify-center"
-                                              title="İptal Et"
-                                            >
-                                              <X className="w-4 h-4" />
-                                            </Button>
-                                          </div>
-                                        </TableCell>
-                                      </TableRow>
-                                    );
-                                  }
-
-                                  return (
-                                    <TableRow 
-                                      key={product.id}
-                                      className={`border-b border-slate-200/80 transition-all duration-150 ${
-                                        isSelectedForOffer 
-                                          ? 'bg-emerald-50/15 hover:bg-emerald-50/30' 
-                                          : 'hover:bg-slate-100/90 bg-white/40'
-                                      }`}
-                                    >
-                                      {/* Proposal Checkbox & Qty selection cell */}
-                                      <TableCell className={`p-3 transition-all ${
-                                        isSelectedForOffer 
-                                          ? 'border-l-4 border-l-emerald-600 pl-2' 
-                                          : ''
-                                      }`}>
-                                        <div className="flex flex-col items-center gap-1.5">
-                                          <input
-                                            type="checkbox"
-                                            className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
-                                            checked={isSelectedForOffer}
-                                            onChange={(e) => {
-                                              if (e.target.checked) {
-                                                toggleProductSelection(product.id, 1);
-                                              } else {
-                                                toggleProductSelection(product.id, 0);
-                                              }
-                                            }}
-                                            title="Teklif için seç"
-                                          />
-                                          {isSelectedForOffer && (
-                                            <input
-                                              type="number"
-                                              min="1"
-                                              value={selectedProducts.get(product.id) || 1}
-                                              onChange={(e) => {
-                                                const quantity = parseInt(e.target.value) || 1;
-                                                toggleProductSelection(product.id, quantity);
-                                              }}
-                                              className="w-10 px-1 py-0.5 text-center text-[10px] font-extrabold border border-slate-200 rounded-md bg-white text-slate-800 focus:ring-1 focus:ring-emerald-500 focus:outline-none"
-                                              placeholder="1"
-                                              title="Teklif adedi"
-                                            />
-                                          )}
-                                        </div>
-                                      </TableCell>
-
-                                      {/* Product Image & Details cell */}
-                                      <TableCell className="p-3">
-                                        <div className="flex items-center gap-3">
-                                          {product.image_url ? (
-                                            <img 
-                                              src={product.image_url} 
-                                              alt={product.name}
-                                              className="w-11 h-11 object-cover rounded-lg border border-slate-100 shadow-xs cursor-pointer hover:scale-105 transition-transform duration-200"
-                                              onError={(e) => {e.target.style.display = 'none'}}
-                                              onClick={() => openProductDetails(product)}
-                                              title="Ürün detaylarını görüntülemek için tıklayın"
+                                              value={editForm.discounted_price}
+                                              onChange={(e) => setEditForm({...editForm, discounted_price: e.target.value})}
+                                              className="w-24"
+                                              placeholder="İndirimli fiyat"
                                             />
                                           ) : (
-                                            <div className="w-11 h-11 bg-slate-50 flex items-center justify-center rounded-lg border border-slate-100 text-slate-300">
-                                              <Package className="w-5 h-5 stroke-[1.5]" />
-                                            </div>
+                                            product.discounted_price ? (
+                                              `${getCurrencySymbol(product.currency)} ${formatPrice(product.discounted_price)}`
+                                            ) : '-'
                                           )}
-                                          <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-1.5">
-                                              <div className="font-bold text-slate-800 text-sm truncate" title={product.name}>
-                                                {product.name}
-                                              </div>
-                                              <button
-                                                onClick={() => toggleProductFavorite(product.id)}
-                                                className={`flex-shrink-0 p-0.5 rounded-md hover:bg-slate-100 transition-colors ${
-                                                  product.is_favorite ? 'text-amber-500' : 'text-slate-300 hover:text-amber-400'
-                                                }`}
-                                                title={product.is_favorite ? 'Favorilerden çıkar' : 'Favorilere ekle'}
-                                              >
-                                                <Star className="w-3.5 h-3.5" fill={product.is_favorite ? 'currentColor' : 'none'} />
-                                              </button>
-                                            </div>
-                                            {product.description && (
-                                              <div className="text-xs text-slate-500 truncate mt-0.5" title={product.description}>
-                                                {product.description}
-                                              </div>
-                                            )}
-                                          </div>
-                                        </div>
-                                      </TableCell>
-
-                                      {/* Company badge cell */}
-                                      <TableCell className="p-3">
-                                        {company?.name ? (
-                                          <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 bg-slate-800 text-white rounded-md shadow-xs tracking-wider inline-block max-w-full truncate" title={company.name}>
-                                            {company.name}
-                                          </span>
-                                        ) : (
-                                          <span className="text-slate-400/80 italic text-xs">---</span>
-                                        )}
-                                      </TableCell>
-
-                                      {/* Brand badge cell */}
-                                      <TableCell className="p-3">
-                                        {product.brand ? (
-                                          <span className="text-[10px] font-bold uppercase px-2 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded-md inline-block max-w-full truncate" title={product.brand}>
-                                            {product.brand}
-                                          </span>
-                                        ) : (
-                                          <span className="text-slate-400/80 italic text-xs">---</span>
-                                        )}
-                                      </TableCell>
-
-                                      {/* Original List Price cell (stacked layout) */}
-                                      <TableCell className="p-3 font-semibold text-slate-600 text-sm">
-                                        <div className="flex flex-col">
-                                          <span className="text-[9px] text-slate-500 font-extrabold uppercase tracking-wider">ASIL</span>
-                                          <span className="text-slate-900 font-black text-sm mt-0.5">
-                                            {getCurrencySymbol(product.currency)} {formatPrice(product.list_price)}
-                                          </span>
-                                        </div>
-                                      </TableCell>
-
-                                      {/* Converted TL Price cell (stacked layout) */}
-                                      <TableCell className="p-3 font-extrabold text-slate-800 text-sm">
-                                        <div className="flex flex-col">
-                                          <span className="text-[9px] text-emerald-700 font-extrabold uppercase tracking-wider">TL FİYAT</span>
-                                          <span className="text-emerald-950 font-black text-sm mt-0.5">
-                                            ₺ {product.list_price_try ? formatPrice(product.list_price_try) : '---'}
-                                          </span>
-                                        </div>
-                                      </TableCell>
-
-                                      {/* Discounted Prices cells (if active) */}
-                                      {showDiscountedPrices && (
-                                        <>
-                                          <TableCell className="p-3">
-                                            <div className="flex flex-col">
-                                              <span className="text-[9px] text-amber-700 font-extrabold uppercase tracking-wider">İNDİRİMLİ</span>
-                                              <span className="text-amber-950 font-black text-sm mt-0.5">
-                                                {product.discounted_price ? (
-                                                  `${getCurrencySymbol(product.currency)} ${formatPrice(product.discounted_price)}`
-                                                ) : (
-                                                  <span className="text-slate-400">-</span>
-                                                )}
-                                              </span>
-                                            </div>
-                                          </TableCell>
-                                          <TableCell className="p-3">
-                                            <div className="flex flex-col">
-                                              <span className="text-[9px] text-rose-700 font-extrabold uppercase tracking-wider">TL İNDİRİMLİ</span>
-                                              <span className="text-rose-950 font-black text-sm mt-0.5">
-                                                {product.discounted_price_try ? (
-                                                  `₺ ${formatPrice(product.discounted_price_try)}`
-                                                ) : (
-                                                  <span className="text-slate-400">-</span>
-                                                )}
-                                              </span>
-                                            </div>
-                                          </TableCell>
-                                        </>
+                                        </TableCell>
                                       )}
-
-
-
-                                      {/* Action buttons cell */}
-                                      <TableCell className="p-3">
-                                        <div className="flex gap-1 justify-center">
-                                          <Button 
-                                            size="sm" 
-                                            variant="outline" 
+                                      <TableCell className="w-24">
+                                        {isEditing ? (
+                                          <Select 
+                                            value={editForm.currency} 
+                                            onValueChange={(value) => setEditForm({...editForm, currency: value})}
+                                          >
+                                            <SelectTrigger className="w-20">
+                                              <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              <SelectItem value="USD">USD</SelectItem>
+                                              <SelectItem value="EUR">EUR</SelectItem>
+                                              <SelectItem value="TRY">TRY</SelectItem>
+                                            </SelectContent>
+                                          </Select>
+                                        ) : (
+                                          <Badge 
+                                            className="cursor-pointer hover:bg-primary/90" 
                                             onClick={() => startEditProduct(product)}
-                                            className="text-slate-600 border-slate-200 hover:bg-slate-100 p-1.5 h-8 w-8 rounded-lg flex items-center justify-center"
-                                            title="Düzenle"
                                           >
-                                            <Edit className="w-3.5 h-3.5" />
-                                          </Button>
-                                          <Button 
-                                            size="sm" 
-                                            variant="destructive" 
-                                            onClick={() => deleteProduct(product.id)}
-                                            className="text-rose-600 hover:text-rose-700 bg-white hover:bg-rose-50 border-rose-100 hover:border-rose-200 p-1.5 h-8 w-8 rounded-lg flex items-center justify-center"
-                                            title="Sil"
-                                          >
-                                            <Trash2 className="w-3.5 h-3.5" />
-                                          </Button>
+                                            {product.currency}
+                                          </Badge>
+                                        )}
+                                      </TableCell>
+                                      <TableCell className="w-28">
+                                        ₺ {product.list_price_try ? formatPrice(product.list_price_try) : '---'}
+                                      </TableCell>
+                                      {showDiscountedPrices && (
+                                        <TableCell className="w-28">
+                                          {product.discounted_price_try ? (
+                                            `₺ ${formatPrice(product.discounted_price_try)}`
+                                          ) : '-'}
+                                        </TableCell>
+                                      )}
+                                      <TableCell className="w-24">
+                                        {product.is_favorite ? (
+                                          <Input
+                                            type="number"
+                                            min="0"
+                                            value={product.stock_quantity || 0}
+                                            onChange={(e) => updateProductStock(product.id, parseInt(e.target.value) || 0)}
+                                            className="w-16 text-center text-sm"
+                                            placeholder="0"
+                                          />
+                                        ) : (
+                                          <span className="text-gray-400 text-sm">-</span>
+                                        )}
+                                      </TableCell>
+                                      <TableCell className="w-16">
+                                        {/* Toplu işlem seçimi - Sağ tarafta */}
+                                        <Button
+                                          size="sm"
+                                          variant={selectedProductsForBulk.has(product.id) ? "default" : "outline"}
+                                          onClick={() => toggleProductSelectionForBulk(product.id)}
+                                          className={selectedProductsForBulk.has(product.id) ? "bg-blue-600 hover:bg-blue-700" : ""}
+                                        >
+                                          {selectedProductsForBulk.has(product.id) ? (
+                                            <Check className="w-4 h-4" />
+                                          ) : (
+                                            <Plus className="w-4 h-4" />
+                                          )}
+                                        </Button>
+                                      </TableCell>
+                                      <TableCell className="w-24">
+                                        <div className="flex gap-2">
+                                          {isEditing ? (
+                                            <>
+                                              <Button 
+                                                size="sm" 
+                                                onClick={saveEditProduct}
+                                                disabled={loading}
+                                                className="bg-green-600 hover:bg-green-700"
+                                              >
+                                                <Save className="w-4 h-4" />
+                                              </Button>
+                                              <Button 
+                                                size="sm" 
+                                                variant="outline" 
+                                                onClick={cancelEditProduct}
+                                              >
+                                                <X className="w-4 h-4" />
+                                              </Button>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <Button 
+                                                size="sm" 
+                                                variant="outline" 
+                                                onClick={() => startEditProduct(product)}
+                                              >
+                                                <Edit className="w-4 h-4" />
+                                              </Button>
+                                              <Button 
+                                                size="sm" 
+                                                variant="destructive" 
+                                                onClick={() => deleteProduct(product.id)}
+                                              >
+                                                <Trash2 className="w-4 h-4" />
+                                              </Button>
+                                            </>
+                                          )}
                                         </div>
                                       </TableCell>
                                     </TableRow>
@@ -9881,8 +9952,151 @@ function App() {
             <BatteryTestSection />
           </TabsContent>
 
+          {/* MPPT Hesaplayıcı */}
+          <TabsContent value="mppt" className="space-y-6">
+            <div className="flex items-center gap-2">
+              <Calculator className="w-6 h-6 text-lime-600" />
+              <div>
+                <h2 className="text-2xl font-black text-slate-800">MPPT Hesaplayıcı</h2>
+                <p className="text-sm text-slate-500">Panel özelliklerini girin, yapay zekâ uygun MPPT şarj kontrol cihazını önersin</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              {/* Form */}
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-4">
+                <div>
+                  <Label>Panel (sistemden seç)</Label>
+                  <Select value={mpptForm.productId} onValueChange={pickMpptPanelFromProduct}>
+                    <SelectTrigger><SelectValue placeholder="Güneş paneli ürünü seç..." /></SelectTrigger>
+                    <SelectContent>
+                      {(products || []).filter((p) => {
+                          const n = (p.name || '').toLocaleLowerCase('tr-TR');
+                          // Sadece Monokristal Güneş Panelleri; çıkma/kontrol/esnek/koruma vb. hariç
+                          return n.includes('monokristal') && n.includes('güneş panel') && !n.includes('çıkma');
+                        }).slice(0, 50).map((p) => (
+                        <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {mpptForm.name && (
+                    <p className="mt-1.5 text-sm text-slate-600">Seçili: <strong>{mpptForm.name}</strong></p>
+                  )}
+                </div>
+
+                {/* Adet — panel değerlerinin üstünde, ayrı (kaydetmeye dahil değil) */}
+                <div>
+                  <Label>Panel Adedi (sistemdeki toplam)</Label>
+                  <Input type="number" min="1" value={mpptForm.adet} onChange={(e) => setMpptForm({ ...mpptForm, adet: e.target.value })} className="w-32" />
+                </div>
+
+                {mpptForm.productId && (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-black uppercase tracking-wider text-slate-500">Panel Değerleri</span>
+                      <Button type="button" size="sm" variant="outline" onClick={savePanelSpecs} disabled={mpptSpecsSaving} className="h-7 text-xs border-lime-300 text-lime-700 hover:bg-lime-50">
+                        {mpptSpecsSaving ? 'Kaydediliyor...' : 'Değerleri Kaydet'}
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      <div><Label className="text-xs">Güç (W)</Label><Input type="number" value={mpptForm.watt} onChange={(e) => setMpptForm({ ...mpptForm, watt: e.target.value })} placeholder="205" /></div>
+                      <div><Label className="text-xs">Voc (V)</Label><Input type="number" step="0.1" value={mpptForm.voc} onChange={(e) => setMpptForm({ ...mpptForm, voc: e.target.value })} placeholder="22.1" /></div>
+                      <div><Label className="text-xs">Vmp (V)</Label><Input type="number" step="0.1" value={mpptForm.vmp} onChange={(e) => setMpptForm({ ...mpptForm, vmp: e.target.value })} placeholder="18.6" /></div>
+                      <div><Label className="text-xs">Isc (A)</Label><Input type="number" step="0.01" value={mpptForm.isc} onChange={(e) => setMpptForm({ ...mpptForm, isc: e.target.value })} placeholder="10.30" /></div>
+                      <div><Label className="text-xs">Imp (A)</Label><Input type="number" step="0.01" value={mpptForm.imp} onChange={(e) => setMpptForm({ ...mpptForm, imp: e.target.value })} placeholder="9.95" /></div>
+                    </div>
+                    <p className="text-[11px] text-slate-400">Değerleri bir kez girip <strong>Kaydet</strong> → sonraki seçimlerde otomatik gelir. Voc girilirse voltaj sınıfı kesin hesaplanır. Sistem 12V.</p>
+                  </div>
+                )}
+
+                <Button onClick={callMppt} disabled={mpptLoading || !mpptForm.watt} className="w-full bg-lime-600 hover:bg-lime-700 text-white font-bold">
+                  {mpptLoading ? 'Hesaplanıyor...' : 'MPPT Öner'}
+                </Button>
+              </div>
+
+              {/* Sonuç */}
+              <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                {!mpptResult ? (
+                  <div className="h-full flex flex-col items-center justify-center text-center text-slate-400 py-12">
+                    <Calculator className="w-12 h-12 mb-3 text-slate-300" />
+                    <p>Panel bilgilerini girip "MPPT Öner"e basın.</p>
+                  </div>
+                ) : (() => {
+                  const c = mpptResult.computed || {}; const r = mpptResult.recommendation || {}; const m = r.onerilen_mppt || {};
+                  const stdV = m.secilen_voltaj_v || 0;
+                  const stdA = m.standart_akim_a || c.onerilen_standart_akim_a || 0;
+                  // Sistemdeki MPPT ürünlerinden uygun olanlar (isimden V+A parse)
+                  const sysMppt = (products || [])
+                    .filter((p) => /mppt/i.test(p.name || '') && !/çıkma/i.test(p.name || ''))
+                    .map((p) => {
+                      const n = p.name || '';
+                      const vM = n.match(/(\d+)\s*V/i); const aM = n.match(/(\d+)\s*A/i);
+                      return { name: n, v: vM ? +vM[1] : null, a: aM ? +aM[1] : null };
+                    })
+                    .filter((x) => x.a && x.a >= stdA && (x.v == null || x.v >= stdV))
+                    .sort((a, b) => (a.a - b.a) || ((a.v || 999) - (b.v || 999)))
+                    .slice(0, 5);
+                  return (
+                    <div className="space-y-4">
+                      <div className="rounded-xl bg-gradient-to-br from-[#1B3A5C] to-[#15293f] text-white p-4">
+                        <div className="text-[11px] uppercase tracking-wider text-emerald-300 font-bold mb-1">Önerilen MPPT</div>
+                        <div className="text-3xl font-black tabular-nums">{m.etiket || (m.standart_akim_a ? `${m.standart_akim_a} A` : '—')} <span className="text-base font-semibold text-white/70">MPPT (12V)</span></div>
+                        <div className="text-white/70 text-sm mt-1">Hesaplanan şarj akımı: <strong className="tabular-nums">{c.hesaplanan_sarj_akimi_a} A</strong>{m.secilen_voltaj_v ? <> · Max PV: <strong className="tabular-nums">{m.secilen_voltaj_v} V</strong></> : null}</div>
+                      </div>
+                      {r.ozet && <p className="text-sm text-slate-700">{r.ozet}</p>}
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div className="rounded-lg bg-slate-50 p-2.5"><div className="text-[11px] text-slate-400 uppercase">Toplam Güç</div><div className="font-bold tabular-nums">{c.toplam_watt} W</div></div>
+                        <div className="rounded-lg bg-slate-50 p-2.5"><div className="text-[11px] text-slate-400 uppercase">Panel</div><div className="font-bold tabular-nums">{c.adet} × {c.panel_watt}W</div></div>
+                      </div>
+                      {sysMppt.length > 0 ? (
+                        <div>
+                          <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Sistemdeki Uygun MPPT'ler</div>
+                          <div className="space-y-1.5">
+                            {sysMppt.map((md, i) => (
+                              <div key={i} className="flex items-center justify-between rounded-lg border border-lime-200 bg-lime-50/50 px-3 py-2 text-sm">
+                                <span className="font-semibold text-slate-800">{md.name}</span>
+                                <span className="text-slate-500 tabular-nums shrink-0 ml-2">{md.a}A{md.v ? ` · ${md.v}V` : ''}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-xs text-slate-400 border border-dashed border-slate-200 rounded-lg p-3">
+                          Sistemde {stdV}V/{stdA}A değerini karşılayan kayıtlı MPPT yok. Uygun bir MPPT ürünü ekleyin.
+                        </div>
+                      )}
+                      {(r.uyarilar || []).length > 0 && (
+                        <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 space-y-1">
+                          <div className="text-xs font-bold text-rose-700 uppercase tracking-wider flex items-center gap-1.5"><AlertTriangle className="w-3.5 h-3.5" /> Uyarılar</div>
+                          {(r.uyarilar || []).map((w, i) => <div key={i} className="text-sm text-rose-700">{w}</div>)}
+                        </div>
+                      )}
+                      {r.aciklama && <p className="text-xs text-slate-500 border-t pt-3">{r.aciklama}</p>}
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          </TabsContent>
+
           {/* Kablo Şeması Tab */}
           <TabsContent value="wiring-diagram" className="m-0 p-0">
+            {!hideChromeForWiring && (
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div className="flex items-center gap-2">
+                  <Cable className="w-6 h-6 text-cyan-600" />
+                  <h2 className="text-2xl font-black text-slate-800">Kablo Şeması</h2>
+                </div>
+                <Button onClick={toggleWiringFullscreen} className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold rounded-xl">
+                  <Eye className="w-4 h-4 mr-2" /> Tam Ekran
+                </Button>
+              </div>
+            )}
+            {hideChromeForWiring && (
+              <button onClick={toggleWiringFullscreen} title="Tam ekrandan çık" className="fixed top-3 right-3 z-[60] inline-flex items-center gap-1.5 px-3 h-9 rounded-lg bg-slate-900/85 text-white text-sm font-bold shadow-lg hover:bg-slate-900">
+                <X className="w-4 h-4" /> Tam Ekrandan Çık
+              </button>
+            )}
             <KabloSemasiSection fullscreen={hideChromeForWiring} />
           </TabsContent>
 
@@ -11173,14 +11387,6 @@ function App() {
                 </div>
                 {previewImageTitle}
               </DialogTitle>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={closeImagePreview}
-                className="h-6 w-6 p-0 hover:bg-gray-100"
-              >
-                <X className="h-4 w-4" />
-              </Button>
             </div>
             <DialogDescription>
               Görseli yakınlaştırmak için tıklayın. Yeni sekmede açmak için sağ tıklayın.
@@ -11263,14 +11469,6 @@ function App() {
                     <DialogTitle className="text-xl font-bold text-slate-800 flex items-center gap-2">
                       <span>🔍 Ürün Detayları</span>
                     </DialogTitle>
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      onClick={() => setShowProductDetail(false)}
-                      className="h-7 w-7 p-0 hover:bg-slate-100 rounded-full"
-                    >
-                      <X className="h-4.5 w-4.5 text-slate-500" />
-                    </Button>
                   </div>
                 </DialogHeader>
                 

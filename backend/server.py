@@ -5950,13 +5950,16 @@ async def _run_termosa_sync_setting(setting: Dict[str, Any], manual: bool = Fals
         if not products:
             raise HTTPException(status_code=422, detail="Termosa kontrolünde ürün bulunamadı.")
 
+        # Fiyat kontrol = SADECE bu firmada zaten olan (eşleşen) ürünler. Yeni ürün eklenmez (o "Çek" işidir).
         if whole_tree_existing_only:
             company, products = await _resolve_termosa_company_for_existing_products(company, products)
-            if not products:
-                raise HTTPException(
-                    status_code=422,
-                    detail="Bu firma için Termosa’dan daha önce eklenmiş veya eşleşen ürün bulunamadı."
-                )
+        else:
+            products = await _filter_termosa_products_for_company(company["id"], products)
+        if not products:
+            raise HTTPException(
+                status_code=422,
+                detail="Bu firma için Termosa’dan daha önce eklenmiş veya eşleşen ürün bulunamadı."
+            )
         session = await _build_import_session(
             company=company,
             products_data=products,
@@ -6026,6 +6029,27 @@ async def _run_due_supplier_syncs():
             await _run_termosa_sync_setting(setting, manual=False)
         except Exception as e:
             logger.error(f"Due supplier sync failed for {setting.get('id')}: {e}")
+
+
+@api_router.post("/supplier-sync/termosa/run-all")
+async def run_all_termosa_syncs():
+    """Tüm AÇIK Termosa fiyat kontrollerini hemen çalıştır (sisteme her girişte otomatik tetiklenir)."""
+    settings = await db.supplier_sync_settings.find({"supplier": "termosa", "enabled": True}).limit(10).to_list(10)
+    results = []
+    total_changed = 0
+    for setting in settings:
+        try:
+            res = await _run_termosa_sync_setting(setting, manual=True)
+            summ = res.get("summary", {}) or {}
+            changed = int(summ.get("price_changes", 0) or 0)
+            total_changed += changed
+            results.append({"company_id": setting["company_id"], "summary": summ,
+                            "session_id": (res.get("import_session") or {}).get("id")})
+        except HTTPException as e:
+            results.append({"company_id": setting["company_id"], "error": str(e.detail)})
+        except Exception as e:
+            results.append({"company_id": setting["company_id"], "error": str(e)})
+    return {"success": True, "checked": len(settings), "total_changed": total_changed, "results": results}
 
 
 @api_router.post("/companies/{company_id}/import-sessions/from-products", response_model=ImportSessionResponse)
@@ -6117,6 +6141,37 @@ async def run_termosa_supplier_sync(company_id: str):
     if not setting:
         raise HTTPException(status_code=404, detail="Termosa otomatik kontrol ayarı bulunamadı")
     return await _run_termosa_sync_setting(setting, manual=True)
+
+
+class TermosaCheckAutoRequest(BaseModel):
+    category_urls: List[str] = Field(default_factory=list)  # opsiyonel: ilk kez kategori belirlemek için
+
+
+@api_router.post("/supplier-sync/termosa/check-auto")
+async def check_auto_termosa(payload: TermosaCheckAutoRequest = TermosaCheckAutoRequest()):
+    """Adında 'Termosa' geçen firmayı otomatik bul ve fiyatlarını kontrol et — firma SEÇMEDEN."""
+    company = await db.companies.find_one({"name": {"$regex": "termosa", "$options": "i"}})
+    if not company:
+        raise HTTPException(status_code=404, detail="Adında 'Termosa' geçen firma bulunamadı. Firma adını 'Termosa' yapın.")
+    cats = _sanitize_category_urls(payload.category_urls)
+    now = datetime.now(timezone.utc)
+    setting = await db.supplier_sync_settings.find_one({"company_id": company["id"], "supplier": "termosa"})
+    if not setting:
+        setting = {
+            "id": str(uuid.uuid4()), "company_id": company["id"], "company_name": company["name"],
+            "supplier": "termosa", "enabled": True, "category_urls": cats, "interval_hours": 24,
+            "auto_apply": False, "last_run_at": None, "next_run_at": None,
+            "last_session_id": None, "last_error": None, "created_at": now, "updated_at": now,
+        }
+        await db.supplier_sync_settings.replace_one({"company_id": company["id"], "supplier": "termosa"}, setting, upsert=True)
+    elif cats and not (setting.get("category_urls") or []):
+        # ayar var ama kategorisi yok -> çek kutusundan gelenleri kaydet
+        setting["category_urls"] = cats
+        await db.supplier_sync_settings.update_one({"id": setting["id"]}, {"$set": {"category_urls": cats, "enabled": True, "updated_at": now}})
+        setting["enabled"] = True
+    res = await _run_termosa_sync_setting(setting, manual=True)
+    res["company_name"] = company["name"]
+    return res
 
 
 @api_router.post("/companies/{company_id}/ai-extract-products")
@@ -7659,6 +7714,151 @@ def _call_openai_chat(messages: list, max_tokens: int = 2048, temperature: float
 def _image_bytes_to_data_url(image_bytes: bytes, mime: str = "image/jpeg") -> str:
     """Goruntu baytlarini OpenAI vision icin data URL'ine cevir."""
     return f"data:{mime};base64,{base64.b64encode(image_bytes).decode('utf-8')}"
+
+
+class MpptPanel(BaseModel):
+    name: Optional[str] = None
+    watt: float = Field(..., gt=0)
+    voc: Optional[float] = None   # Açık devre gerilimi (V)
+    vmp: Optional[float] = None   # Maksimum güç gerilimi (V)
+    isc: Optional[float] = None   # Kısa devre akımı (A)
+    imp: Optional[float] = None   # Maksimum güç akımı (A)
+
+
+class MpptRecommendRequest(BaseModel):
+    panel: MpptPanel
+    series: int = Field(1, ge=1)      # seri panel sayısı
+    parallel: int = Field(1, ge=1)    # paralel string sayısı
+    battery_voltage: int = 12         # 12 / 24 / 48
+    min_temp_c: float = -10           # bölgenin en düşük sıcaklığı (soğukta Voc artar)
+    notes: Optional[str] = None
+
+
+class PanelSpecsPayload(BaseModel):
+    watt: Optional[float] = None
+    voc: Optional[float] = None
+    vmp: Optional[float] = None
+    isc: Optional[float] = None
+    imp: Optional[float] = None
+
+
+@api_router.get("/mppt/panel-specs/{product_id}")
+async def get_panel_specs(product_id: str):
+    """Bir panel ürününün kayıtlı elektriksel değerleri (Voc/Vmp/Isc/Imp/watt)."""
+    doc = await db.mppt_panel_specs.find_one({"product_id": product_id})
+    if not doc:
+        return {"exists": False}
+    doc.pop("_id", None)
+    return {"exists": True, **doc}
+
+
+@api_router.put("/mppt/panel-specs/{product_id}")
+async def save_panel_specs(product_id: str, specs: PanelSpecsPayload):
+    """Panel elektriksel değerlerini kaydet — sonraki seçimlerde otomatik gelir."""
+    data = {k: v for k, v in specs.dict().items() if v is not None}
+    await db.mppt_panel_specs.update_one(
+        {"product_id": product_id},
+        {"$set": {**data, "product_id": product_id, "updated_at": datetime.now(timezone.utc)}},
+        upsert=True,
+    )
+    return {"success": True}
+
+
+@api_router.post("/mppt/recommend")
+async def mppt_recommend(req: MpptRecommendRequest):
+    """Panel özelliklerine göre uygun MPPT şarj kontrol cihazını öner (hesap + GPT-4o mini)."""
+    p = req.panel
+    count = req.series * req.parallel
+    total_watt = round(p.watt * count, 1)
+    bv = req.battery_voltage if req.battery_voltage in (12, 24, 48) else 12
+    # Panel Voc verilmemişse watt'tan tahmin et (12V sistem = paralel bağlama varsayımı; dizi Voc ≈ tek panel Voc)
+    def _est_voc(w):
+        if w <= 150: return 23.0   # 36 hücre düşük gerilim
+        if w <= 230: return 24.0   # half-cut 36 hücre (~22-26V)
+        if w <= 350: return 41.0   # 60 hücre
+        if w <= 500: return 49.0   # 72 hücre
+        return round(0.11 * w, 1)
+    panel_voc = p.voc if p.voc else _est_voc(p.watt)
+    # Dizi elektriksel değerleri (paralel: series=1 -> dizi Voc = panel Voc; gerilim panel sayısıyla artmaz)
+    voc_arr = round(panel_voc * req.series, 2)
+    vmp_arr = round(p.vmp * req.series, 2) if p.vmp else None
+    isc_arr = round(p.isc * req.parallel, 2) if p.isc else None
+    # Soğukta Voc artışı (~%0.35/°C, 25°C referans) — MPPT max PV gerilimi bunu aşmalı
+    voc_cold = round(voc_arr * (1 + 0.0035 * (25 - req.min_temp_c)), 2)
+    # Maksimum şarj akımı = toplam güç / akü gerilimi
+    charge_a = round(total_watt / bv, 1)
+    # Standart MPPT akımı: en yakın 10'a yuvarla (55 ve üstü yukarı). Ör: 51-54->50, 55-58->60
+    std_amp = max(10, int(charge_a / 10 + 0.5) * 10)
+    computed = {
+        "panel_adi": p.name or "Panel",
+        "panel_watt": p.watt, "panel_voc": p.voc, "panel_vmp": p.vmp,
+        "panel_isc": p.isc, "panel_imp": p.imp,
+        "seri": req.series, "paralel": req.parallel, "adet": count,
+        "toplam_watt": total_watt, "aku_gerilimi_v": bv, "min_sicaklik_c": req.min_temp_c,
+        "voc_dizi_v": voc_arr, "vmp_dizi_v": vmp_arr, "isc_dizi_a": isc_arr,
+        "voc_soguk_v": voc_cold, "hesaplanan_sarj_akimi_a": charge_a,
+        "onerilen_standart_akim_a": std_amp,
+    }
+    sys_prompt = (
+        "Sen güneş enerjisi sistemleri ve MPPT şarj kontrol cihazı seçiminde uzman bir mühendissin. "
+        "Verilen panel/dizi verilerine göre uygun MPPT'yi öner. Voc (özellikle SOĞUKTA artan voc_soguk) "
+        "cihazın izin verilen maksimum PV gerilimini ASLA aşmamalı; cihazın anma akımı (A) hesaplanan şarj "
+        "akımını karşılamalı (bir üst standart değere yuvarla: 10/15/20/30/40/50/60/70/80/100 A). "
+        "Voc/Isc verilmemişse panel watt ve isimden tipik kristal panel değerlerini TAHMİN et ve tahmin olduğunu belirt. "
+        "Cihazın MAKSİMUM PV GERİLİMİ standart sınıflardan biri olmalı: 100, 150 veya 250 V. "
+        "Voc verilmemişse panel watt ve adetten tipik kristal panel Voc'unu (soğukta artışıyla) TAHMİN et ve "
+        "bu tahmini güvenle aşan en küçük voltaj sınıfını seç ('secilen_voltaj_v'). "
+        "Modeller bu voltaj sınıfı + standart akıma uygun olsun (ör. Victron 150/85). "
+        "SADECE Türkçe ve SADECE şu JSON şemasıyla yanıt ver: "
+        '{"ozet": "...", "onerilen_mppt": {"secilen_voltaj_v": sayı, "min_pv_gerilim_v": sayı, "min_sarj_akimi_a": sayı, '
+        '"standart_akim_a": sayı, "modeller": [{"marka": "...", "model": "...", "akim_a": sayı, "max_pv_v": sayı}]}, '
+        '"uyarilar": ["..."], "aciklama": "2-4 cümle teknik açıklama"}'
+    )
+    user_prompt = ("Hesaplanan veriler (json):\n" + json.dumps(computed, ensure_ascii=False)
+                   + f"\nÖnerilecek standart MPPT akımı KESİN: {std_amp} A. 'standart_akim_a' bu olsun; "
+                   + f"örnek modelleri {std_amp}A anma akımına göre seç (12V sistem).")
+    if req.notes:
+        user_prompt += f"\nEk not: {req.notes}"
+    loop = asyncio.get_event_loop()
+    raw = await loop.run_in_executor(
+        None, lambda: _call_openai_chat(
+            [{"role": "system", "content": sys_prompt}, {"role": "user", "content": user_prompt}],
+            max_tokens=1200, temperature=0.2, json_mode=True
+        )
+    )
+    try:
+        ai = json.loads(raw)
+    except (ValueError, TypeError):
+        ai = {"ozet": raw[:500], "onerilen_mppt": {}, "uyarilar": [], "aciklama": ""}
+    # Sunucu-tarafı güvenlik doğrulaması: önerilen modeller soğuk Voc / şarj akımını karşılamalı
+    warns = ai.get("uyarilar") or []
+    if not isinstance(warns, list):
+        warns = [str(warns)]
+    mppt = ai.get("onerilen_mppt") or {}
+    mppt["standart_akim_a"] = std_amp  # deterministik yuvarlama AI'yı ezer
+    mppt["min_sarj_akimi_a"] = charge_a
+    # Voltaj sınıfını standart 100/150/250'ye sabitle, etiket üret (ör. "150V/80A")
+    try:
+        vsel = float(mppt.get("secilen_voltaj_v") or 0)
+    except (ValueError, TypeError):
+        vsel = 0
+    # Voltaj sınıfı AKIMA göre değil, soğuk Voc'a göre (12V paralel sistemde panel Voc düşük -> genelde 100V yeter)
+    std_v = 100 if voc_cold <= 90 else (150 if voc_cold <= 180 else 250)
+    mppt["secilen_voltaj_v"] = std_v
+    mppt["etiket"] = f"{std_v}V/{std_amp}A"
+    ai["onerilen_mppt"] = mppt
+    for m in (mppt.get("modeller") or []):
+        try:
+            mv = float(m.get("max_pv_v") or 0)
+            if voc_cold and mv and mv < voc_cold:
+                warns.append(f"⚠️ {m.get('marka','')} {m.get('model','')}: max PV {mv}V, soğuk Voc {voc_cold}V'yi KARŞILAMIYOR (cihaz zarar görür). Daha yüksek gerilimli model seçin.")
+            ma = float(m.get("akim_a") or 0)
+            if ma and ma < charge_a:
+                warns.append(f"⚠️ {m.get('marka','')} {m.get('model','')}: {ma}A, gerekli {charge_a}A şarj akımının altında.")
+        except (ValueError, TypeError):
+            continue
+    ai["uyarilar"] = warns
+    return {"success": True, "computed": computed, "recommendation": ai}
 
 BATTERY_ANALYSIS_PROMPT = """Aşağıdaki görseller UNI-T UT673A cihazı ile yapılan bir akü testine aittir. Akü tipi (JEL, AGM, Kurşun-Asit vb.), kapasite ve kullanım amacı (marş aküsü, derin döngü/karavan aküsü, ek akü, servis aküsü vb.) hakkında HİÇBİR varsayımda bulunma. Cihazda hangi tipin seçildiği ve akünün hangi amaçla kullanıldığı sana bildirilmemiştir. Senin görevin yalnızca ölçülen değerleri yorumlamak ve akünün GENEL elektriksel sağlık durumunu raporlamaktır.
 
