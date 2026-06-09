@@ -19,6 +19,7 @@ import logging
 from io import BytesIO
 import hashlib
 import secrets
+import bcrypt
 import time
 import asyncio
 import threading
@@ -272,6 +273,31 @@ async def timing_middleware(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Response-Time"] = f"{(time.time() - start_time) * 1000:.2f}ms"
     return response
+
+# ==================== GLOBAL API AUTH ====================
+# Tüm /api/* endpoint'leri oturum ister; sadece aşağıdaki yollar herkese açık.
+# Tek tek Depends(get_current_user) bağlamak yerine middleware ile merkezi koruma
+# (~80 endpoint, unutulan route kalmasın).
+PUBLIC_API_PATHS = {
+    "/api",             # health/root
+    "/api/auth/login",
+    "/api/auth/logout",
+    "/api/auth/check",
+}
+
+@app.middleware("http")
+async def api_auth_middleware(request: Request, call_next):
+    path = request.url.path
+    if path.startswith("/api") and request.method != "OPTIONS" and path.rstrip("/") not in PUBLIC_API_PATHS:
+        token = request.cookies.get("session_token")
+        username = await auth_service.validate_session(token) if token else None
+        if not username:
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Authentication required"},
+            )
+        request.state.username = username
+    return await call_next(request)
 
 # Cache invalidation utility
 def invalidate_cache(pattern: str = None):
@@ -966,12 +992,35 @@ class AuthService:
         pass
 
     def hash_password(self, password: str) -> str:
-        """Hash password using SHA-256"""
-        return hashlib.sha256(password.encode()).hexdigest()
+        """Hash password using bcrypt (salted, slow)."""
+        return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("ascii")
 
     def verify_password(self, password: str, password_hash: str) -> bool:
-        """Verify password against hash"""
-        return self.hash_password(password) == password_hash
+        """Verify password against hash.
+
+        Supports both bcrypt ($2...) and legacy unsalted SHA-256 hex hashes so
+        existing users keep working; legacy hashes are upgraded on login."""
+        if not password_hash:
+            return False
+        if password_hash.startswith("$2"):
+            try:
+                return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("ascii"))
+            except ValueError:
+                return False
+        # Legacy SHA-256 (unsalted) fallback
+        legacy = hashlib.sha256(password.encode()).hexdigest()
+        return secrets.compare_digest(legacy, password_hash)
+
+    def needs_rehash(self, password_hash: str) -> bool:
+        """True if the stored hash is a legacy SHA-256 hash AND upgrades are enabled.
+
+        DİKKAT: Pi'deki eski kod bcrypt bilmez. Canlı DB'deki hash bcrypt'e
+        yükseltilirse canlı site login'i kırılır. Bu yüzden yükseltme
+        AUTH_BCRYPT_UPGRADE=true env flag'ine bağlı — Pi'ye yeni kod deploy
+        edildikten SONRA aç."""
+        if os.environ.get("AUTH_BCRYPT_UPGRADE", "false").lower() != "true":
+            return False
+        return bool(password_hash) and not password_hash.startswith("$2")
 
     async def create_session(self, username: str) -> str:
         """Create session token (Mongo'da kalici)"""
@@ -1022,26 +1071,29 @@ async def create_default_admin():
         logger.warning("ADMIN_PASSWORD not set in environment; skipping default admin setup")
         return
     try:
-        password_hash = auth_service.hash_password(admin_password)
         admin_user = await db.users.find_one({"username": ADMIN_USERNAME})
         if not admin_user:
             admin_user = {
                 "id": str(uuid.uuid4()),
                 "username": ADMIN_USERNAME,
-                "password_hash": password_hash,
+                "password_hash": auth_service.hash_password(admin_password),
                 "created_at": datetime.now(timezone.utc),
                 "is_active": True
             }
             await db.users.insert_one(admin_user)
             logger.info("Default admin user created successfully")
-        elif admin_user.get("password_hash") != password_hash:
-            await db.users.update_one(
-                {"username": ADMIN_USERNAME},
-                {"$set": {"password_hash": password_hash}}
-            )
-            logger.info("Default admin password synced from environment")
         else:
-            logger.info("Default admin user already up to date")
+            stored_hash = admin_user.get("password_hash") or ""
+            # bcrypt hash'leri salt'lı: doğrudan karşılaştırma yerine verify;
+            # parola değiştiyse YA DA hâlâ legacy SHA-256 ise yeniden hash'le
+            if not auth_service.verify_password(admin_password, stored_hash) or auth_service.needs_rehash(stored_hash):
+                await db.users.update_one(
+                    {"username": ADMIN_USERNAME},
+                    {"$set": {"password_hash": auth_service.hash_password(admin_password)}}
+                )
+                logger.info("Default admin password synced/upgraded from environment")
+            else:
+                logger.info("Default admin user already up to date")
     except Exception as e:
         logger.error(f"Error creating default admin user: {e}")
 
@@ -7217,7 +7269,15 @@ async def login(login_request: LoginRequest, response: JSONResponse):
         # Check if user is active
         if not user.get("is_active", True):
             raise HTTPException(status_code=401, detail="Hesap devre dışı")
-        
+
+        # Legacy SHA-256 hash'i bcrypt'e yükselt (parola elimizdeyken tek fırsat)
+        if auth_service.needs_rehash(user.get("password_hash") or ""):
+            await db.users.update_one(
+                {"id": user["id"]},
+                {"$set": {"password_hash": auth_service.hash_password(login_request.password)}}
+            )
+            logger.info(f"Upgraded legacy password hash to bcrypt for user {user.get('username')}")
+
         # Create session
         session_token = await auth_service.create_session(login_request.username)
         
@@ -7234,7 +7294,9 @@ async def login(login_request: LoginRequest, response: JSONResponse):
             value=session_token,
             max_age=86400,  # 24 hours in seconds
             httponly=True,
-            secure=False,  # Set True in production with HTTPS
+            # Prod (HTTPS, Pi): COOKIE_SECURE=true -> cookie sadece HTTPS'te gider.
+            # Lokal HTTP gelistirmede default false.
+            secure=os.environ.get("COOKIE_SECURE", "false").lower() == "true",
             samesite="lax"
         )
         
