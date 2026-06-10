@@ -3319,17 +3319,24 @@ class PDFQuoteGenerator:
         ]))
         return KeepTogether([outer])
 
-    def _create_modern_header(self, quote_data: Dict = None, badge_label: str = "TEKLİF NO"):
-        """Logo + Çorlu Karavan bilgileri (sol) ve no/tarih rozeti (sağ üst)."""
+    def _create_modern_header(self, quote_data: Dict = None, badge_label: str = "TEKLİF NO",
+                              show_badge: bool = True, show_subtitle: bool = True):
+        """Logo + Çorlu Karavan bilgileri (sol) ve no/tarih rozeti (sağ üst).
+
+        show_badge=False: sağ üst no/tarih rozeti gizlenir (örn. akü raporu — teklif değil).
+        show_subtitle=False: 'KARAVAN ELEKTRİK EKİPMANLARI' alt yazısı gizlenir."""
         from reportlab.platypus import Table as PDFTable
 
         # Sağ üst rozet (no + tarih)
-        badge_flowable = self._create_header_badge(quote_data or {}, badge_label=badge_label)
+        badge_flowable = self._create_header_badge(quote_data or {}, badge_label=badge_label) if show_badge else ""
 
         # Firma iletişim metni
         company_info = [
             "<font size='15' color='#2F4B68'><b>ÇORLU KARAVAN</b></font>",
-            "<font size='8' color='#1ba3cc'><b>KARAVAN ELEKTRİK EKİPMANLARI</b></font>",
+        ]
+        if show_subtitle:
+            company_info.append("<font size='8' color='#1ba3cc'><b>KARAVAN ELEKTRİK EKİPMANLARI</b></font>")
+        company_info += [
             " ",
             "<font size='9' color='#4A5568'>Hatip, Sarı Salkım 3. Sokak Mobilyacılar Sitesi No: B1, 59000 Çorlu/Tekirdağ</font>",
             "<font size='9' color='#4A5568'>Telefon: 0505 813 77 65 &nbsp;·&nbsp; info@corlukaravan.com</font>",
@@ -8131,6 +8138,13 @@ def _resize_image_to_720p(image_bytes: bytes) -> bytes:
     """Görseli 720p genişliğe küçült (aspect ratio koruyarak), JPEG'e çevir."""
     try:
         img = PILImage.open(BytesIO(image_bytes))
+        # Telefon fotoğrafları EXIF orientation taşır; resize/yeniden kayıtta
+        # EXIF düşünce görsel yan kalıyordu -> pikselleri baştan döndür.
+        try:
+            from PIL import ImageOps as PILImageOps
+            img = PILImageOps.exif_transpose(img)
+        except Exception:
+            pass
         # RGBA/PA modlarını RGB'ye çevir (JPEG için)
         if img.mode in ('RGBA', 'LA', 'P'):
             background = PILImage.new('RGB', img.size, (255, 255, 255))
@@ -8671,8 +8685,8 @@ def _build_battery_report_pdf(payload: BatteryReportPDFRequest) -> BytesIO:
 
     story = []
 
-    # Üst başlık (Çorlu Karavan)
-    story.append(gen._create_modern_header())
+    # Üst başlık (Çorlu Karavan) — akü raporu teklif değil: no rozeti + alt yazı yok
+    story.append(gen._create_modern_header(show_badge=False, show_subtitle=False))
     story.append(Spacer(1, 14))
 
     # Rapor başlığı (alt başlık YOK - akü tipi sabit değil)
@@ -8793,9 +8807,17 @@ def _build_battery_report_pdf(payload: BatteryReportPDFRequest) -> BytesIO:
         story.append(Paragraph("1. TEKNİK VERİLER", section_label_style))
         if data_pairs:
             # 2 sütunlu: Parametre | Değer (başlık satırı dahil)
+            # Başlık hücreleri Paragraph olduğu için tablo TEXTCOLOR'ı işlemez —
+            # koyu zemin üstünde okunsun diye stile beyaz renk gömülür.
+            header_cell_style = ParagraphStyle(
+                'BatteryTblHeader',
+                parent=gen.normal_style,
+                textColor=colors.white,
+                fontName=gen.get_font_name(is_bold=True),
+            )
             tbl_data = [[
-                Paragraph("<b>Parametre</b>", gen.normal_style),
-                Paragraph("<b>Ölçüm Değeri</b>", gen.normal_style),
+                Paragraph("Parametre", header_cell_style),
+                Paragraph("Ölçüm Değeri", header_cell_style),
             ]]
             for k, v in data_pairs:
                 tbl_data.append([
