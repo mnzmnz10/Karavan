@@ -53,9 +53,12 @@ function SectionEndDrop({ id, disabled, children }) {
 // AKÜ TEST RAPORU BİLEŞENİ (Gemini AI ile)
 // ============================================================================
 function BatteryTestSection() {
-  // Her akü: { id, files: File[], previews: string[], report: string|null, imagesBase64: string[]|null, loading: bool, error: string|null }
+  // Her akü: { id, files, previews, values: {soh,soc,voltage,internal_resistance}|null,
+  //            report, imagesBase64, loading (değer okuma), interpreting (rapor üretme), error }
+  // İKİ ADIM: 1) "Değerleri Oku" -> AI görselden değerleri çıkarır, kullanıcı düzeltir
+  //           2) "Raporu Oluştur" -> onaylı değerlerden AI yorum/rapor üretir
   const [batteries, setBatteries] = useState([
-    { id: 1, files: [], previews: [], report: null, imagesBase64: null, loading: false, error: null }
+    { id: 1, files: [], previews: [], values: null, report: null, imagesBase64: null, loading: false, interpreting: false, error: null }
   ]);
   const [customerName, setCustomerName] = useState('');
   const [vehiclePlate, setVehiclePlate] = useState('');
@@ -75,9 +78,11 @@ function BatteryTestSection() {
         id: (prev[prev.length - 1]?.id || 0) + 1,
         files: [],
         previews: [],
+        values: null,
         report: null,
         imagesBase64: null,
         loading: false,
+        interpreting: false,
         error: null
       }
     ]);
@@ -120,6 +125,7 @@ function BatteryTestSection() {
     updateBattery(batteryId, {
       files: newFiles,
       previews: newPreviews,
+      values: null,
       report: null,
       imagesBase64: null,
       error: null
@@ -140,37 +146,79 @@ function BatteryTestSection() {
     updateBattery(batteryId, {
       files: newFiles,
       previews: newPreviews,
+      values: null,
       report: null,
       imagesBase64: null
     });
   };
 
-  const analyzeBattery = async (batteryId) => {
+  // ADIM 1: Görsellerden değerleri oku (AI yorum yapmaz, sadece okur)
+  const extractBattery = async (batteryId) => {
     const battery = batteries.find(b => b.id === batteryId);
     if (!battery) return;
     if (battery.files.length === 0) {
       toast.error('Önce en az bir test görseli yükleyin.');
       return;
     }
-    updateBattery(batteryId, { loading: true, error: null });
+    updateBattery(batteryId, { loading: true, error: null, report: null });
     try {
       const formData = new FormData();
       battery.files.forEach(f => formData.append('files', f));
-      const res = await axios.post(`${API}/battery-analysis`, formData, {
+      const res = await axios.post(`${API}/battery-analysis/extract`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
         timeout: 120000
       });
       const data = res.data;
       updateBattery(batteryId, {
-        report: data.report || '',
+        values: data.values || { soh: null, soc: null, voltage: null, internal_resistance: null },
         imagesBase64: data.images_base64 || [],
         loading: false
       });
-      toast.success('Analiz tamamlandı.');
+      toast.success('Değerler okundu. Kontrol edip gerekirse düzeltin, sonra "Raporu Oluştur".');
     } catch (err) {
       const detail = err?.response?.data?.detail || err?.message || 'Bilinmeyen hata';
       updateBattery(batteryId, { loading: false, error: String(detail) });
-      toast.error(`Analiz hatası: ${detail}`);
+      toast.error(`Değer okuma hatası: ${detail}`);
+    }
+  };
+
+  const updateBatteryValue = (batteryId, key, raw) => {
+    // Fonksiyonel update: hızlı ardışık yazmada stale state'e düşme
+    setBatteries(prev => prev.map(b => (
+      b.id === batteryId
+        ? { ...b, values: { ...(b.values || {}), [key]: raw }, report: null } // değer değişti -> eski rapor geçersiz
+        : b
+    )));
+  };
+
+  // ADIM 2: Onaylanan değerlerden raporu üret
+  const interpretBattery = async (batteryId) => {
+    const battery = batteries.find(b => b.id === batteryId);
+    if (!battery || !battery.values) return;
+    const num = (v) => {
+      if (v === '' || v == null) return null;
+      const f = parseFloat(String(v).replace(',', '.'));
+      return isNaN(f) ? null : f;
+    };
+    const payload = {
+      soh: num(battery.values.soh),
+      soc: num(battery.values.soc),
+      voltage: num(battery.values.voltage),
+      internal_resistance: num(battery.values.internal_resistance)
+    };
+    if (Object.values(payload).every(v => v === null)) {
+      toast.error('En az bir ölçüm değeri girin.');
+      return;
+    }
+    updateBattery(batteryId, { interpreting: true, error: null });
+    try {
+      const res = await axios.post(`${API}/battery-analysis/interpret`, payload, { timeout: 120000 });
+      updateBattery(batteryId, { report: res.data.report || '', interpreting: false });
+      toast.success('Rapor oluşturuldu.');
+    } catch (err) {
+      const detail = err?.response?.data?.detail || err?.message || 'Bilinmeyen hata';
+      updateBattery(batteryId, { interpreting: false, error: String(detail) });
+      toast.error(`Rapor hatası: ${detail}`);
     }
   };
 
@@ -180,8 +228,8 @@ function BatteryTestSection() {
       for (const b of batteries) {
         if (b.files.length === 0) continue;
         // Sıralı çalıştır (rate-limit dostu)
-         
-        await analyzeBattery(b.id);
+
+        await extractBattery(b.id);
       }
     } finally {
       setAnalyzingAll(false);
@@ -374,22 +422,64 @@ function BatteryTestSection() {
                 </div>
               )}
 
-              {/* Tekil analiz butonu */}
+              {/* ADIM 1: değerleri oku */}
               <div className="flex flex-wrap gap-2 pt-1">
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => analyzeBattery(battery.id)}
-                  disabled={battery.loading || battery.files.length === 0 || analyzingAll}
+                  onClick={() => extractBattery(battery.id)}
+                  disabled={battery.loading || battery.interpreting || battery.files.length === 0 || analyzingAll}
                   className="border-red-300 text-red-700 hover:bg-red-50"
                 >
                   {battery.loading ? (
-                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Analiz Ediliyor...</>
+                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Değerler Okunuyor...</>
                   ) : (
-                    <><ScanSearch className="w-4 h-4 mr-2" /> Bu Aküyü Analiz Et</>
+                    <><ScanSearch className="w-4 h-4 mr-2" /> Değerleri Oku</>
                   )}
                 </Button>
               </div>
+
+              {/* ADIM 1.5: okunan değerleri göster — kullanıcı düzeltir, sonra rapor */}
+              {battery.values && (
+                <div className="mt-3 p-4 rounded-lg bg-amber-50 border border-amber-300">
+                  <div className="flex items-center gap-2 mb-3 text-sm font-semibold text-amber-800">
+                    <ScanSearch className="w-4 h-4" />
+                    Okunan Değerler — kontrol edin, yanlışsa düzeltin
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {[
+                      { key: 'soh', label: 'SOH (%)' },
+                      { key: 'soc', label: 'SOC (%)' },
+                      { key: 'voltage', label: 'Voltaj (V)' },
+                      { key: 'internal_resistance', label: 'İç Direnç (mΩ)' }
+                    ].map(({ key, label }) => (
+                      <div key={key}>
+                        <label className="block text-xs font-medium text-amber-700 mb-1">{label}</label>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={battery.values[key] ?? ''}
+                          onChange={(e) => updateBatteryValue(battery.id, key, e.target.value)}
+                          placeholder="—"
+                          className="w-full px-2 py-1.5 border border-amber-300 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => interpretBattery(battery.id)}
+                    disabled={battery.interpreting || battery.loading}
+                    className="mt-3 bg-emerald-600 hover:bg-emerald-700 text-white"
+                  >
+                    {battery.interpreting ? (
+                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Rapor Oluşturuluyor...</>
+                    ) : (
+                      <><Check className="w-4 h-4 mr-2" /> Değerler Doğru — Raporu Oluştur</>
+                    )}
+                  </Button>
+                </div>
+              )}
 
               {battery.error && (
                 <div className="p-3 rounded-lg bg-red-100 border border-red-300 text-red-800 text-sm">
@@ -427,9 +517,9 @@ function BatteryTestSection() {
             className="bg-indigo-500 hover:bg-indigo-600 text-white h-12 text-base"
           >
             {analyzingAll ? (
-              <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> Görseller Analiz Ediliyor...</>
+              <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> Değerler Okunuyor...</>
             ) : (
-              <><ScanSearch className="w-5 h-5 mr-2" /> Tüm Görselleri Analiz Et</>
+              <><ScanSearch className="w-5 h-5 mr-2" /> Tüm Görsellerden Değerleri Oku</>
             )}
           </Button>
 

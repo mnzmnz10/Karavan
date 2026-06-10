@@ -8415,6 +8415,125 @@ async def battery_analysis(files: List[UploadFile] = File(...)):
     }
 
 
+# --- İki adımlı akü analizi: önce değerleri OKU (kullanıcı düzeltir), sonra YORUMLA ---
+
+BATTERY_EXTRACT_PROMPT = """Görseller UNI-T UT673A akü test cihazının ekran fotoğraflarıdır.
+Görevin SADECE ekranda görünen ölçüm değerlerini okumak. YORUM YAPMA, değer uydurma.
+
+Şu JSON formatında yanıt ver:
+{"soh": <SOH yüzdesi, sayı>, "soc": <SOC yüzdesi, sayı>, "voltage": <voltaj V, sayı>, "internal_resistance": <iç direnç mΩ, sayı>}
+
+KURALLAR:
+- Bir değer hiçbir görselde görünmüyorsa null yaz.
+- Sadece sayı yaz (birim/sembol yok). Ondalık ayıracı nokta: 12,82V -> 12.82
+- Aynı değer birden çok görselde farklıysa en net okunanı kullan.
+- SADECE JSON döndür."""
+
+
+def _call_ai_for_battery_extract(image_bytes_list: list) -> dict:
+    """Görsellerden SADECE ölçüm değerlerini oku (SOH/SOC/Voltaj/İç Direnç)."""
+    if not OPENAI_API_KEY:
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY tanımlı değil (backend/.env).")
+    content = [{"type": "text", "text": BATTERY_EXTRACT_PROMPT}]
+    for img_bytes in image_bytes_list:
+        resized = _resize_image_to_720p(img_bytes)
+        content.append({"type": "image_url", "image_url": {"url": _image_bytes_to_data_url(resized, "image/jpeg")}})
+    raw = _call_openai_chat([{"role": "user", "content": content}], max_tokens=256, temperature=0.0, json_mode=True).strip()
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        cleaned = re.sub(r'^```(?:json)?|```$', '', raw, flags=re.MULTILINE).strip()
+        try:
+            parsed = json.loads(cleaned)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=502, detail="AI değer okuma yanıtı çözümlenemedi, tekrar deneyin.")
+    out = {}
+    for key in ("soh", "soc", "voltage", "internal_resistance"):
+        v = parsed.get(key)
+        try:
+            out[key] = float(v) if v is not None else None
+        except (ValueError, TypeError):
+            out[key] = None
+    return out
+
+
+@api_router.post("/battery-analysis/extract")
+async def battery_analysis_extract(files: List[UploadFile] = File(...)):
+    """ADIM 1: Görsellerden ölçüm değerlerini oku. Yorum YAPMAZ; kullanıcı
+    değerleri kontrol edip düzelttikten sonra /battery-analysis/interpret çağrılır."""
+    if not files:
+        raise HTTPException(status_code=400, detail="En az bir görsel yüklemelisiniz.")
+    if len(files) > 10:
+        raise HTTPException(status_code=400, detail="En fazla 10 görsel yüklenebilir.")
+    image_bytes_list = []
+    for f in files:
+        content_type = (f.content_type or '').lower()
+        if not content_type.startswith('image/'):
+            raise HTTPException(status_code=400, detail=f"Geçersiz dosya türü: {f.filename} ({content_type}).")
+        data = await f.read()
+        if not data:
+            continue
+        if len(data) > MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail=f"Görsel çok büyük: {f.filename}.")
+        image_bytes_list.append(data)
+    if not image_bytes_list:
+        raise HTTPException(status_code=400, detail="Geçerli görsel verisi bulunamadı.")
+
+    loop = asyncio.get_event_loop()
+    values = await loop.run_in_executor(None, _call_ai_for_battery_extract, image_bytes_list)
+
+    images_b64 = [base64.b64encode(_resize_image_to_720p(img)).decode('utf-8') for img in image_bytes_list]
+    return {"success": True, "values": values, "image_count": len(image_bytes_list), "images_base64": images_b64}
+
+
+class BatteryInterpretRequest(BaseModel):
+    soh: Optional[float] = None
+    soc: Optional[float] = None
+    voltage: Optional[float] = None
+    internal_resistance: Optional[float] = None
+
+
+def _call_ai_for_battery_interpret(values: dict) -> str:
+    """Onaylanmış değerlerden raporu üret (görsel YOK; değerler kullanıcı onaylı)."""
+    if not OPENAI_API_KEY:
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY tanımlı değil (backend/.env).")
+    def fmt(v, unit):
+        return f"{v:g} {unit}" if v is not None else "Ölçülemedi"
+    values_text = (
+        f"ÖLÇÜLEN DEĞERLER (kullanıcı tarafından doğrulandı, AYNEN kullan, değiştirme):\n"
+        f"- SOH: {fmt(values.get('soh'), '%')}\n"
+        f"- SOC: {fmt(values.get('soc'), '%')}\n"
+        f"- Voltaj: {fmt(values.get('voltage'), 'V')}\n"
+        f"- İç Direnç: {fmt(values.get('internal_resistance'), 'mΩ')}\n"
+    )
+    prompt = BATTERY_ANALYSIS_PROMPT.replace(
+        "Aşağıdaki görseller UNI-T UT673A cihazı ile yapılan bir akü testine aittir.",
+        "Aşağıda UNI-T UT673A cihazı ile yapılan bir akü testinin ölçüm değerleri verilmiştir."
+    )
+    full = values_text + "\n" + prompt
+    text = _call_openai_chat([{"role": "user", "content": [{"type": "text", "text": full}]}],
+                             max_tokens=2048, temperature=0.4).strip()
+    if not text:
+        raise HTTPException(status_code=502, detail="AI yanıtında metin bulunamadı.")
+    return text
+
+
+@api_router.post("/battery-analysis/interpret")
+async def battery_analysis_interpret(request: BatteryInterpretRequest):
+    """ADIM 2: Kullanıcının kontrol ettiği değerlerden raporu üret."""
+    values = request.dict()
+    if all(v is None for v in values.values()):
+        raise HTTPException(status_code=400, detail="En az bir ölçüm değeri girilmeli.")
+    loop = asyncio.get_event_loop()
+    report_text = await loop.run_in_executor(None, _call_ai_for_battery_interpret, values)
+    return {
+        "success": True,
+        "report": report_text,
+        "model": OPENAI_MODEL,
+        "analyzed_at": datetime.now(timezone.utc).isoformat()
+    }
+
+
 # --- PDF Üretimi: Akü Test Raporu ---
 
 class BatteryReportItem(BaseModel):
