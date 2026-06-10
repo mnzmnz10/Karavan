@@ -10191,7 +10191,13 @@ function App() {
                     .map((p) => {
                       const n = p.name || '';
                       const vM = n.match(/(\d+)\s*V/i); const aM = n.match(/(\d+)\s*A/i);
-                      return { name: n, v: vM ? +vM[1] : null, a: aM ? +aM[1] : null };
+                      // Fiyat: indirimli varsa o, yoksa liste (₺ karşılığıyla)
+                      const priceTry = p.discounted_price_try ?? p.list_price_try ?? null;
+                      const priceOrig = p.discounted_price ?? p.list_price ?? null;
+                      return {
+                        name: n, v: vM ? +vM[1] : null, a: aM ? +aM[1] : null,
+                        priceTry, priceOrig, currency: p.currency || 'TRY'
+                      };
                     })
                     .filter((x) => x.a && x.a >= stdA && (x.v == null || x.v >= stdV))
                     .sort((a, b) => (a.a - b.a) || ((a.v || 999) - (b.v || 999)))
@@ -10215,7 +10221,17 @@ function App() {
                             {sysMppt.map((md, i) => (
                               <div key={i} className="flex items-center justify-between rounded-lg border border-lime-200 bg-lime-50/50 px-3 py-2 text-sm">
                                 <span className="font-semibold text-slate-800">{md.name}</span>
-                                <span className="text-slate-500 tabular-nums shrink-0 ml-2">{md.a}A{md.v ? ` · ${md.v}V` : ''}</span>
+                                <span className="text-right shrink-0 ml-2">
+                                  <span className="text-slate-500 tabular-nums">{md.a}A{md.v ? ` · ${md.v}V` : ''}</span>
+                                  {md.priceTry != null && md.priceTry > 0 && (
+                                    <span className="block font-bold text-emerald-700 tabular-nums">
+                                      ₺{formatPrice(md.priceTry)}
+                                      {md.currency !== 'TRY' && md.priceOrig != null && (
+                                        <span className="font-normal text-slate-400"> ({md.currency === 'EUR' ? '€' : '$'}{formatPrice(md.priceOrig)})</span>
+                                      )}
+                                    </span>
+                                  )}
+                                </span>
                               </div>
                             ))}
                           </div>
