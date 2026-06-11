@@ -9155,18 +9155,6 @@ function App() {
 
                   {/* Decorative Header Bar */}
                   <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-emerald-600 to-teal-600" />
-
-                  {/* Sağ üst X: açık teklifi kapat */}
-                  {loadedQuote && (
-                    <button
-                      type="button"
-                      onClick={() => { clearSelection(); toast.success('Teklif kapatıldı — yeni teklif alanına geçildi'); }}
-                      title="Teklifi kapat"
-                      className="absolute right-3 top-4 z-30 flex h-9 w-9 items-center justify-center rounded-full bg-rose-600 text-white shadow-lg transition-colors hover:bg-rose-700"
-                    >
-                      <X className="w-5 h-5" />
-                    </button>
-                  )}
                   
                   <div className="flex-1">
                     {/* 1. Header Details */}
