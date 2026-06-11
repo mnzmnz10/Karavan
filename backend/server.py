@@ -555,12 +555,12 @@ class SupplierSyncSettingResponse(BaseModel):
     updated_at: datetime
 
 class QuoteCreate(BaseModel):
-    name: str
+    name: str = Field(min_length=1, max_length=300)
     customer_id: Optional[str] = None  # Müşteri ID'si (yeni)
     customer_name: Optional[str] = None  # Backward compatibility
     customer_email: Optional[str] = None  # Backward compatibility
-    discount_percentage: float = 0
-    labor_cost: float = 0  # İşçilik maliyeti
+    discount_percentage: float = Field(default=0, ge=0, le=100)
+    labor_cost: float = Field(default=0, ge=0)  # İşçilik maliyeti
     products: List[Dict[str, Any]]  # Product objects with ID and quantity
     notes: Optional[str] = None
 class PackageSupply(BaseModel):
@@ -2544,37 +2544,44 @@ async def create_quote(quote: QuoteCreate):
         # Calculate totals
         total_list_price = 0
         total_discounted_price = 0
+        total_cost_price = 0  # gerçek geliş (maliyet) toplamı — kâr analizi için saklanır
         processed_products = []
-        
+
         # Fetch current exchange rates
         exchange_rates = await currency_service.get_exchange_rates()
-        
+
         for product in products:
             # Get company info
             company = await db.companies.find_one({"id": product["company_id"]})
-            
+
             # Get quantity for this product
             quantity = product_quantities.get(product["id"], 1)
-            
+
             # Özel fiyat kontrolü
             custom_price = product_custom_prices.get(product["id"])
             currency = product.get("currency", "TRY")
             rate = float(exchange_rates.get(currency, 1)) if currency != 'TRY' else 1.0
-            
+
+            # Maliyet HER ZAMAN ürünün kendi geliş fiyatından (discounted, yoksa liste).
+            # Özel satış fiyatı maliyeti değiştirmez (rapor 02: maliyet satışa
+            # eşitlenince kâr analizi anlamsızlaşıyordu).
+            base_list = float(product.get("list_price", 0))
+            base_cost = float(product.get("discounted_price")) if product.get("discounted_price") else base_list
+            cost_try = base_cost * rate
+
             if custom_price is not None:
                 custom_price = float(custom_price)
                 list_price_try = custom_price * rate
                 discounted_price_try = custom_price * rate
             else:
-                list_price = float(product.get("list_price", 0))
-                list_price_try = list_price * rate
-                discounted_price = float(product.get("discounted_price", 0)) if product.get("discounted_price") else list_price
-                discounted_price_try = discounted_price * rate
-            
+                list_price_try = base_list * rate
+                discounted_price_try = cost_try
+
             # Calculate totals with quantity - SADECE LİSTE FİYATI KULLAN
             total_list_price += list_price_try * quantity
             total_discounted_price += list_price_try * quantity  # PDF için liste fiyatı kullan
-            
+            total_cost_price += cost_try * quantity
+
             processed_products.append({
                 "id": product["id"],
                 "name": product["name"],
@@ -2598,15 +2605,20 @@ async def create_quote(quote: QuoteCreate):
             processed_products.append(entry)
             total_list_price += line_total
             total_discounted_price += line_total
+            total_cost_price += line_total  # manuel kalemde geliş bilinmez -> kâr 0 varsay
 
         # Apply quote discount
         quote_discount_amount = total_discounted_price * (quote.discount_percentage / 100)
-        
+
         # Add labor cost to the calculation
         labor_cost = float(quote.labor_cost)
         total_with_labor = total_discounted_price - quote_discount_amount + labor_cost
         total_net_price = total_with_labor
-        
+
+        # Kâr snapshot'ı (işçilik tamamı kâr; maliyet ürün geliş fiyatlarından)
+        gross_profit = total_net_price - total_cost_price
+        margin_percent = round(gross_profit / total_net_price * 100, 2) if total_net_price > 0 else 0
+
         # Create quote document
         quote_doc = {
             "id": str(uuid.uuid4()),
@@ -2619,20 +2631,26 @@ async def create_quote(quote: QuoteCreate):
             "total_list_price": total_list_price,
             "total_discounted_price": total_discounted_price,
             "total_net_price": total_net_price,
+            "total_cost_price": total_cost_price,
+            "gross_profit": gross_profit,
+            "margin_percent": margin_percent,
+            "exchange_rates_snapshot": {k: float(v) for k, v in (exchange_rates or {}).items() if k in ("EUR", "USD")},
             "products": processed_products,
             "notes": quote.notes,
             "created_at": datetime.utcnow().isoformat() + "Z",
             "status": "active"
         }
-        
+
         result = await db.quotes.insert_one(quote_doc)
-        
+
         logger.info(f"Quote created: {quote.name} with {len(products)} products")
         return quote_doc
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error creating quote: {e}")
-        raise HTTPException(status_code=500, detail=f"Error creating quote: {str(e)}")
+        raise HTTPException(status_code=500, detail="Teklif oluşturulamadı")
 
 @api_router.get("/quotes", response_model=List[QuoteResponse])
 async def get_quotes():
@@ -4564,10 +4582,19 @@ async def download_quote_pdf(quote_id: str):
     try:
         db = await get_db()
         quote = await db.quotes.find_one({"id": quote_id})
-        
+
         if not quote:
             raise HTTPException(status_code=404, detail="Quote not found")
-        
+
+        # customer_name boşsa customer_id'den doldur (rapor 02: ID bağlı teklif
+        # PDF'te "Bireysel Müşteri" görünüyordu)
+        if not quote.get("customer_name") and quote.get("customer_id"):
+            cust = await db.customers.find_one({"id": quote["customer_id"]})
+            if cust:
+                full = " ".join(x for x in [cust.get("name"), cust.get("surname")] if x).strip()
+                if full:
+                    quote["customer_name"] = full
+
         # PDF oluştur
         pdf_generator = PDFQuoteGenerator()
         pdf_buffer = pdf_generator.create_quote_pdf(quote)
@@ -10669,6 +10696,51 @@ def _contract_data_to_xlsx(doc) -> bytes:
         ws.cell(row=gr, column=6).font = bold
     if data.get("eurTotal") is not None:
         ws.append(["", "EUR Karşılığı", "", "", "", round(data["eurTotal"], 2)])
+
+    # --- Finansal/operasyonel alanlar: indirilen Excel veri KAYBETMESİN ---
+    # (rapor 08 bulgusu: addons/collections/invoiceDiff/specs/deliveryDate eksikti)
+    def _cur_sym(c):
+        return {"EUR": "€", "USD": "$"}.get((c or "").upper(), "₺")
+
+    def _sec_header(title):
+        ws.append([])
+        ws.append([title])
+        r = ws.max_row
+        ws.cell(row=r, column=1).font = bold
+        for col in range(1, len(headers) + 1):
+            ws.cell(row=r, column=col).fill = sec_fill
+
+    addons = data.get("addons") or []
+    if addons:
+        _sec_header("İLAVELER")
+        for a in addons:
+            amt = a.get("amount")
+            ws.append(["", a.get("name", ""), "", "", "",
+                       f"{_cur_sym(a.get('currency'))}{amt}" if amt not in (None, "") else "FİYAT BELİRLENMEDİ"])
+
+    inv = data.get("invoiceDiff")
+    if inv and inv.get("amount") not in (None, ""):
+        _sec_header("FATURA FARKI")
+        ws.append(["", "Fatura Farkı", "", "", "", f"{_cur_sym(inv.get('currency'))}{inv['amount']}"])
+
+    collections = data.get("collections") or []
+    if collections:
+        _sec_header("TAHSİLATLAR")
+        for c in collections:
+            ws.append(["", c.get("description") or "Tahsilat", c.get("date") or "", "", "",
+                       f"{_cur_sym(c.get('currency'))}{c.get('amount')}"])
+
+    specs = data.get("specs") or {}
+    if isinstance(specs, dict) and any(v for v in specs.values()):
+        _sec_header("MÜŞTERİ SEÇİMLERİ")
+        for k, v in specs.items():
+            if v:
+                ws.append(["", k, "", "", "", v])
+
+    if data.get("deliveryDate"):
+        ws.append([])
+        ws.append(["TESLİM TARİHİ", data["deliveryDate"]])
+        ws.cell(row=ws.max_row, column=1).font = bold
 
     notes = data.get("notes") or []
     if notes or doc.get("notes"):

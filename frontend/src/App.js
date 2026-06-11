@@ -50,7 +50,7 @@ function SectionEndDrop({ id, disabled, children }) {
 }
 
 // ============================================================================
-// AKÜ TEST RAPORU BİLEŞENİ (Gemini AI ile)
+// AKÜ TEST RAPORU BİLEŞENİ (OpenAI GPT-4o mini ile)
 // ============================================================================
 function BatteryTestSection() {
   // Her akü: { id, files, previews, values: {soh,soc,voltage,internal_resistance}|null,
@@ -325,7 +325,7 @@ function BatteryTestSection() {
               Akü Test Raporu Oluştur
             </CardTitle>
             <CardDescription className="mt-1 text-slate-600">
-              UNI-T UT673A test cihazı görsellerini yükleyin, Gemini AI ile analiz edin ve profesyonel PDF rapor oluşturun.
+              UNI-T UT673A test cihazı görsellerini yükleyin, ChatGPT (OpenAI) değerleri okusun, kontrol edip rapor oluşturun.
             </CardDescription>
           </div>
         </div>
@@ -544,7 +544,7 @@ function BatteryTestSection() {
           <ul className="space-y-1.5 text-sm text-blue-900">
             <li className="flex gap-2"><span className="text-blue-500">•</span> Her akü için UNI-T UT673A cihazından alınan test görsellerini yükleyin.</li>
             <li className="flex gap-2"><span className="text-blue-500">•</span> Birden fazla akü test ediyorsanız "Yeni Akü Ekle" ile bölüm oluşturun.</li>
-            <li className="flex gap-2"><span className="text-blue-500">•</span> "Görselleri Analiz Et" butonu ile Gemini 1.5 Flash AI analizi başlatın.</li>
+            <li className="flex gap-2"><span className="text-blue-500">•</span> "Değerleri Oku" ile ChatGPT görseldeki değerleri okur; kontrol edip "Raporu Oluştur"a basın.</li>
             <li className="flex gap-2"><span className="text-blue-500">•</span> Analiz sonrası "PDF Rapor İndir" ile profesyonel rapor oluşturun.</li>
           </ul>
         </div>
@@ -2242,12 +2242,26 @@ function App() {
   };
   const serviceCollectedTRY = (collections) => (collections || []).reduce(
     (s, c) => s + ((c.amount == null || c.amount === '') ? 0 : collectionToTRY(c.amount, c.currency, c.rate)), 0);
+  // DB kaydından toplam tahsilat: collections doluysa SADECE collections sayılır.
+  // (Eski advance_amount, edit'te collections'a migrate ediliyor; ikisi de doluysa
+  //  advance'ı ayrıca eklemek çift sayım yapar — rapor 07 bulgusu.)
+  const serviceCollectedTotalTRY = (svc) => {
+    const colls = Array.isArray(svc.collections) ? svc.collections : [];
+    if (colls.length > 0) return serviceCollectedTRY(colls);
+    return parseFloat(svc.advance_amount) || 0;
+  };
   const addServiceCollection = () => setServiceForm((f) => ({ ...f, collections: [...(f.collections || []), { id: newId(), date: new Date().toISOString().slice(0, 10), description: '', amount: '', currency: 'TRY', rate: '' }] }));
   const updateServiceCollection = (idx, field, value) => setServiceForm((f) => {
     const collections = [...(f.collections || [])];
     let v = value;
     if (field === 'amount' && v !== '' && v != null) { const n = parseFloat(v); if (!isNaN(n) && n < 0) v = Math.abs(n).toString(); }
     collections[idx] = { ...collections[idx], [field]: v };
+    // Döviz seçilince kuru O ANKİ kurdan sabitle (boş bırakılırsa kalan tutar
+    // gelecekte kur değiştikçe oynar — rapor 07 bulgusu). Kullanıcı isterse ezer.
+    if (field === 'currency' && v !== 'TRY' && !(parseFloat(collections[idx].rate) > 0)) {
+      const live = parseFloat(exchangeRates?.[v]);
+      if (live > 0) collections[idx].rate = live.toFixed(2);
+    }
     return { ...f, collections };
   });
   const removeServiceCollection = (idx) => setServiceForm((f) => ({ ...f, collections: (f.collections || []).filter((_, i) => i !== idx) }));
@@ -2331,14 +2345,23 @@ function App() {
     const itemsCost = serviceItemsTotal(cleanItems);
     const cleanCollections = (serviceForm.collections || [])
       .filter((c) => c.amount !== '' && c.amount != null && !isNaN(parseFloat(c.amount)))
-      .map((c) => ({
-        id: c.id || newId(),
-        date: c.date || null,
-        description: (c.description || '').trim() || null,
-        amount: Math.abs(parseFloat(c.amount)) || 0,
-        currency: c.currency || 'TRY',
-        rate: (c.currency && c.currency !== 'TRY' && c.rate !== '' && c.rate != null) ? parseFloat(c.rate) : null,
-      }));
+      .map((c) => {
+        // Döviz tahsilatında kur kayıt anında SABİTLENİR: boş bırakıldıysa
+        // güncel kuru yaz. Yoksa kalan tutar her kur güncellemesinde değişir.
+        let rate = (c.currency && c.currency !== 'TRY' && c.rate !== '' && c.rate != null) ? parseFloat(c.rate) : null;
+        if (c.currency && c.currency !== 'TRY' && !(rate > 0)) {
+          const live = parseFloat(exchangeRates?.[c.currency]);
+          rate = live > 0 ? parseFloat(live.toFixed(4)) : null;
+        }
+        return {
+          id: c.id || newId(),
+          date: c.date || null,
+          description: (c.description || '').trim() || null,
+          amount: Math.abs(parseFloat(c.amount)) || 0,
+          currency: c.currency || 'TRY',
+          rate,
+        };
+      });
     const payload = {
       ...serviceForm,
       is_trailer: !!serviceForm.is_trailer,
@@ -2348,7 +2371,10 @@ function App() {
       cost: cleanItems.length > 0
         ? itemsCost
         : (serviceForm.cost !== '' && serviceForm.cost != null ? parseFloat(serviceForm.cost) : null),
-      advance_amount: serviceForm.advance_amount !== '' && serviceForm.advance_amount != null ? parseFloat(serviceForm.advance_amount) : 0,
+      // Tahsilat listesi doluysa avans 0'a zorlanır (tek kaynak collections; çift sayım önlenir)
+      advance_amount: cleanCollections.length > 0
+        ? 0
+        : (serviceForm.advance_amount !== '' && serviceForm.advance_amount != null ? parseFloat(serviceForm.advance_amount) : 0),
       payment_account: serviceForm.payment_account || null,
       warranty_months: serviceForm.warranty_months !== '' && serviceForm.warranty_months != null ? parseInt(serviceForm.warranty_months, 10) : null,
       warranty_note: serviceForm.warranty_note || null,
@@ -3812,19 +3838,19 @@ function App() {
       console.log('📦 Gönderilecek Ürünler:', selectedProductData);
       console.log('📝 Yüklü Teklif:', loadedQuote);
 
-      // Eğer mevcut bir teklif yüklenmişse ve isim değişmemişse onu güncelle
-      if (loadedQuote && loadedQuote.id && 
-          (loadedQuote.name === quoteName || quoteName === '')) {
-        
+      // Yüklü teklif varsa GÜNCELLE — ad değişikliği de update'tir (ada bakıp
+      // yeni teklif oluşturmak pazarlıkta kopya teklif üretiyordu, rapor 02).
+      if (loadedQuote && loadedQuote.id) {
+
         console.log('🔄 Mevcut teklif güncelleniyor:', loadedQuote.id);
-        
+
         const updateResponse = await fetch(`${API}/quotes/${loadedQuote.id}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            name: loadedQuote.name,
+            name: (quoteName || '').trim() || loadedQuote.name,
             customer_id: selectedQuoteCustomer || null,
             labor_cost: parseFloat(quoteLaborCost) || 0,
             discount_percentage: parseFloat(quoteDiscount) || 0,
@@ -3845,7 +3871,7 @@ function App() {
         
         await fetchQuotes();
         localStorage.removeItem('karavan_quote_draft');
-        toast.success(`"${loadedQuote.name}" teklifi güncellendi!`);
+        toast.success(`"${updatedQuote.name || loadedQuote.name}" teklifi güncellendi!`);
         
       } else {
         // Yeni teklif oluştur
@@ -9954,7 +9980,9 @@ function App() {
                                       setQuoteNotes(quote.notes || '');
                                       setLoadedQuote({ ...quote });
                                       setQuoteName(quote.name);
-                                      
+                                      // Müşteri bağını da geri yükle (rapor 02: kopuyordu)
+                                      setSelectedQuoteCustomer(quote.customer_id || '');
+
                                       toast.success(`"${quote.name}" teklifi yüklendi`);
                                     } catch (e) {
                                       toast.error('Teklif yükleme başarısız oldu');
@@ -10750,7 +10778,7 @@ function App() {
                 const isTrailer = s.is_trailer || !(s.plate || '').trim();
                 const vehicle = [s.vehicle_brand, s.vehicle_model].filter(Boolean).join(' ') || (isTrailer ? 'Çekme Karavan' : 'Araç belirtilmemiş');
                 const total = (s.items || []).length > 0 ? serviceItemsTotal(s.items) : (s.cost != null ? s.cost : 0);
-                const collected = (s.advance_amount || 0) + serviceCollectedTRY(s.collections);
+                const collected = serviceCollectedTotalTRY(s);
                 const remaining = Math.max(total - collected, 0);
                 const pct = total > 0 ? Math.max(0, Math.min(100, Math.round(collected / total * 100))) : 0;
                 const payStatus = total <= 0 ? null : (remaining <= 0.01 ? { t: 'TAMAMLANDI', c: 'bg-emerald-500' } : (collected > 0.01 ? { t: `ÖDEME %${pct}`, c: 'bg-amber-500' } : { t: 'ÖDENMEDİ', c: 'bg-rose-500' }));
@@ -10941,7 +10969,7 @@ function App() {
                     const isTrailer = s.is_trailer || !(s.plate || '').trim();
                     const vehicle = [s.vehicle_brand, s.vehicle_model].filter(Boolean).join(' ') || (isTrailer ? 'Çekme Karavan' : 'Araç belirtilmemiş');
                     const total = (s.items || []).length > 0 ? serviceItemsTotal(s.items) : (s.cost != null ? s.cost : 0);
-                    const collected = (s.advance_amount || 0) + serviceCollectedTRY(s.collections);
+                    const collected = serviceCollectedTotalTRY(s);
                     const remaining = Math.max(total - collected, 0);
                     const pct = total > 0 ? Math.max(0, Math.min(100, Math.round(collected / total * 100))) : 0;
                     const payStatus = total <= 0 ? null : (collected - total > 0.01 ? { t: 'FAZLA ÖDEME', c: 'bg-violet-500 text-white' } : (remaining <= 0.01 ? { t: 'TAMAMLANDI', c: 'bg-emerald-500 text-white' } : (collected > 0.01 ? { t: `ÖDEME %${pct}`, c: 'bg-amber-500 text-white' } : { t: 'ÖDENMEDİ', c: 'bg-rose-500 text-white' })));
