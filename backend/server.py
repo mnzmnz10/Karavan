@@ -2443,21 +2443,61 @@ async def update_product(product_id: str, product_update: Dict[str, Any]):
 
 # ===== QUOTE ENDPOINTS =====
 
+def _process_manual_quote_item(mi: dict, exchange_rates: dict):
+    """Elle girilen teklif kalemini processed_products formatına çevir.
+    Dönüş: (entry, satır_toplamı_TL) ya da geçersizse None."""
+    name = (mi.get("name") or "").strip()
+    try:
+        price = float(mi.get("price") or 0)
+    except (ValueError, TypeError):
+        price = 0
+    if not name or price <= 0:
+        return None
+    try:
+        quantity = max(1, int(mi.get("quantity") or 1))
+    except (ValueError, TypeError):
+        quantity = 1
+    currency = (mi.get("currency") or "TRY").upper()
+    if currency not in ("USD", "EUR", "TRY"):
+        currency = "TRY"
+    rate = float(exchange_rates.get(currency, 1)) if currency != 'TRY' else 1.0
+    price_try = price * rate
+    entry = {
+        "id": mi.get("id") or f"manual-{uuid.uuid4()}",
+        "name": name[:500],
+        "description": None,
+        "company_name": "Elle Girilen",
+        "list_price": price,
+        "list_price_try": price_try,
+        "discounted_price": None,
+        "discounted_price_try": price_try,
+        "currency": currency,
+        "quantity": quantity,
+        "custom_price": None,
+        "manual": True,
+    }
+    return entry, price_try * quantity
+
+
 @api_router.post("/quotes", response_model=QuoteResponse)
 async def create_quote(quote: QuoteCreate):
     """Create a new quote"""
     try:
+        # Manuel (elle girilen) kalemler DB'de aranmaz
+        manual_items = [p for p in quote.products if p.get("manual")]
+        db_items = [p for p in quote.products if not p.get("manual")]
+
         # Validate products exist
-        product_ids = [p["id"] for p in quote.products]
+        product_ids = [p["id"] for p in db_items]
         products_cursor = db.products.find({"id": {"$in": product_ids}})
         products = await products_cursor.to_list(length=None)
-        
-        if len(products) != len(quote.products):
+
+        if len(products) != len(db_items):
             raise HTTPException(status_code=400, detail="Some products not found")
-        
+
         # Create product-quantity mapping
-        product_quantities = {p["id"]: p.get("quantity", 1) for p in quote.products}
-        product_custom_prices = {p["id"]: p.get("custom_price") for p in quote.products}
+        product_quantities = {p["id"]: p.get("quantity", 1) for p in db_items}
+        product_custom_prices = {p["id"]: p.get("custom_price") for p in db_items}
         
         # Calculate totals
         total_list_price = 0
@@ -2506,7 +2546,17 @@ async def create_quote(quote: QuoteCreate):
                 "quantity": quantity,
                 "custom_price": custom_price
             })
-        
+
+        # Elle girilen kalemler
+        for mi in manual_items:
+            res = _process_manual_quote_item(mi, exchange_rates)
+            if not res:
+                continue
+            entry, line_total = res
+            processed_products.append(entry)
+            total_list_price += line_total
+            total_discounted_price += line_total
+
         # Apply quote discount
         quote_discount_amount = total_discounted_price * (quote.discount_percentage / 100)
         
@@ -2625,7 +2675,11 @@ async def update_quote(quote_id: str, quote_update: Dict[str, Any]):
         if "products" in quote_update:
             logger.info("Quote product list is being updated...")
             products_data = quote_update["products"]
-            
+
+            # Manuel (elle girilen) kalemler DB'de aranmaz
+            manual_items = [p for p in products_data if p.get("manual")]
+            products_data = [p for p in products_data if not p.get("manual")]
+
             # Ürün bilgilerini veritabanından al
             product_ids = [p["id"] for p in products_data]
             db_products = await db.products.find(
@@ -2684,7 +2738,17 @@ async def update_quote(quote_id: str, quote_update: Dict[str, Any]):
                     })
                 else:
                     logger.warning(f"Product not found during quote update: {product_id}")
-            
+
+            # Elle girilen kalemler
+            for mi in manual_items:
+                res = _process_manual_quote_item(mi, exchange_rates)
+                if not res:
+                    continue
+                entry, line_total = res
+                processed_products.append(entry)
+                total_list_price += line_total
+                total_discounted_price += line_total
+
             # Güncellenen ürün listesini ve toplamları ekle
             update_data["products"] = processed_products
             update_data["total_list_price"] = total_list_price
@@ -8037,6 +8101,12 @@ async def mppt_recommend(req: MpptRecommendRequest):
     charge_a = round(total_watt / bv, 1)
     # Standart MPPT akımı: en yakın 10'a yuvarla (55 ve üstü yukarı). Ör: 51-54->50, 55-58->60
     std_amp = max(10, int(charge_a / 10 + 0.5) * 10)
+    # Voltaj sınıfı — VOLTAJDA TAVİZ YOK: birden çok panel SERİ de bağlanabilir
+    # (montajda karar değişebilir) -> en kötü durum tüm paneller seri + soğuk Voc.
+    # Cihaz max PV bunu %5 emniyet payıyla aşmalı. Düşük amper verim kaybettirir,
+    # düşük voltaj CİHAZI YAKAR.
+    voc_cold_series = round(panel_voc * count * (1 + 0.0035 * (25 - req.min_temp_c)), 2)
+    std_v = next((v for v in (100, 150, 250) if voc_cold_series <= v * 0.95), 250)
     computed = {
         "panel_adi": p.name or "Panel",
         "panel_watt": p.watt, "panel_voc": p.voc, "panel_vmp": p.vmp,
@@ -8045,6 +8115,7 @@ async def mppt_recommend(req: MpptRecommendRequest):
         "toplam_watt": total_watt, "aku_gerilimi_v": bv, "min_sicaklik_c": req.min_temp_c,
         "voc_dizi_v": voc_arr, "vmp_dizi_v": vmp_arr, "isc_dizi_a": isc_arr,
         "voc_soguk_v": voc_cold, "hesaplanan_sarj_akimi_a": charge_a,
+        "voc_soguk_seri_v": voc_cold_series, "secilen_voltaj_sinifi_v": std_v,
         "onerilen_standart_akim_a": std_amp,
     }
     sys_prompt = (
@@ -8064,7 +8135,10 @@ async def mppt_recommend(req: MpptRecommendRequest):
     )
     user_prompt = ("Hesaplanan veriler (json):\n" + json.dumps(computed, ensure_ascii=False)
                    + f"\nÖnerilecek standart MPPT akımı KESİN: {std_amp} A. 'standart_akim_a' bu olsun; "
-                   + f"örnek modelleri {std_amp}A anma akımına göre seç (12V sistem).")
+                   + f"örnek modelleri {std_amp}A anma akımına göre seç (12V sistem)."
+                   + f"\nVOLTAJ SINIFI KESİN: {std_v} V ('secilen_voltaj_v' bu olsun). Paneller seri "
+                   + f"bağlanabilir; seri soğuk Voc ≈ {voc_cold_series} V olduğu için daha düşük voltaj "
+                   + f"sınıfı ÖNERME, örnek modelleri {std_v}V/{std_amp}A sınıfından seç (ör. Victron {std_v}/{std_amp}).")
     if req.notes:
         user_prompt += f"\nEk not: {req.notes}"
     loop = asyncio.get_event_loop()
@@ -8085,21 +8159,19 @@ async def mppt_recommend(req: MpptRecommendRequest):
     mppt = ai.get("onerilen_mppt") or {}
     mppt["standart_akim_a"] = std_amp  # deterministik yuvarlama AI'yı ezer
     mppt["min_sarj_akimi_a"] = charge_a
-    # Voltaj sınıfını standart 100/150/250'ye sabitle, etiket üret (ör. "150V/80A")
-    try:
-        vsel = float(mppt.get("secilen_voltaj_v") or 0)
-    except (ValueError, TypeError):
-        vsel = 0
-    # Voltaj sınıfı AKIMA göre değil, soğuk Voc'a göre (12V paralel sistemde panel Voc düşük -> genelde 100V yeter)
-    std_v = 100 if voc_cold <= 90 else (150 if voc_cold <= 180 else 250)
+    # Voltaj sınıfı yukarıda (AI çağrısından önce) hesaplandı — AI ne derse desin override
     mppt["secilen_voltaj_v"] = std_v
     mppt["etiket"] = f"{std_v}V/{std_amp}A"
+    mppt["voc_soguk_seri_v"] = voc_cold_series
+    parallel_only_v = next((v for v in (100, 150, 250) if voc_cold <= v * 0.95), 250)
+    if count > 1 and std_v > parallel_only_v:
+        warns.append(f"ℹ️ Voltaj sınıfı, panellerin seri bağlanma ihtimaline göre seçildi (seri soğuk Voc ≈ {voc_cold_series} V). Paralel bağlanacaksa {parallel_only_v}V sınıfı da yeterlidir.")
     ai["onerilen_mppt"] = mppt
     for m in (mppt.get("modeller") or []):
         try:
             mv = float(m.get("max_pv_v") or 0)
-            if voc_cold and mv and mv < voc_cold:
-                warns.append(f"⚠️ {m.get('marka','')} {m.get('model','')}: max PV {mv}V, soğuk Voc {voc_cold}V'yi KARŞILAMIYOR (cihaz zarar görür). Daha yüksek gerilimli model seçin.")
+            if mv and mv < voc_cold_series:
+                warns.append(f"⚠️ {m.get('marka','')} {m.get('model','')}: max PV {mv}V, seri bağlamada soğuk Voc {voc_cold_series}V'yi KARŞILAMIYOR (cihaz zarar görür). Daha yüksek gerilimli model seçin.")
             ma = float(m.get("akim_a") or 0)
             if ma and ma < charge_a:
                 warns.append(f"⚠️ {m.get('marka','')} {m.get('model','')}: {ma}A, gerekli {charge_a}A şarj akımının altında.")
@@ -11639,7 +11711,8 @@ class PDFServiceGenerator(PDFContractGenerator):
         sig_style = ParagraphStyle('SvcSig', parent=self.styles['Normal'], fontName=self.get_font_name(is_bold=True), fontSize=9, textColor=colors.HexColor('#1B3A5C'), alignment=TA_CENTER)
         sig_sub = ParagraphStyle('SvcSigSub', parent=self.styles['Normal'], fontName=self.get_font_name(), fontSize=8, textColor=colors.HexColor('#94A3B8'), alignment=TA_CENTER, spaceBefore=22)
         sig_tbl = PDFTable([[
-            [Paragraph("Çorlu Karavan", sig_style), Paragraph("Yetkili İmza", sig_sub)],
+            # Resmi kayıt MSZ KARAVAN (sözleşme imzasıyla tutarlı)
+            [Paragraph("MSZ KARAVAN", sig_style), Paragraph("Yetkili İmza", sig_sub)],
             [Paragraph(upper_tr(cust or "Müşteri"), sig_style), Paragraph("Müşteri İmza", sig_sub)],
         ]], colWidths=[9.0*cm, 9.0*cm])
         sig_tbl.setStyle(TableStyle([

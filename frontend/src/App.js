@@ -588,6 +588,8 @@ function App() {
   const [mpptForm, setMpptForm] = useState({ productId: '', name: '', watt: '', voc: '', vmp: '', isc: '', imp: '', adet: '1', notes: '' });
   const [mpptSpecsSaving, setMpptSpecsSaving] = useState(false);
   const [mpptResult, setMpptResult] = useState(null);
+  // Teklif: manuel (elle girilen) kalem formu
+  const [manualItem, setManualItem] = useState({ name: '', price: '', currency: 'TRY', qty: '1' });
   const [mpptLoading, setMpptLoading] = useState(false);
   const [termosaSyncSetting, setTermosaSyncSetting] = useState(null);
   const [termosaSyncEnabled, setTermosaSyncEnabled] = useState(false);
@@ -3707,6 +3709,27 @@ function App() {
     }
   };
 
+  // Teklife elle kalem ekle (sistemde kayıtlı olmayan ürün/hizmet)
+  const addManualQuoteItem = () => {
+    const name = (manualItem.name || '').trim();
+    const price = parseFloat(String(manualItem.price).replace(',', '.'));
+    const qty = Math.max(1, parseInt(manualItem.qty, 10) || 1);
+    if (!name) { toast.error('Kalem adı girin'); return; }
+    if (!price || price <= 0) { toast.error("0'dan büyük bir fiyat girin"); return; }
+    const cur = manualItem.currency || 'TRY';
+    const rate = cur === 'TRY' ? 1 : (parseFloat(exchangeRates[cur]) || (cur === 'USD' ? 34 : 37));
+    const id = `manual-${Date.now()}`;
+    const data = {
+      id, name, brand: '', company_name: 'Elle Girilen', manual: true,
+      list_price: price, discounted_price: null, currency: cur,
+      list_price_try: price * rate, discounted_price_try: price * rate
+    };
+    setSelectedProducts(prev => new Map(prev).set(id, qty));
+    setSelectedProductsData(prev => new Map(prev).set(id, data));
+    setManualItem({ name: '', price: '', currency: 'TRY', qty: '1' });
+    toast.success(`"${name}" teklife eklendi`);
+  };
+
   const clearSelection = () => {
     localStorage.removeItem('karavan_quote_draft');
     setSelectedProducts(new Map());
@@ -3728,11 +3751,22 @@ function App() {
         return;
       }
 
-      const selectedProductData = getSelectedProductsData().map(p => ({
-        id: p.id,
-        quantity: p.quantity || 1,
-        custom_price: p.customPrice !== null && p.customPrice !== undefined ? parseFloat(p.customPrice) : null
-      }));
+      const selectedProductData = getSelectedProductsData().map(p => (
+        p.manual || String(p.id).startsWith('manual-')
+          ? {
+              manual: true,
+              id: p.id,
+              name: p.name,
+              price: parseFloat(p.customPrice ?? p.list_price) || 0,
+              currency: p.currency || 'TRY',
+              quantity: p.quantity || 1
+            }
+          : {
+              id: p.id,
+              quantity: p.quantity || 1,
+              custom_price: p.customPrice !== null && p.customPrice !== undefined ? parseFloat(p.customPrice) : null
+            }
+      ));
 
       console.log('💾 Teklif Kaydediliyor/Güncelleniyor:');
       console.log('📦 Seçili Ürün Sayısı:', selectedProducts.size);
@@ -3904,11 +3938,22 @@ function App() {
         return;
       }
 
-      const selectedProductData = getSelectedProductsData().map(p => ({
-        id: p.id,
-        quantity: p.quantity || 1,
-        custom_price: p.customPrice !== null && p.customPrice !== undefined ? parseFloat(p.customPrice) : null
-      }));
+      const selectedProductData = getSelectedProductsData().map(p => (
+        p.manual || String(p.id).startsWith('manual-')
+          ? {
+              manual: true,
+              id: p.id,
+              name: p.name,
+              price: parseFloat(p.customPrice ?? p.list_price) || 0,
+              currency: p.currency || 'TRY',
+              quantity: p.quantity || 1
+            }
+          : {
+              id: p.id,
+              quantity: p.quantity || 1,
+              custom_price: p.customPrice !== null && p.customPrice !== undefined ? parseFloat(p.customPrice) : null
+            }
+      ));
 
       console.log('🔍 Quick quote creation data:');
       console.log('🔍 selectedProducts Map:', selectedProducts);
@@ -9435,8 +9480,47 @@ function App() {
                         </TableBody>
                       </Table>
                     </div>
+
+                    {/* Manuel kalem ekleme — sistemde kayıtlı olmayan ürün/hizmeti elle gir */}
+                    <div className="mt-3 rounded-xl border border-dashed border-emerald-300 bg-emerald-50/40 p-3">
+                      <div className="text-[10px] font-black text-emerald-800 uppercase tracking-widest mb-2">Manuel Kalem Ekle</div>
+                      <div className="flex flex-wrap gap-2 items-center">
+                        <input
+                          value={manualItem.name}
+                          onChange={(e) => setManualItem(s => ({ ...s, name: e.target.value }))}
+                          placeholder="Kalem adı (ör. Özel montaj aparatı)"
+                          className="flex-1 min-w-[180px] h-9 px-3 border border-slate-200 rounded-md text-sm bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                        />
+                        <input
+                          value={manualItem.price}
+                          onChange={(e) => setManualItem(s => ({ ...s, price: e.target.value }))}
+                          placeholder="Fiyat"
+                          inputMode="decimal"
+                          className="w-28 h-9 px-3 border border-slate-200 rounded-md text-sm bg-white text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                        />
+                        <select
+                          value={manualItem.currency}
+                          onChange={(e) => setManualItem(s => ({ ...s, currency: e.target.value }))}
+                          className="h-9 px-2 border border-slate-200 rounded-md text-sm bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                        >
+                          <option value="TRY">₺</option>
+                          <option value="USD">$</option>
+                          <option value="EUR">€</option>
+                        </select>
+                        <input
+                          value={manualItem.qty}
+                          onChange={(e) => setManualItem(s => ({ ...s, qty: e.target.value }))}
+                          placeholder="Adet"
+                          inputMode="numeric"
+                          className="w-16 h-9 px-3 border border-slate-200 rounded-md text-sm bg-white text-center tabular-nums focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                        />
+                        <Button size="sm" onClick={addManualQuoteItem} className="h-9 bg-emerald-600 hover:bg-emerald-700 text-white">
+                          <Plus className="w-4 h-4 mr-1" /> Ekle
+                        </Button>
+                      </div>
+                    </div>
                   </div>
-                  
+
                   {/* 4. Bottom Calculations Grid and Notes (Visual Split Layer in soft slate tint) */}
                   <div className="-mx-8 sm:-mx-12 px-8 sm:px-12 pt-8 pb-6 bg-slate-50/70 border-t border-slate-200/80 rounded-b-2xl select-text">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start mb-6">
