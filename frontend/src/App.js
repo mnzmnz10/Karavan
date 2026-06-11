@@ -2473,6 +2473,24 @@ function App() {
   };
 
   // ===================== SÖZLEŞMELER =====================
+  // İki sözleşmenin tam listedeki yerini değiştir + sırayı kalıcı kaydet
+  const swapContracts = async (idA, idB) => {
+    if (!idA || !idB) return;
+    const arr = [...contracts];
+    const ia = arr.findIndex((c) => c.id === idA);
+    const ib = arr.findIndex((c) => c.id === idB);
+    if (ia < 0 || ib < 0) return;
+    [arr[ia], arr[ib]] = [arr[ib], arr[ia]];
+    setContracts(arr); // optimistic
+    try {
+      await axios.post(`${API}/contracts/reorder`, { ordered_ids: arr.map((c) => c.id) });
+    } catch (e) {
+      console.error('Sıralama kaydedilemedi:', e);
+      toast.error('Sıralama kaydedilemedi');
+      loadContracts();
+    }
+  };
+
   const loadContracts = async () => {
     try {
       const r = await axios.get(`${API}/contracts`);
@@ -5802,7 +5820,7 @@ function App() {
                       <div className="font-bold text-blue-700">Sıfırdan Sözleşme Yap</div>
                       <div className="text-xs text-blue-500/80">Katalogdan yeni sözleşme oluştur</div>
                     </button>
-                    {filtered.map((c) => (
+                    {filtered.map((c, ci) => (
                       <div key={c.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow p-5 flex flex-col gap-2">
                         <div className="flex items-start justify-between gap-3">
                           <div className="flex items-start gap-3 min-w-0 flex-1">
@@ -5813,6 +5831,15 @@ function App() {
                               <div className="font-bold text-slate-800 truncate" title={c.customer_name || c.title}>{c.customer_name || c.title}</div>
                               {c.customer_name && <div className="text-sm text-slate-500 truncate" title={c.title}>{c.title}</div>}
                             </div>
+                          </div>
+                          {/* Sıra düzenleme okları (görünen listede komşusuyla yer değiştirir) */}
+                          <div className="flex flex-col shrink-0 -my-1">
+                            <button type="button" disabled={ci === 0} onClick={() => swapContracts(c.id, filtered[ci - 1]?.id)} title="Yukarı taşı" className="text-slate-300 hover:text-emerald-600 disabled:opacity-30 disabled:hover:text-slate-300">
+                              <ChevronUp className="w-4 h-4" />
+                            </button>
+                            <button type="button" disabled={ci === filtered.length - 1} onClick={() => swapContracts(c.id, filtered[ci + 1]?.id)} title="Aşağı taşı" className="text-slate-300 hover:text-emerald-600 disabled:opacity-30 disabled:hover:text-slate-300">
+                              <ChevronDown className="w-4 h-4" />
+                            </button>
                           </div>
                           {(() => {
                             if ((c.stage || 'proposal') !== 'agreed') return null;
@@ -9125,9 +9152,21 @@ function App() {
 
                 {/* A4 Paper Canvas */}
                 <div className="w-full bg-white shadow-xl border border-slate-200 p-8 sm:p-12 pb-0 sm:pb-0 rounded-2xl font-sans min-h-[1050px] flex flex-col justify-between relative overflow-hidden select-text">
-                  
+
                   {/* Decorative Header Bar */}
                   <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-emerald-600 to-teal-600" />
+
+                  {/* Sağ üst X: açık teklifi kapat */}
+                  {loadedQuote && (
+                    <button
+                      type="button"
+                      onClick={() => { clearSelection(); toast.success('Teklif kapatıldı — yeni teklif alanına geçildi'); }}
+                      title="Teklifi kapat"
+                      className="absolute right-3 top-4 z-30 flex h-9 w-9 items-center justify-center rounded-full bg-rose-600 text-white shadow-lg transition-colors hover:bg-rose-700"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  )}
                   
                   <div className="flex-1">
                     {/* 1. Header Details */}

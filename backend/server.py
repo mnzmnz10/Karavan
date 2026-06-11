@@ -10522,9 +10522,33 @@ async def create_contract(
 
 @api_router.get("/contracts")
 async def list_contracts():
-    """Sozlesme listesi (hafif: sheets/file_b64 haric)."""
+    """Sozlesme listesi (hafif: sheets/file_b64 haric).
+
+    Sıralama: kullanıcı elle sıraladıysa sort_order'a göre; sort_order'ı
+    olmayanlar (yeni eklenenler) en üstte, tarih sırasıyla."""
     docs = await db.contracts.find({}, {"sheets": 0, "file_b64": 0, "_id": 0}).sort("created_at", -1).to_list(1000)
-    return docs
+    without_order = [d for d in docs if d.get("sort_order") is None]  # created_at desc (sorgudan)
+    with_order = sorted([d for d in docs if d.get("sort_order") is not None], key=lambda d: d["sort_order"])
+    return without_order + with_order
+
+
+class ContractReorderRequest(BaseModel):
+    ordered_ids: List[str]
+
+
+@api_router.post("/contracts/reorder")
+async def reorder_contracts(payload: ContractReorderRequest):
+    """Sözleşmelerin elle sırasını kaydet (verilen id sırasına göre sort_order atanır).
+
+    NOT: /contracts/{id} route'larından ÖNCE tanımlı olmalı (path çakışması)."""
+    if not payload.ordered_ids:
+        raise HTTPException(status_code=400, detail="Sıralanacak id listesi boş.")
+    ops = [
+        UpdateOne({"id": cid}, {"$set": {"sort_order": idx}})
+        for idx, cid in enumerate(payload.ordered_ids)
+    ]
+    result = await db.contracts.bulk_write(ops)
+    return {"success": True, "updated": result.modified_count}
 
 
 @api_router.get("/contracts/template")
