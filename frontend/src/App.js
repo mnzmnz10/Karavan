@@ -10648,8 +10648,8 @@ function App() {
                           {(() => {
                             // Markaya göre hazır model önerileri; elle yazma her zaman serbest
                             const MODEL_SUGGESTIONS = {
-                              'MERCEDES': ['Sprinter', 'Vito', 'Marco Polo'],
-                              'VOLKSWAGEN': ['Transporter', 'Crafter', 'Caddy', 'Caravelle'],
+                              'MERCEDES': ['Sprinter', 'Vito'],
+                              'VOLKSWAGEN': ['Crafter', 'Transporter', 'Volt', 'Caravelle', 'Caddy'],
                               'FORD': ['Transit', 'Transit Custom', 'Tourneo'],
                               'IVECO': ['Daily'],
                               'MAN': ['TGE'],
