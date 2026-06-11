@@ -630,6 +630,8 @@ class ServiceRecord(BaseModel):
     notes: Optional[str] = Field(None, max_length=5000)          # Notlar
     cost: Optional[float] = Field(None, ge=0)                    # Toplam tutar (kalem yoksa manuel)
     advance_amount: Optional[float] = Field(0, ge=0)            # Alınan avans (₺) — eski kayıtlar (geriye uyum)
+    discount_amount: Optional[float] = Field(0, ge=0)           # İndirim tutarı (₺)
+    discount_percent: Optional[float] = Field(0, ge=0, le=100)  # İndirim yüzdesi (bilgi amaçlı; tutardan türetilir)
     collections: Optional[List[ServiceCollection]] = []         # Tahsilatlar (çoklu, kalandan düşülür) — sadece sistemde
     payment_account: Optional[str] = Field(None, max_length=500) # Ödeme hesabı/notu (sadece sistemde, PDF'te yok)
     warranty_months: Optional[int] = Field(None, ge=0)         # Garanti süresi (ay)
@@ -652,6 +654,8 @@ class ServiceCreate(BaseModel):
     notes: Optional[str] = Field(None, max_length=5000)
     cost: Optional[float] = Field(None, ge=0)
     advance_amount: Optional[float] = Field(0, ge=0)
+    discount_amount: Optional[float] = Field(0, ge=0)
+    discount_percent: Optional[float] = Field(0, ge=0, le=100)
     collections: Optional[List[ServiceCollection]] = []
     payment_account: Optional[str] = Field(None, max_length=500)
     warranty_months: Optional[int] = Field(None, ge=0)
@@ -673,6 +677,8 @@ class ServiceUpdate(BaseModel):
     notes: Optional[str] = Field(None, max_length=5000)
     cost: Optional[float] = Field(None, ge=0)
     advance_amount: Optional[float] = Field(None, ge=0)
+    discount_amount: Optional[float] = Field(None, ge=0)
+    discount_percent: Optional[float] = Field(None, ge=0, le=100)
     collections: Optional[List[ServiceCollection]] = None
     payment_account: Optional[str] = Field(None, max_length=500)
     warranty_months: Optional[int] = Field(None, ge=0)
@@ -11984,6 +11990,23 @@ class PDFServiceGenerator(PDFContractGenerator):
         if total is None:
             total = _service_items_total(items)
         total = float(total or 0)
+        # İndirim varsa PDF'te brüt - indirim = net göster
+        discount = float(svc.get("discount_amount") or 0)
+        if discount > 0:
+            discount = min(discount, total)
+            pct = svc.get("discount_percent")
+            pct_txt = f" (%{pct:g})" if pct else ""
+            disc_row = PDFTable([[
+                Paragraph(f"Toplam: {fmt(total)}", self.gt_sub_style),
+                Paragraph(f"İndirim{pct_txt}: -{fmt(discount)}", self.gt_sub_style),
+            ]], colWidths=[9.0*cm, 9.0*cm])
+            disc_row.setStyle(TableStyle([
+                ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 18), ('RIGHTPADDING', (0, 0), (-1, -1), 18),
+                ('TOPPADDING', (0, 0), (-1, -1), 2), ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ]))
+            story.append(disc_row)
+            total = total - discount
         total_left = [Paragraph("TOPLAM TUTAR", self.gt_label_style), Paragraph("KDV Hariç", self.gt_sub_style)]
         total_right = [Paragraph(f"<b>{fmt(total)}</b>", self.gt_amount_style)]
         total_tbl = PDFTable([[total_left, total_right]], colWidths=[8.3*cm, 9.7*cm])

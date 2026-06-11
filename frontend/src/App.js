@@ -663,7 +663,7 @@ function App() {
   const [importDefaultCategoryId, setImportDefaultCategoryId] = useState('');
   const [aiSaving, setAiSaving] = useState(false); // kaydetme sürüyor mu
   // Servis (tadilat/bakim) sekmesi
-  const emptyServiceForm = { customer_name: '', phone: '', vehicle_brand: '', vehicle_model: '', plate: '', is_trailer: false, arrival_date: '', delivery_date: '', operations: '', items: [], photos: [], notes: '', cost: '', advance_amount: '', collections: [], payment_account: '', warranty_months: '', warranty_note: '', status: 'received' };
+  const emptyServiceForm = { customer_name: '', phone: '', vehicle_brand: '', vehicle_model: '', plate: '', is_trailer: false, arrival_date: '', delivery_date: '', operations: '', items: [], photos: [], notes: '', cost: '', advance_amount: '', discount_amount: '', discount_percent: '', collections: [], payment_account: '', warranty_months: '', warranty_note: '', status: 'received' };
   const [services, setServices] = useState([]);
   const [serviceForm, setServiceForm] = useState(emptyServiceForm);
   const [serviceEditingId, setServiceEditingId] = useState(null); // düzenlenen kayıt id (null = yeni)
@@ -2296,6 +2296,26 @@ function App() {
   });
   const removeServiceItem = (idx) => setServiceForm((f) => ({ ...f, items: (f.items || []).filter((_, i) => i !== idx) }));
 
+  // ---- Servis indirimi — iki yönlü: % girilince ₺ hesaplanır, ₺ girilince % hesaplanır ----
+  const serviceFormGrossTotal = (f) => ((f.items || []).length > 0 ? serviceItemsTotal(f.items) : (parseFloat(f.cost) || 0));
+  const setServiceDiscountPercent = (v) => setServiceForm((f) => {
+    if (v === '' || v == null) return { ...f, discount_percent: '', discount_amount: '' };
+    const total = serviceFormGrossTotal(f);
+    const pct = Math.max(0, Math.min(100, parseFloat(String(v).replace(',', '.')) || 0));
+    const amt = total > 0 ? (total * pct / 100) : 0;
+    return { ...f, discount_percent: String(v), discount_amount: total > 0 ? String(Math.round(amt * 100) / 100) : '' };
+  });
+  const setServiceDiscountAmount = (v) => setServiceForm((f) => {
+    if (v === '' || v == null) return { ...f, discount_amount: '', discount_percent: '' };
+    const total = serviceFormGrossTotal(f);
+    let amt = Math.max(0, parseFloat(String(v).replace(',', '.')) || 0);
+    if (total > 0 && amt > total) amt = total; // indirim toplamı aşamaz
+    const pct = total > 0 ? (amt / total * 100) : 0;
+    return { ...f, discount_amount: String(v), discount_percent: total > 0 ? String(Math.round(pct * 10) / 10) : '' };
+  });
+  // DB kaydından indirim tutarı (₺)
+  const serviceDiscountTRY = (svc) => parseFloat(svc.discount_amount) || 0;
+
   // ---- Servis tahsilat (ödeme) yardımcıları — çoklu para birimi, ₺'ye çevrilip kalandan düşülür ----
   // exchangeRates.EUR / .USD = 1 birim dövizin ₺ karşılığı
   const collectionToTRY = (amount, currency, rate) => {
@@ -2388,6 +2408,8 @@ function App() {
       notes: svc.notes || '',
       cost: svc.cost != null ? String(svc.cost) : '',
       advance_amount: advanceVal,
+      discount_amount: svc.discount_amount != null && svc.discount_amount !== 0 ? String(svc.discount_amount) : '',
+      discount_percent: svc.discount_percent != null && svc.discount_percent !== 0 ? String(svc.discount_percent) : '',
       collections,
       payment_account: svc.payment_account || '',
       warranty_months: svc.warranty_months != null ? String(svc.warranty_months) : '',
@@ -2439,6 +2461,8 @@ function App() {
       advance_amount: cleanCollections.length > 0
         ? 0
         : (serviceForm.advance_amount !== '' && serviceForm.advance_amount != null ? parseFloat(serviceForm.advance_amount) : 0),
+      discount_amount: serviceForm.discount_amount !== '' && serviceForm.discount_amount != null ? (parseFloat(serviceForm.discount_amount) || 0) : 0,
+      discount_percent: serviceForm.discount_percent !== '' && serviceForm.discount_percent != null ? (parseFloat(serviceForm.discount_percent) || 0) : 0,
       payment_account: serviceForm.payment_account || null,
       warranty_months: serviceForm.warranty_months !== '' && serviceForm.warranty_months != null ? parseInt(serviceForm.warranty_months, 10) : null,
       warranty_note: serviceForm.warranty_note || null,
@@ -10745,7 +10769,9 @@ function App() {
                       </div>
 
                       {(() => {
-                        const total = (serviceForm.items || []).length > 0 ? serviceItemsTotal(serviceForm.items) : (parseFloat(serviceForm.cost) || 0);
+                        const grossTotal = (serviceForm.items || []).length > 0 ? serviceItemsTotal(serviceForm.items) : (parseFloat(serviceForm.cost) || 0);
+                        const discount = Math.min(parseFloat(serviceForm.discount_amount) || 0, grossTotal);
+                        const total = grossTotal - discount;
                         const adv = parseFloat(serviceForm.advance_amount) || 0;
                         const collected = adv + serviceCollectedTRY(serviceForm.collections);
                         const remaining = total - collected;
@@ -10756,8 +10782,40 @@ function App() {
                           <div className="mt-3 rounded-xl bg-gradient-to-r from-[#1B3A5C] to-[#15293f] text-white px-4 py-3 space-y-2">
                             <div className="flex items-center justify-between text-sm">
                               <span className="text-white/70">Toplam</span>
-                              <span className="tabular-nums font-semibold">₺ {formatPrice(total)}</span>
+                              <span className="tabular-nums font-semibold">₺ {formatPrice(grossTotal)}</span>
                             </div>
+                            {/* İndirim: % veya ₺ — biri girilince diğeri otomatik hesaplanır */}
+                            <div className="flex items-center justify-between text-sm gap-2">
+                              <span className="text-rose-300 shrink-0">İndirim</span>
+                              <div className="flex items-center gap-1.5">
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type="number" min="0" max="100" step="0.1"
+                                    value={serviceForm.discount_percent}
+                                    onChange={(e) => setServiceDiscountPercent(e.target.value)}
+                                    placeholder="0"
+                                    className="w-16 h-7 px-1.5 rounded bg-white/10 border border-white/20 text-right text-sm tabular-nums text-rose-200 placeholder:text-white/30 focus:outline-none focus:ring-1 focus:ring-rose-300"
+                                  />
+                                  <span className="text-white/50 text-xs">%</span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <span className="text-white/50 text-xs">₺</span>
+                                  <input
+                                    type="number" min="0" step="0.01"
+                                    value={serviceForm.discount_amount}
+                                    onChange={(e) => setServiceDiscountAmount(e.target.value)}
+                                    placeholder="0"
+                                    className="w-24 h-7 px-1.5 rounded bg-white/10 border border-white/20 text-right text-sm tabular-nums text-rose-200 placeholder:text-white/30 focus:outline-none focus:ring-1 focus:ring-rose-300"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                            {discount > 0 && (
+                              <div className="flex items-center justify-between text-sm">
+                                <span className="text-white/70">İndirimli Toplam</span>
+                                <span className="tabular-nums font-semibold">₺ {formatPrice(total)}</span>
+                              </div>
+                            )}
                             <div className="flex items-center justify-between text-sm">
                               <span className="text-emerald-300">Tahsil Edilen</span>
                               <span className="tabular-nums font-semibold text-emerald-300">₺ {formatPrice(collected)}</span>
@@ -10843,7 +10901,7 @@ function App() {
                 const meta = SERVICE_STATUS_META[s.status] || SERVICE_STATUS_META.received;
                 const isTrailer = s.is_trailer || !(s.plate || '').trim();
                 const vehicle = [s.vehicle_brand, s.vehicle_model].filter(Boolean).join(' ') || (isTrailer ? 'Çekme Karavan' : 'Araç belirtilmemiş');
-                const total = (s.items || []).length > 0 ? serviceItemsTotal(s.items) : (s.cost != null ? s.cost : 0);
+                const total = Math.max(((s.items || []).length > 0 ? serviceItemsTotal(s.items) : (s.cost != null ? s.cost : 0)) - serviceDiscountTRY(s), 0);
                 const collected = serviceCollectedTotalTRY(s);
                 const remaining = Math.max(total - collected, 0);
                 const pct = total > 0 ? Math.max(0, Math.min(100, Math.round(collected / total * 100))) : 0;
@@ -10932,7 +10990,15 @@ function App() {
                         <div className="px-4 sm:px-8 pb-6 bg-[#FBFCFD]">
                           <div className="rounded-2xl bg-gradient-to-br from-[#1B3A5C] to-[#15293f] text-white px-5 py-5 shadow-lg grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div className="space-y-2 text-sm">
-                              <div className="flex justify-between text-white/65"><span>Toplam</span><span className="tabular-nums font-semibold text-white">₺ {formatPrice(total)}</span></div>
+                              {serviceDiscountTRY(s) > 0 ? (
+                                <>
+                                  <div className="flex justify-between text-white/65"><span>Toplam</span><span className="tabular-nums font-semibold text-white/80">₺ {formatPrice(total + serviceDiscountTRY(s))}</span></div>
+                                  <div className="flex justify-between text-white/65"><span>İndirim{s.discount_percent > 0 ? ` (%${s.discount_percent})` : ''}</span><span className="tabular-nums font-semibold text-rose-300">-₺ {formatPrice(serviceDiscountTRY(s))}</span></div>
+                                  <div className="flex justify-between text-white/65"><span>İndirimli Toplam</span><span className="tabular-nums font-semibold text-white">₺ {formatPrice(total)}</span></div>
+                                </>
+                              ) : (
+                                <div className="flex justify-between text-white/65"><span>Toplam</span><span className="tabular-nums font-semibold text-white">₺ {formatPrice(total)}</span></div>
+                              )}
                               <div className="flex justify-between text-white/65"><span>Tahsil Edilen</span><span className="tabular-nums font-semibold text-emerald-300">₺ {formatPrice(collected)}</span></div>
                             </div>
                             <div className="flex flex-col justify-center sm:items-end">
@@ -11034,7 +11100,7 @@ function App() {
                     const meta = SERVICE_STATUS_META[s.status] || SERVICE_STATUS_META.received;
                     const isTrailer = s.is_trailer || !(s.plate || '').trim();
                     const vehicle = [s.vehicle_brand, s.vehicle_model].filter(Boolean).join(' ') || (isTrailer ? 'Çekme Karavan' : 'Araç belirtilmemiş');
-                    const total = (s.items || []).length > 0 ? serviceItemsTotal(s.items) : (s.cost != null ? s.cost : 0);
+                    const total = Math.max(((s.items || []).length > 0 ? serviceItemsTotal(s.items) : (s.cost != null ? s.cost : 0)) - serviceDiscountTRY(s), 0);
                     const collected = serviceCollectedTotalTRY(s);
                     const remaining = Math.max(total - collected, 0);
                     const pct = total > 0 ? Math.max(0, Math.min(100, Math.round(collected / total * 100))) : 0;
