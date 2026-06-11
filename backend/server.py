@@ -2174,7 +2174,8 @@ async def get_customers(
         
         if search:
             # Search in name, surname, company, email, phone
-            search_regex = {"$regex": search, "$options": "i"}
+            # re.escape: NoSQL regex injection / ReDoS koruması (rapor 09)
+            search_regex = {"$regex": re.escape(search.strip()[:100]), "$options": "i"}
             query["$or"] = [
                 {"name": search_regex},
                 {"surname": search_regex},
@@ -6489,8 +6490,8 @@ async def get_products_count(
             else:
                 # Fallback for short searches
                 query["$or"] = [
-                    {"name": {"$regex": f"^{search}", "$options": "i"}},
-                    {"brand": {"$regex": f"^{search}", "$options": "i"}}
+                    {"name": {"$regex": f"^{re.escape(search)}", "$options": "i"}},
+                    {"brand": {"$regex": f"^{re.escape(search)}", "$options": "i"}}
                 ]
             
         # Use estimated count for better performance on large collections
@@ -6550,6 +6551,9 @@ async def get_products(
                 
                 # Prepare search patterns
                 normalized_search = normalize_turkish(search_term)
+                # re.escape: NoSQL regex injection / ReDoS koruması (rapor 09)
+                search_term = re.escape(search_term[:100])
+                normalized_search = re.escape(normalized_search[:100])
                 
                 # Create comprehensive but precise search
                 query["$or"] = [
@@ -6651,7 +6655,10 @@ async def get_products(
                         return text
                     
                     normalized_search = normalize_turkish(search_term)
-                    
+                    # re.escape: NoSQL regex injection / ReDoS koruması (rapor 09)
+                    search_term = re.escape(search_term[:100])
+                    normalized_search = re.escape(normalized_search[:100])
+
                     # Same search logic as main query
                     basic_query["$or"] = [
                         {"name": {"$regex": search_term, "$options": "i"}},
@@ -6989,6 +6996,15 @@ async def change_upload_currency(upload_id: str, new_currency: str):
 # EXCEL EXPORT & TEMPLATE ENDPOINTS
 # ===========================
 
+def _xlsx_safe(v):
+    """Excel formül injection koruması (rapor 09): '=', '+', '-', '@' ile
+    başlayan metinler Excel'de formül olarak yorumlanır (=HYPERLINK,
+    =WEBSERVICE...). Başına ' eklenerek düz metne zorlanır."""
+    if isinstance(v, str) and v[:1] in ("=", "+", "-", "@") :
+        return "'" + v
+    return v
+
+
 @api_router.get("/products/export/template")
 async def download_product_template():
     """Download Excel template for product import"""
@@ -7108,11 +7124,11 @@ async def export_products(
         
         # Add product data
         for row_num, product in enumerate(products, 2):
-            sheet.cell(row=row_num, column=1).value = product.get("name", "")
-            sheet.cell(row=row_num, column=2).value = companies.get(product.get("company_id", ""), "")
-            sheet.cell(row=row_num, column=3).value = categories.get(product.get("category_id", ""), "")
-            sheet.cell(row=row_num, column=4).value = product.get("brand", "")
-            sheet.cell(row=row_num, column=5).value = product.get("description", "")
+            sheet.cell(row=row_num, column=1).value = _xlsx_safe(product.get("name", ""))
+            sheet.cell(row=row_num, column=2).value = _xlsx_safe(companies.get(product.get("company_id", ""), ""))
+            sheet.cell(row=row_num, column=3).value = _xlsx_safe(categories.get(product.get("category_id", ""), ""))
+            sheet.cell(row=row_num, column=4).value = _xlsx_safe(product.get("brand", ""))
+            sheet.cell(row=row_num, column=5).value = _xlsx_safe(product.get("description", ""))
             sheet.cell(row=row_num, column=6).value = float(product.get("list_price", 0))
             sheet.cell(row=row_num, column=7).value = float(product.get("discounted_price", 0)) if product.get("discounted_price") else ""
             sheet.cell(row=row_num, column=8).value = product.get("currency", "")
@@ -7120,7 +7136,7 @@ async def export_products(
             sheet.cell(row=row_num, column=10).value = float(product.get("discounted_price_try", 0)) if product.get("discounted_price_try") else ""
             sheet.cell(row=row_num, column=11).value = "Evet" if product.get("is_favorite") else "Hayır"
             sheet.cell(row=row_num, column=12).value = product.get("stock_quantity", "")
-            sheet.cell(row=row_num, column=13).value = product.get("image_url", "")
+            sheet.cell(row=row_num, column=13).value = _xlsx_safe(product.get("image_url", ""))
             sheet.cell(row=row_num, column=14).value = product.get("created_at", "").strftime("%d.%m.%Y %H:%M") if product.get("created_at") else ""
         
         # Adjust column widths
@@ -7405,11 +7421,9 @@ async def download_file(filename: str):
         headers={"Content-Disposition": f"attachment; filename={safe_name}"}
     )
 
-# Mount static files directory for any other files
-try:
-    app.mount("/downloads", StaticFiles(directory="/app/downloads"), name="downloads")
-except Exception as e:
-    logger.warning(f"Could not mount static files: {e}")
+# NOT: /downloads StaticFiles mount'u KALDIRILDI (rapor 09): /api dışında olduğu
+# için auth middleware'i atlıyordu — klasöre konan her dosya oturumsuz okunabilirdi.
+# Aynı dosyalar auth'lu /api/atlas-downloads/{filename} üzerinden servis ediliyor.
 
 # Authentication Endpoints
 # Basit bellek-içi brute-force koruması (tek uvicorn instance varsayımı).
@@ -7469,11 +7483,12 @@ async def login(login_request: LoginRequest, request: Request, response: JSONRes
         session_token = await auth_service.create_session(login_request.username)
         
         # Set session cookie
+        # Token SADECE httpOnly cookie'de taşınır; body'de dönmek XSS/log
+        # sızıntısında cookie korumasını anlamsızlaştırıyordu (rapor 09).
         response = JSONResponse(
             content={
                 "success": True,
-                "message": "Başarıyla giriş yapıldı",
-                "session_token": session_token
+                "message": "Başarıyla giriş yapıldı"
             }
         )
         response.set_cookie(
@@ -7616,6 +7631,12 @@ def _termosa_scrape(category_urls: list, max_products: int = 600) -> list:
         if not cu:
             continue
         if cu.startswith('http'):
+            # SSRF koruması: tam URL verilirse sadece Termosa host'una izin ver
+            from urllib.parse import urlparse as _urlparse
+            host = (_urlparse(cu).hostname or '').lower()
+            if host != 'bayi.termosa.com':
+                logger.warning(f"Termosa scrape: yabancı host reddedildi: {cu}")
+                continue
             full = cu
         else:
             p = cu.lstrip('/')
@@ -7875,6 +7896,33 @@ def _validate_public_http_url(url: str) -> None:
             raise HTTPException(status_code=400, detail="İç ağ adreslerine istek engellendi")
 
 
+def _safe_fetch_public(url: str, max_bytes: int = 15 * 1024 * 1024, timeout: int = 20, max_redirects: int = 5) -> bytes:
+    """SSRF-güvenli HTTP GET: hem ilk URL hem HER redirect hedefi public-IP
+    doğrulamasından geçer (redirect ile iç ağa sıçrama engellenir); yanıt
+    boyutu sınırlanır."""
+    current = url
+    for _ in range(max_redirects + 1):
+        _validate_public_http_url(current)
+        resp = requests.get(current, timeout=timeout, allow_redirects=False, stream=True,
+                            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+        if resp.status_code in (301, 302, 303, 307, 308):
+            loc = resp.headers.get('Location')
+            if not loc:
+                raise HTTPException(status_code=400, detail="Geçersiz yönlendirme")
+            from urllib.parse import urljoin
+            current = urljoin(current, loc)
+            continue
+        resp.raise_for_status()
+        chunks, total = [], 0
+        for chunk in resp.iter_content(chunk_size=65536):
+            total += len(chunk)
+            if total > max_bytes:
+                raise HTTPException(status_code=413, detail="İndirilen içerik çok büyük")
+            chunks.append(chunk)
+        return b"".join(chunks)
+    raise HTTPException(status_code=400, detail="Çok fazla yönlendirme")
+
+
 @api_router.post("/scrape-products")
 async def scrape_products(request: ScrapeRequest):
     """Web sitesinden ürünleri scrape eder"""
@@ -7884,22 +7932,14 @@ async def scrape_products(request: ScrapeRequest):
     try:
         logger.info(f"Scraping URL: {request.url}")
         _validate_public_http_url(request.url)
+        # Redirect ile iç ağa sıçramayı da engelle: güvenli fetch kullan
+        loop0 = asyncio.get_running_loop()
+        page_bytes = await loop0.run_in_executor(None, lambda: _safe_fetch_public(request.url, 20 * 1024 * 1024, 30))
 
-        # URL'i fetch et
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-        # Senkron requests.get'i executor'a sar -> event loop bloke olmasin (yuk altinda diger istekler donmasin)
-        loop = asyncio.get_running_loop()
-        response = await loop.run_in_executor(
-            None, lambda: requests.get(request.url, headers=headers, timeout=30)
-        )
-        response.raise_for_status()
+        logger.info(f"Sayfa indirildi. Boyut: {len(page_bytes)} bytes")
 
-        logger.info(f"Sayfa indirildi. Boyut: {len(response.content)} bytes")
-        
         # HTML'i parse et
-        soup = BeautifulSoup(response.content, 'lxml')
+        soup = BeautifulSoup(page_bytes, 'lxml')
         
         # Ürünleri bul - Yaygın HTML yapıları
         products = []
@@ -8069,11 +8109,11 @@ async def scrape_products(request: ScrapeRequest):
     except HTTPException:
         raise
     except requests.RequestException as e:
-        print(f"❌ HTTP Hatası: {str(e)}")
-        raise HTTPException(status_code=400, detail=f"URL'e erişilemedi: {str(e)}")
+        logger.warning(f"Scrape HTTP hatası: {e}")
+        raise HTTPException(status_code=400, detail="URL'e erişilemedi.")
     except Exception as e:
-        print(f"❌ Scraping Hatası: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Scraping hatası: {str(e)}")
+        logger.error(f"Scraping hatası: {e}")
+        raise HTTPException(status_code=500, detail="Scraping başarısız oldu.")
 
 # ============================================================================
 # AKÜ TEST ANALİZİ (Gemini AI ile) ENDPOINT'LERİ
@@ -9021,7 +9061,9 @@ def _build_battery_report_pdf(payload: BatteryReportPDFRequest) -> BytesIO:
         story.append(Paragraph("2. TEKNİK DEĞERLENDİRME", section_label_style))
         if evaluation_text:
             # Kutuyu tek hücreli tablo olarak yap
-            eval_html = evaluation_text.replace('\r\n', '\n').replace('\n', '<br/>')
+            # AI metni ReportLab markup'ına escape edilerek girer (rapor 09: injection/bozulma)
+            from xml.sax.saxutils import escape as _xml_escape
+            eval_html = _xml_escape(evaluation_text).replace('\r\n', '\n').replace('\n', '<br/>')
             # Liste işaretlerini de güzel yap
             eval_html = _re.sub(r'<br/>\s*[\-\*•·]\s+', r'<br/>&nbsp;&nbsp;• ', eval_html)
             eval_html = _re.sub(r'^\s*[\-\*•·]\s+', r'&nbsp;&nbsp;• ', eval_html)
@@ -9050,7 +9092,8 @@ def _build_battery_report_pdf(payload: BatteryReportPDFRequest) -> BytesIO:
         story.append(Paragraph("3. NİHAİ KARAR VE ÖNERİ", section_label_style))
         if decision_text:
             bg_color, border_color, text_color = _decision_color(decision_text)
-            dec_html = decision_text.replace('\r\n', '\n').replace('\n', '<br/>')
+            from xml.sax.saxutils import escape as _xml_escape_d
+            dec_html = _xml_escape_d(decision_text).replace('\r\n', '\n').replace('\n', '<br/>')
             dec_html = _re.sub(r'<br/>\s*[\-\*•·]\s+', r'<br/>&nbsp;&nbsp;• ', dec_html)
             dec_html = _re.sub(r'^\s*[\-\*•·]\s+', r'&nbsp;&nbsp;• ', dec_html)
             dec_para = Paragraph(
@@ -9607,18 +9650,20 @@ async def wiring_remove_bg(req: WiringRemoveBgRequest):
         raw = _base64.b64decode(rec["data_b64"])
     elif req.image_url:
         try:
-            resp = requests.get(req.image_url, timeout=20)
-            resp.raise_for_status()
-            raw = resp.content
+            # SSRF koruması: public-IP + redirect doğrulama + boyut limiti
+            raw = await asyncio.to_thread(_safe_fetch_public, req.image_url, 10 * 1024 * 1024)
+        except HTTPException:
+            raise
         except Exception as e:
-            raise HTTPException(400, f"Görsel indirilemedi: {e}")
+            logger.warning(f"remove-bg görsel indirilemedi: {e}")
+            raise HTTPException(400, "Görsel indirilemedi.")
     else:
         raise HTTPException(400, "image_url veya image_id gerekli.")
     try:
         out_bytes = await asyncio.to_thread(_wiring_remove_bg, raw, req.tolerance)
     except Exception as e:
         logger.error(f"Arka plan kaldırma hatası: {e}")
-        raise HTTPException(500, f"Arka plan kaldırılamadı: {e}")
+        raise HTTPException(500, "Arka plan kaldırılamadı.")
     file_id = str(uuid.uuid4())
     doc = {
         "id": file_id, "content_type": "image/png", "original_filename": f"{file_id}.png",
@@ -10681,7 +10726,7 @@ def _contract_data_to_xlsx(doc) -> bytes:
         for it in sec.get("items", []):
             ws.append([
                 it.get("sno", ""),
-                it.get("name", ""),
+                _xlsx_safe(it.get("name", "")),
                 it.get("qty", ""),
                 it.get("eurUnit"),
                 it.get("tlUnit"),
