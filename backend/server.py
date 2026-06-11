@@ -2055,20 +2055,62 @@ async def update_exchange_rates():
 
 @api_router.post("/companies", response_model=Company)
 async def create_company(company: CompanyCreate):
-    """Create a new company"""
+    """Create a new company (aynı isim — büyük/küçük harf farkı dahil — ikinci kez eklenemez)"""
     try:
+        name = (company.name or "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Firma adı boş olamaz")
+        existing = await db.companies.find_one({"name": {"$regex": f"^{re.escape(name)}$", "$options": "i"}})
+        if existing:
+            raise HTTPException(status_code=409, detail=f'"{existing["name"]}" adında bir firma zaten var.')
+
         company_dict = {
             "id": str(uuid.uuid4()),
-            "name": company.name,
+            "name": name,
             "created_at": datetime.now(timezone.utc)
         }
-        
+
         result = await db.companies.insert_one(company_dict)
         return Company(**company_dict)
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error creating company: {e}")
         raise HTTPException(status_code=500, detail="Firma oluşturulamadı")
+
+
+@api_router.put("/companies/{company_id}", response_model=Company)
+async def update_company(company_id: str, company: CompanyCreate):
+    """Firma adını düzenle. Büyük/küçük harf değişikliği serbest;
+    başka bir firmayla çakışan isim (case-insensitive) reddedilir."""
+    try:
+        name = (company.name or "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Firma adı boş olamaz")
+        existing = await db.companies.find_one({"id": company_id})
+        if not existing:
+            raise HTTPException(status_code=404, detail="Firma bulunamadı")
+        clash = await db.companies.find_one({
+            "id": {"$ne": company_id},
+            "name": {"$regex": f"^{re.escape(name)}$", "$options": "i"},
+        })
+        if clash:
+            raise HTTPException(status_code=409, detail=f'"{clash["name"]}" adında başka bir firma zaten var.')
+
+        await db.companies.update_one({"id": company_id}, {"$set": {"name": name}})
+        # İlişkili tedarikçi-senkron ayarındaki görünen adı da güncelle
+        await db.supplier_sync_settings.update_many(
+            {"company_id": company_id}, {"$set": {"company_name": name}}
+        )
+        existing["name"] = name
+        return Company(**existing)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating company: {e}")
+        raise HTTPException(status_code=500, detail="Firma güncellenemedi")
 
 @api_router.get("/companies", response_model=List[Company])
 async def get_companies():

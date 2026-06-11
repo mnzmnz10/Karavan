@@ -1692,7 +1692,25 @@ function App() {
       toast.success('Firma başarıyla oluşturuldu');
     } catch (error) {
       console.error('Error creating company:', error);
-      toast.error('Firma oluşturulamadı');
+      toast.error(error.response?.data?.detail || 'Firma oluşturulamadı');
+    }
+  };
+
+  // Firma adını düzenle (büyük/küçük harf değişikliği dahil)
+  const renameCompany = async (company) => {
+    const yeni = window.prompt('Yeni firma adı:', company.name);
+    if (yeni === null) return; // vazgeçildi
+    const name = yeni.trim();
+    if (!name) { toast.error('Firma adı boş olamaz'); return; }
+    if (name === company.name) return; // değişiklik yok
+    try {
+      await axios.put(`${API}/companies/${company.id}`, { name });
+      CacheManager.remove('companies');
+      await loadCompanies();
+      toast.success(`Firma adı "${name}" olarak güncellendi`);
+    } catch (error) {
+      console.error('Error renaming company:', error);
+      toast.error(error.response?.data?.detail || 'Firma adı güncellenemedi');
     }
   };
 
@@ -5391,6 +5409,15 @@ function App() {
                       </CardHeader>
                       <CardContent className="pt-0">
                         <div className="flex gap-2 flex-wrap">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => renameCompany(company)}
+                            className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700"
+                          >
+                            <Edit className="w-4 h-4 mr-2" />
+                            Düzenle
+                          </Button>
                           <Button
                             variant="outline"
                             size="sm"
