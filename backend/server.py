@@ -164,6 +164,13 @@ async def create_indexes():
         await db.supplier_sync_settings.create_index([("enabled", 1), ("next_run_at", 1)])
         await db.import_sessions.create_index("id", unique=True)
         await db.import_sessions.create_index([("company_id", 1), ("created_at", -1)])
+        # Önizleme oturumları 30 gün sonra otomatik silinir (rapor 10: birikiyordu)
+        try:
+            await db.import_sessions.create_index("created_at", expireAfterSeconds=30 * 86400)
+        except Exception:
+            # aynı alanda farklı seçenekli index varsa yeniden oluştur
+            await db.import_sessions.drop_index("created_at_1")
+            await db.import_sessions.create_index("created_at", expireAfterSeconds=30 * 86400)
 
         logger.info("PERFORMANCE: Database indexes created successfully")
         
@@ -2364,8 +2371,10 @@ async def update_product(product_id: str, update_data: ProductUpdate):
         if update_data.currency is not None:
             update_dict["currency"] = update_data.currency.upper()
         if update_data.category_id is not None:
-            update_dict["category_id"] = update_data.category_id
-        
+            # 'none' = kategoriyi TEMİZLE (Pydantic'te null "gönderilmedi" ile
+            # ayrışamadığı için sentinel; rapor 01: temizleme çalışmıyordu)
+            update_dict["category_id"] = None if update_data.category_id in ("none", "") else update_data.category_id
+
         # If currency or prices changed, recalculate TRY prices
         if update_data.currency is not None or update_data.list_price is not None or update_data.discounted_price is not None:
             currency = update_data.currency.upper() if update_data.currency else existing_product["currency"]
@@ -2458,7 +2467,22 @@ async def update_product(product_id: str, product_update: Dict[str, Any]):
         for field in allowed_fields:
             if field in product_update:
                 update_data[field] = product_update[field]
-        
+
+        # Fiyat/para birimi değiştiyse TL karşılıklarını da yeniden hesapla
+        # (rapor 01: PUT hesaplamıyordu -> stale list_price_try kalıyordu)
+        if any(f in product_update for f in ("list_price", "discounted_price", "currency")):
+            currency = (product_update.get("currency") or existing_product.get("currency") or "TRY").upper()
+            try:
+                lp = float(product_update.get("list_price", existing_product.get("list_price") or 0))
+                update_data["list_price_try"] = float(await currency_service.convert_to_try(Decimal(str(lp)), currency))
+                dp_raw = product_update.get("discounted_price", existing_product.get("discounted_price"))
+                if dp_raw not in (None, ""):
+                    update_data["discounted_price_try"] = float(await currency_service.convert_to_try(Decimal(str(float(dp_raw))), currency))
+                else:
+                    update_data["discounted_price_try"] = None
+            except (TypeError, ValueError) as e:
+                logger.warning(f"PUT product TL hesabı atlandı: {e}")
+
         # Güncelleme zamanını ekle
         update_data["updated_at"] = datetime.utcnow().isoformat() + "Z"
         
@@ -5734,7 +5758,16 @@ def _normalize_product_name_for_match(name: str) -> str:
 def _normalize_termosa_url_key(value: str) -> str:
     if not value:
         return ""
-    return str(value).strip().split("?", 1)[0].rstrip("/").casefold()
+    key = str(value).strip().split("?", 1)[0].rstrip("/").casefold()
+    # Site kök URL'leri eşleşme anahtarı OLAMAZ (rapor 03: eski kayıtlarda
+    # source_url sabit base'di — tek ortak base tüm ürünleri "eşleşmiş" sayardı)
+    from urllib.parse import urlparse as _up
+    try:
+        if not _up(key).path.strip("/"):
+            return ""
+    except ValueError:
+        pass
+    return key
 
 
 def _safe_float(value, default: float = 0.0) -> float:
@@ -5764,8 +5797,20 @@ async def _build_import_session(company: Dict[str, Any], products_data: List[Dic
 
     existing_cursor = db.products.find({"company_id": company_id})
     existing_by_name = {}
+    existing_by_code = {}
+    existing_by_image = {}
+    existing_by_source = {}
     async for product in existing_cursor:
         existing_by_name[_normalize_product_name_for_match(product.get("name", ""))] = product
+        code_key = (product.get("code") or "").strip().casefold()
+        if code_key:
+            existing_by_code[code_key] = product
+        img_key = _normalize_termosa_url_key(product.get("image_url"))
+        if img_key:
+            existing_by_image[img_key] = product
+        src_key = _normalize_termosa_url_key(product.get("source_url"))
+        if src_key:
+            existing_by_source[src_key] = product
 
     rows = []
     currency_distribution = {}
@@ -5799,7 +5844,25 @@ async def _build_import_session(company: Dict[str, Any], products_data: List[Dic
         if discounted_price is not None:
             discounted_price_try = await currency_service.convert_to_try(Decimal(str(discounted_price)), final_currency)
 
-        existing = existing_by_name.get(_normalize_product_name_for_match(name))
+        # Eşleşme önceliği: kod > kaynak URL > isim > görsel (rapor 03: sadece
+        # isimle eşleşince adı değişen ürün yanlışlıkla "create" oluyordu)
+        existing = None
+        matched_by = None
+        code_key = (product_data.get("code") or "").strip().casefold()
+        if code_key and code_key in existing_by_code:
+            existing, matched_by = existing_by_code[code_key], "code"
+        if existing is None:
+            src_key = _normalize_termosa_url_key(product_data.get("source_url"))
+            if src_key and src_key in existing_by_source:
+                existing, matched_by = existing_by_source[src_key], "source_url"
+        if existing is None:
+            existing = existing_by_name.get(_normalize_product_name_for_match(name))
+            if existing is not None:
+                matched_by = "name"
+        if existing is None:
+            img_key = _normalize_termosa_url_key(product_data.get("image_url"))
+            if img_key and img_key in existing_by_image:
+                existing, matched_by = existing_by_image[img_key], "image"
         action = "update" if existing else "create"
         match_status = "matched" if existing else "new"
         if existing:
@@ -5823,6 +5886,7 @@ async def _build_import_session(company: Dict[str, Any], products_data: List[Dic
             "source_index": idx,
             "action": action,
             "match_status": match_status,
+            "matched_by": matched_by,
             "matched_product_id": existing.get("id") if existing else None,
             "matched_product_name": existing.get("name") if existing else None,
             "old_list_price": old_price,
@@ -6237,8 +6301,19 @@ async def _run_due_supplier_syncs():
 
 @api_router.post("/supplier-sync/termosa/run-all")
 async def run_all_termosa_syncs():
-    """Tüm AÇIK Termosa fiyat kontrollerini hemen çalıştır (sisteme her girişte otomatik tetiklenir)."""
-    settings = await db.supplier_sync_settings.find({"supplier": "termosa", "enabled": True}).limit(10).to_list(10)
+    """VAKTİ GELMİŞ Termosa fiyat kontrollerini çalıştır (login'de tetiklenir).
+
+    next_run_at dolmamış ayarlar atlanır (rapor 03: her login'de scrape
+    interval_hours'u fiilen bypass ediyordu — yavaş giriş + gereksiz trafik)."""
+    now = datetime.now(timezone.utc)
+    settings = await db.supplier_sync_settings.find({
+        "supplier": "termosa", "enabled": True,
+        "$or": [
+            {"next_run_at": {"$lte": now}},
+            {"next_run_at": None},
+            {"next_run_at": {"$exists": False}},
+        ],
+    }).limit(10).to_list(10)
     results = []
     total_changed = 0
     for setting in settings:
@@ -7621,7 +7696,8 @@ def _termosa_scrape(category_urls: list, max_products: int = 600) -> list:
             isrc = img.get('src') if img else None
             if isrc and isrc.startswith('/'):
                 isrc = TERMOSA_BASE + isrc
-            found.append({'name': name, 'list_eur': list_eur, 'id': pid, 'type': ptype, 'code': code, 'image_url': isrc})
+            purl = (TERMOSA_BASE + url) if url and url.startswith('/') else (url or None)
+            found.append({'name': name, 'list_eur': list_eur, 'id': pid, 'type': ptype, 'code': code, 'image_url': isrc, 'product_url': purl})
         return found
 
     pending = []
@@ -7717,7 +7793,9 @@ def _termosa_scrape(category_urls: list, max_products: int = 600) -> list:
             'list_price': lp, 'discounted_price': dp,
             'currency': 'EUR', 'unit': 'adet',
             'code': c['code'], 'image_url': c.get('image_url'),
-            'source_url': TERMOSA_BASE + '/',
+            # Ürün DETAY URL'i (rapor 03: sabit base URL tüm ürünleri "eşleşmiş"
+            # sayabiliyordu — source_url artık ürüne özgü, güvenilir eşleşme anahtarı)
+            'source_url': c.get('product_url') or (TERMOSA_BASE + '/'),
         })
     return out
 
@@ -9168,6 +9246,57 @@ def _build_battery_report_pdf(payload: BatteryReportPDFRequest) -> BytesIO:
     return buffer
 
 
+async def _save_battery_tests(request: "BatteryReportPDFRequest"):
+    """PDF üretilen her aküyü battery_tests koleksiyonuna kaydet (geçmiş/trend).
+
+    Görseller SAKLANMAZ (boyut); değerler rapor metninden parse edilir."""
+    now = datetime.now(timezone.utc)
+    for batt in request.batteries:
+        try:
+            data_pairs, _eval, decision = _parse_battery_report(batt.report or "")
+            values = {}
+            for k, v in (data_pairs or []):
+                ku = upper_tr(str(k))
+                num = None
+                m = re.search(r'[-+]?\d+(?:[.,]\d+)?', str(v))
+                if m:
+                    num = float(m.group(0).replace(',', '.'))
+                if "SOH" in ku:
+                    values["soh"] = num
+                elif "SOC" in ku:
+                    values["soc"] = num
+                elif "VOLTAJ" in ku:
+                    values["voltage"] = num
+                elif "DİRENÇ" in ku or "DIRENC" in ku:
+                    values["internal_resistance"] = num
+            await db.battery_tests.insert_one({
+                "id": str(uuid.uuid4()),
+                "customer_name": (request.customer_name or "").strip() or None,
+                "plate": (request.vehicle_plate or "").strip() or None,
+                "battery_number": batt.battery_number,
+                "values": values,
+                "decision": (decision or "").strip()[:300] or None,
+                "report": batt.report,
+                "created_at": now,
+            })
+        except Exception as e:
+            logger.warning(f"Akü test geçmişi kaydedilemedi: {e}")
+
+
+@api_router.get("/battery-tests")
+async def list_battery_tests(plate: Optional[str] = None, customer_name: Optional[str] = None, limit: int = 50):
+    """Akü test geçmişi (plaka veya müşteri adına göre, en yeni önce)."""
+    query = {}
+    if plate and plate.strip():
+        query["plate"] = {"$regex": f"^{re.escape(plate.strip())}$", "$options": "i"}
+    elif customer_name and customer_name.strip():
+        query["customer_name"] = {"$regex": re.escape(customer_name.strip()), "$options": "i"}
+    else:
+        raise HTTPException(status_code=400, detail="plate veya customer_name gerekli.")
+    docs = await db.battery_tests.find(query, {"_id": 0, "report": 0}).sort("created_at", -1).to_list(max(1, min(limit, 200)))
+    return docs
+
+
 @api_router.post("/battery-analysis/pdf")
 async def battery_analysis_pdf(request: BatteryReportPDFRequest):
     """Birden fazla akü analiz sonucundan profesyonel PDF rapor üret."""
@@ -9175,6 +9304,8 @@ async def battery_analysis_pdf(request: BatteryReportPDFRequest):
         raise HTTPException(status_code=400, detail="PDF üretmek için en az bir akü raporu gereklidir.")
 
     try:
+        # Geçmiş/trend için kalıcı kayıt (rapor 04: testler kaybolup gidiyordu)
+        await _save_battery_tests(request)
         pdf_buf = _build_battery_report_pdf(request)
         filename = f"aku_test_raporu_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
         return StreamingResponse(

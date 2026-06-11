@@ -64,6 +64,27 @@ function BatteryTestSection() {
   const [vehiclePlate, setVehiclePlate] = useState('');
   const [analyzingAll, setAnalyzingAll] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
+  // Geçmiş testler (plaka/müşteri ile sorgulanır; PDF üretiminde otomatik kaydedilir)
+  const [testHistory, setTestHistory] = useState(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  const loadTestHistory = async () => {
+    const plate = vehiclePlate.trim();
+    const cname = customerName.trim();
+    if (!plate && !cname) { toast.error('Geçmiş için plaka veya müşteri adı girin'); return; }
+    try {
+      setHistoryLoading(true);
+      const params = new URLSearchParams();
+      if (plate) params.set('plate', plate); else params.set('customer_name', cname);
+      const res = await axios.get(`${API}/battery-tests?${params.toString()}`);
+      setTestHistory(res.data || []);
+      if ((res.data || []).length === 0) toast.info('Bu plaka/müşteri için kayıtlı test yok.');
+    } catch (e) {
+      toast.error('Geçmiş yüklenemedi');
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
 
   const MAX_IMAGES = 5;
 
@@ -354,7 +375,50 @@ function BatteryTestSection() {
               className="mt-1 h-9"
             />
           </div>
+          <div className="sm:col-span-2">
+            <Button variant="outline" size="sm" onClick={loadTestHistory} disabled={historyLoading} className="border-slate-300 text-slate-600">
+              {historyLoading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Yükleniyor...</> : <><History className="w-4 h-4 mr-2" /> Geçmiş Testleri Gör</>}
+            </Button>
+          </div>
         </div>
+
+        {/* Geçmiş testler — SOH trendi (PDF üretilen her test otomatik kaydedilir) */}
+        {testHistory && testHistory.length > 0 && (
+          <div className="p-4 rounded-lg bg-indigo-50/60 border border-indigo-200">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm font-bold text-indigo-800 flex items-center gap-2"><History className="w-4 h-4" /> Geçmiş Testler ({testHistory.length})</div>
+              <button type="button" onClick={() => setTestHistory(null)} className="text-indigo-400 hover:text-indigo-600"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-left text-indigo-600 border-b border-indigo-200">
+                    <th className="py-1 pr-3">Tarih</th>
+                    <th className="py-1 pr-3">Akü</th>
+                    <th className="py-1 pr-3">SOH</th>
+                    <th className="py-1 pr-3">SOC</th>
+                    <th className="py-1 pr-3">Voltaj</th>
+                    <th className="py-1 pr-3">İç Direnç</th>
+                    <th className="py-1">Karar</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {testHistory.map((t) => (
+                    <tr key={t.id} className="border-b border-indigo-100 text-slate-700">
+                      <td className="py-1 pr-3 whitespace-nowrap">{t.created_at ? new Date(t.created_at).toLocaleDateString('tr-TR') : '-'}</td>
+                      <td className="py-1 pr-3">{t.battery_number ?? '-'}</td>
+                      <td className="py-1 pr-3 font-semibold tabular-nums">{t.values?.soh != null ? `%${t.values.soh}` : '-'}</td>
+                      <td className="py-1 pr-3 tabular-nums">{t.values?.soc != null ? `%${t.values.soc}` : '-'}</td>
+                      <td className="py-1 pr-3 tabular-nums">{t.values?.voltage != null ? `${t.values.voltage} V` : '-'}</td>
+                      <td className="py-1 pr-3 tabular-nums">{t.values?.internal_resistance != null ? `${t.values.internal_resistance} mΩ` : '-'}</td>
+                      <td className="py-1 truncate max-w-[220px]" title={t.decision || ''}>{t.decision || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         {/* Akü Bölümleri */}
         {batteries.map((battery, idx) => (
@@ -3272,7 +3336,9 @@ function App() {
       if (editForm.category_id && editForm.category_id !== 'none') {
         updateData.category_id = editForm.category_id;
       } else if (editForm.category_id === 'none') {
-        updateData.category_id = null;
+        // 'none' sentinel: backend bunu kategori TEMİZLE olarak işler
+        // (null gönderince Pydantic "alan yok" sayıyordu, temizleme çalışmıyordu)
+        updateData.category_id = 'none';
       }
 
       const response = await axios.patch(`${API}/products/${editingProduct}`, updateData);
@@ -8523,7 +8589,7 @@ function App() {
                         <Search className="h-4.5 w-4.5" />
                       </div>
                       <Input
-                        placeholder="Ürün adı, marka, firma veya açıklama ara..."
+                        placeholder="Ürün adı, marka veya açıklama ara..."
                         value={searchQuery}
                         onChange={(e) => handleSearch(e.target.value)}
                         className="h-14 w-full rounded-2xl border-2 border-emerald-100 bg-gradient-to-r from-emerald-50/70 to-white pl-16 pr-12 text-base font-bold text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/15"
@@ -12007,7 +12073,7 @@ function App() {
 
             <div>
               <label className="block text-sm font-medium mb-2">
-                Değer {bulkPriceChangeType === 'percentage' ? '(%)' : '(₺)'}
+                Değer {bulkPriceChangeType === 'percentage' ? '(%)' : ''}
               </label>
               <Input
                 type="number"
@@ -12017,11 +12083,16 @@ function App() {
                 placeholder={bulkPriceChangeType === 'percentage' ? 'Örn: 10' : 'Örn: 50'}
               />
               <p className="text-xs text-slate-500 mt-1">
-                {bulkPriceChangeType === 'percentage' 
+                {bulkPriceChangeType === 'percentage'
                   ? `${bulkPriceChangeValue > 0 ? '+' : ''}${bulkPriceChangeValue}% değişiklik uygulanacak`
-                  : `${bulkPriceChangeValue > 0 ? '+' : ''}${bulkPriceChangeValue}₺ eklenecek/çıkarılacak`
+                  : `${bulkPriceChangeValue > 0 ? '+' : ''}${bulkPriceChangeValue} eklenecek/çıkarılacak`
                 }
               </p>
+              {bulkPriceChangeType === 'fixed' && (
+                <p className="text-xs font-semibold text-amber-600 mt-1">
+                  ⚠️ Sabit tutar her ürünün KENDİ para biriminde uygulanır: USD ürüne +50 → +50$, EUR ürüne +50 → +50€.
+                </p>
+              )}
             </div>
           </div>
 
