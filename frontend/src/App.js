@@ -1828,7 +1828,9 @@ function App() {
       const products = (r.data.products || []).map((p) => ({
         name: p.name || '', brand: p.brand || '',
         list_price: p.list_price ?? '', discounted_price: p.discounted_price ?? '',
-        currency: p.currency || 'EUR', description: '', image_url: p.image_url || ''
+        currency: p.currency || 'EUR', description: '', image_url: p.image_url || '',
+        // code+source_url ürünle kaydedilir -> fiyat kontrolünde güvenilir eşleşme
+        code: p.code || '', source_url: p.source_url || ''
       }));
       if (products.length === 0) { toast.error('Ürün çekilemedi.'); return; }
       setUploadCurrency('EUR');
@@ -1876,7 +1878,8 @@ function App() {
       const products = (r.data.products || []).map((p) => ({
         name: p.name || '', brand: p.brand || '',
         list_price: p.list_price ?? '', discounted_price: p.discounted_price ?? '',
-        currency: p.currency || 'TRY', description: '', image_url: p.image_url || ''
+        currency: p.currency || 'TRY', description: '', image_url: p.image_url || '',
+        code: p.code || '', source_url: p.source_url || ''
       }));
       if (products.length === 0) { toast.error('Ürün çekilemedi.'); return; }
       setUploadCurrency('TRY');

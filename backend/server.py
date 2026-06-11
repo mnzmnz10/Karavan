@@ -6073,7 +6073,7 @@ async def _run_termosa_sync_setting(setting: Dict[str, Any], manual: bool = Fals
     now = datetime.now(timezone.utc)
     try:
         loop = asyncio.get_running_loop()
-        products = await loop.run_in_executor(None, _termosa_scrape, category_urls, 600)
+        products = await loop.run_in_executor(None, _termosa_scrape, category_urls, 4000)
         if not products:
             raise HTTPException(status_code=422, detail="Termosa kontrolünde ürün bulunamadı.")
 
@@ -6082,6 +6082,13 @@ async def _run_termosa_sync_setting(setting: Dict[str, Any], manual: bool = Fals
             company, products = await _resolve_termosa_company_for_existing_products(company, products)
         else:
             products = await _filter_termosa_products_for_company(company["id"], products)
+            if not products:
+                # Kayıtlı kategoriler firmadaki ürünleri kapsamıyor olabilir
+                # (ürünler başka kategoriden çekilmiş) -> TÜM siteyi tara, yine
+                # sadece eşleşenleri al. Yeni ürün eklenmez.
+                logger.info("Termosa kontrol: kayıtlı kategorilerde eşleşme yok, tüm site taranıyor")
+                all_products = await loop.run_in_executor(None, _termosa_scrape, ["urunler"], 4000)
+                company, products = await _resolve_termosa_company_for_existing_products(company, all_products)
         if not products:
             raise HTTPException(
                 status_code=422,
@@ -7637,6 +7644,29 @@ async def scrape_termosa(company_id: str, request: ScrapeTermosaRequest):
     products = await loop.run_in_executor(None, _termosa_scrape, request.category_urls, request.max_products)
     if not products:
         raise HTTPException(status_code=422, detail="Ürün çekilemedi (kategori boş, fiyatlar kapalı veya giriş başarısız).")
+
+    # Çekilen kategorileri fiyat-kontrol ayarına BİRİKTİR (merge) — sonraki
+    # "Termosa Ürünlerini Kontrol Et" bu kategorileri de tarasın (yoksa
+    # kontrol, ürünlerin geldiği kategoriyi bilmez ve eşleşme bulamaz).
+    try:
+        new_cats = _sanitize_category_urls(request.category_urls)
+        if new_cats:
+            existing = await db.supplier_sync_settings.find_one({"company_id": company_id, "supplier": "termosa"})
+            old_cats = (existing or {}).get("category_urls") or []
+            merged = list(dict.fromkeys(old_cats + new_cats))  # sıra korunur, tekrar yok
+            now = datetime.now(timezone.utc)
+            await db.supplier_sync_settings.update_one(
+                {"company_id": company_id, "supplier": "termosa"},
+                {"$set": {"category_urls": merged, "company_name": company["name"], "updated_at": now},
+                 "$setOnInsert": {"id": str(uuid.uuid4()), "supplier": "termosa", "company_id": company_id,
+                                  "enabled": True, "interval_hours": 24, "auto_apply": False,
+                                  "last_run_at": None, "next_run_at": None, "last_session_id": None,
+                                  "last_error": None, "created_at": now}},
+                upsert=True,
+            )
+    except Exception as e:
+        logger.warning(f"Termosa kategori ayarı güncellenemedi: {e}")
+
     return {"success": True, "count": len(products), "products": products}
 
 
