@@ -10617,36 +10617,10 @@ function App() {
                           <Label>Telefon</Label>
                           <Input value={serviceForm.phone} onChange={(e) => setServiceForm({ ...serviceForm, phone: e.target.value })} placeholder="05xx ..." />
                         </div>
+                        {/* ARAÇ — tür/marka + model TEK panelde; seçim üstte rozetle belli */}
                         <div className="sm:col-span-2">
-                          <Label>Araç Türü / Markası</Label>
                           {(() => {
                             const VEHICLE_TYPES = ['15M³ PSA', '17M³ PSA', 'MERCEDES', 'IVECO', 'VOLKSWAGEN', 'MAN', 'FORD', 'SEMİ ENTEGRE', 'OTOBÜS', 'ÇEKME KARAVAN'];
-                            const selected = serviceForm.vehicle_brand || '';
-                            const choose = (v) => setServiceForm({ ...serviceForm, vehicle_brand: selected === v ? '' : v });
-                            return (
-                              <div className="mt-1 flex flex-wrap gap-2">
-                                {VEHICLE_TYPES.map((v) => {
-                                  const on = selected === v;
-                                  return (
-                                    <button
-                                      key={v}
-                                      type="button"
-                                      onClick={() => choose(v)}
-                                      className={`px-3 py-1.5 rounded-lg text-sm font-semibold border transition-colors cursor-pointer ${on ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
-                                    >
-                                      {v}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            );
-                          })()}
-                          <Input className="mt-2" value={serviceForm.vehicle_brand} onChange={(e) => setServiceForm({ ...serviceForm, vehicle_brand: e.target.value })} placeholder="veya elle yazın: Ford, Fiat ..." />
-                        </div>
-                        <div>
-                          <Label>Araç Modeli</Label>
-                          {(() => {
-                            // Markaya göre hazır model önerileri; elle yazma her zaman serbest
                             const MODEL_SUGGESTIONS = {
                               'MERCEDES': ['Sprinter', 'Vito'],
                               'VOLKSWAGEN': ['Crafter', 'Transporter', 'Volt', 'Caravelle', 'Caddy'],
@@ -10658,29 +10632,78 @@ function App() {
                               'CITROEN': ['Jumper', 'Jumpy'],
                               'RENAULT': ['Master', 'Trafic'],
                             };
-                            const brandKey = (serviceForm.vehicle_brand || '').trim().toLocaleUpperCase('tr-TR');
+                            const selected = serviceForm.vehicle_brand || '';
+                            const model = serviceForm.vehicle_model || '';
+                            const brandKey = selected.trim().toLocaleUpperCase('tr-TR');
                             const sugg = MODEL_SUGGESTIONS[brandKey] || [];
+                            const chooseBrand = (v) => setServiceForm({ ...serviceForm, vehicle_brand: selected === v ? '' : v, vehicle_model: selected === v ? serviceForm.vehicle_model : '' });
                             return (
-                              <>
-                                {sugg.length > 0 && (
-                                  <div className="mt-1 mb-1.5 flex flex-wrap gap-1.5">
-                                    {sugg.map((m) => {
-                                      const on = (serviceForm.vehicle_model || '') === m;
+                              <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
+                                <div className="flex items-center justify-between gap-3 flex-wrap">
+                                  <div className="text-[11px] font-black uppercase tracking-wider text-emerald-700 flex items-center gap-1.5">
+                                    <Wrench className="w-3.5 h-3.5" /> Araç
+                                  </div>
+                                  {(selected || model) ? (
+                                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-600 text-white text-xs font-bold shadow-sm">
+                                      <Check className="w-3.5 h-3.5" />
+                                      {[selected, model].filter(Boolean).join(' · ')}
+                                    </span>
+                                  ) : (
+                                    <span className="text-xs text-slate-400 italic">Henüz araç seçilmedi</span>
+                                  )}
+                                </div>
+
+                                <div>
+                                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Tür / Marka</div>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {VEHICLE_TYPES.map((v) => {
+                                      const on = selected === v;
                                       return (
                                         <button
-                                          key={m}
+                                          key={v}
                                           type="button"
-                                          onClick={() => setServiceForm({ ...serviceForm, vehicle_model: on ? '' : m })}
+                                          onClick={() => chooseBrand(v)}
                                           className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors cursor-pointer ${on ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
                                         >
-                                          {m}
+                                          {v}
                                         </button>
                                       );
                                     })}
                                   </div>
+                                </div>
+
+                                {sugg.length > 0 && (
+                                  <div>
+                                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Model</div>
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {sugg.map((m) => {
+                                        const on = model === m;
+                                        return (
+                                          <button
+                                            key={m}
+                                            type="button"
+                                            onClick={() => setServiceForm({ ...serviceForm, vehicle_model: on ? '' : m })}
+                                            className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors cursor-pointer ${on ? 'bg-sky-600 border-sky-600 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                                          >
+                                            {m}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
                                 )}
-                                <Input value={serviceForm.vehicle_model} onChange={(e) => setServiceForm({ ...serviceForm, vehicle_model: e.target.value })} placeholder="Transit, Ducato ..." />
-                              </>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-slate-200/80">
+                                  <div>
+                                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Marka (elle)</div>
+                                    <Input value={serviceForm.vehicle_brand} onChange={(e) => setServiceForm({ ...serviceForm, vehicle_brand: e.target.value })} placeholder="Ford, Fiat ..." className="h-9 bg-white" />
+                                  </div>
+                                  <div>
+                                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Model (elle)</div>
+                                    <Input value={serviceForm.vehicle_model} onChange={(e) => setServiceForm({ ...serviceForm, vehicle_model: e.target.value })} placeholder="Transit, Ducato ..." className="h-9 bg-white" />
+                                  </div>
+                                </div>
+                              </div>
                             );
                           })()}
                         </div>
