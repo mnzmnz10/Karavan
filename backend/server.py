@@ -603,7 +603,9 @@ class QuoteResponse(BaseModel):
 class ServiceItem(BaseModel):
     name: Optional[str] = Field("", max_length=300)              # Parça/işlem adı
     qty: Optional[float] = Field(1, ge=0)                        # Adet
-    unit_price: Optional[float] = Field(0, ge=0)                 # Birim fiyat (₺)
+    unit_price: Optional[float] = Field(0, ge=0)                 # Birim fiyat (kendi para biriminde)
+    currency: Optional[str] = "TRY"                              # TRY | EUR | USD
+    rate: Optional[float] = Field(None, ge=0)                    # 1 birim döviz = ? ₺ (kayıt anında sabitlenir)
 
 class ServiceCollection(BaseModel):
     id: Optional[str] = None                                     # Satır id (frontend üretir)
@@ -9841,7 +9843,10 @@ _SERVICE_STATUSES = {"received", "in_progress", "delivered"}
 
 @api_router.get("/services")
 async def list_services(status: Optional[str] = None, search: Optional[str] = None):
-    """Servis kayitlarini listele (en yeni once)."""
+    """Servis kayitlarini listele.
+
+    Elle sıralananlar sort_order'a göre; sort_order'ı olmayanlar (yeni
+    kayıtlar) en üstte tarih sırasıyla (sözleşmelerle aynı kural)."""
     query = {}
     if status and status in _SERVICE_STATUSES:
         query["status"] = status
@@ -9854,15 +9859,41 @@ async def list_services(status: Optional[str] = None, search: Optional[str] = No
     services = await db.services.find(query).sort("created_at", -1).to_list(1000)
     for s in services:
         s.pop("_id", None)
-    return services
+    without_order = [s for s in services if s.get("sort_order") is None]
+    with_order = sorted([s for s in services if s.get("sort_order") is not None], key=lambda s: s["sort_order"])
+    return without_order + with_order
+
+
+class ServiceReorderRequest(BaseModel):
+    ordered_ids: List[str]
+
+
+@api_router.post("/services/reorder")
+async def reorder_services(payload: ServiceReorderRequest):
+    """Servislerin elle sırasını kaydet (verilen id sırasına göre sort_order atanır)."""
+    if not payload.ordered_ids:
+        raise HTTPException(status_code=400, detail="Sıralanacak id listesi boş.")
+    if len(payload.ordered_ids) != len(set(payload.ordered_ids)):
+        raise HTTPException(status_code=400, detail="Tekrarlanan id var.")
+    ops = [
+        UpdateOne({"id": sid}, {"$set": {"sort_order": idx}})
+        for idx, sid in enumerate(payload.ordered_ids)
+    ]
+    result = await db.services.bulk_write(ops)
+    return {"success": True, "updated": result.modified_count}
 
 
 def _service_items_total(items):
-    """Kalem listesinden toplam tutar (adet * birim fiyat)."""
+    """Kalem listesinden toplam tutar (₺). Döviz kalemler kayıtlı kurla çevrilir."""
     total = 0.0
     for it in (items or []):
         try:
-            total += float(it.get("qty") or 0) * float(it.get("unit_price") or 0)
+            line = float(it.get("qty") or 0) * float(it.get("unit_price") or 0)
+            cur = (it.get("currency") or "TRY").upper()
+            if cur != "TRY":
+                rate = float(it.get("rate") or 0)
+                line = line * rate if rate > 0 else 0.0  # kur yoksa TL'ye katılamaz
+            total += line
         except (TypeError, ValueError):
             continue
     return round(total, 2)
@@ -11883,14 +11914,20 @@ class PDFServiceGenerator(PDFContractGenerator):
                     logo_flowable = None
                 break
 
-        # ---- Üst banner ----
+        # ---- Üst banner (ÜSTTE MÜŞTERİ ADI, altında iş emri + araç) ----
         eyebrow_p = Paragraph("SERVİS · İŞ EMRİ / TESLİM FORMU", self.contract_eyebrow_style)
-        title_p = Paragraph(f"<b>{upper_tr(svc.get('order_no') or 'SERVİS KAYDI')}</b>", self.contract_brand_title_style)
         cust = svc.get("customer_name")
+        vehicle_txt = " ".join(x for x in [svc.get("vehicle_brand"), svc.get("vehicle_model")] if x).strip()
+        title_p = Paragraph(f"<b>{upper_tr(cust or svc.get('order_no') or 'SERVİS KAYDI')}</b>", self.contract_brand_title_style)
         left_flowables = [eyebrow_p, title_p]
-        if cust:
+        sub_bits = []
+        if cust and svc.get("order_no"):
+            sub_bits.append(f"İş Emri  ·  <b>{upper_tr(svc['order_no'])}</b>")
+        if vehicle_txt:
+            sub_bits.append(f"Araç  ·  <b>{upper_tr(vehicle_txt)}</b>")
+        if sub_bits:
             left_flowables.append(Spacer(1, 5))
-            left_flowables.append(Paragraph(f"Müşteri  ·  <b>{upper_tr(cust)}</b>", self.contract_subtitle_style))
+            left_flowables.append(Paragraph("   ".join(sub_bits), self.contract_subtitle_style))
 
         def _fmt_date(d):
             if not d:
@@ -11973,12 +12010,21 @@ class PDFServiceGenerator(PDFContractGenerator):
             for i, it in enumerate(items):
                 qty = float(it.get("qty") or 0)
                 unit = float(it.get("unit_price") or 0)
+                cur = (it.get("currency") or "TRY").upper()
+                if cur != "TRY":
+                    sym = "€" if cur == "EUR" else "$"
+                    rate = float(it.get("rate") or 0)
+                    unit_txt = f"{sym} {unit:,.0f}".replace(",", ".")
+                    line_try = qty * unit * rate if rate > 0 else 0
+                else:
+                    unit_txt = fmt(unit)
+                    line_try = qty * unit
                 rows.append([
                     Paragraph(str(i+1), self.table_cell_style),
                     Paragraph(upper_tr(it.get("name") or ""), self.table_cell_style),
                     Paragraph(f"{qty:g}", self.table_cell_right),
-                    Paragraph(fmt(unit), self.table_cell_right),
-                    Paragraph(fmt(qty*unit), self.table_cell_right_bold),
+                    Paragraph(unit_txt, self.table_cell_right),
+                    Paragraph(fmt(line_try), self.table_cell_right_bold),
                 ])
             items_tbl = PDFTable(rows, colWidths=[0.9*cm, 9.6*cm, 1.8*cm, 2.85*cm, 2.85*cm])
             items_tbl.setStyle(TableStyle(tstyles))

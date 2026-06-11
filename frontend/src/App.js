@@ -2251,6 +2251,24 @@ function App() {
     delivered: services.filter((s) => s.status === 'delivered').length,
   };
 
+  // İki servisin tam listedeki yerini değiştir + sırayı kalıcı kaydet (sözleşme kalıbı)
+  const swapServices = async (idA, idB) => {
+    if (!idA || !idB) return;
+    const arr = [...services];
+    const ia = arr.findIndex((s) => s.id === idA);
+    const ib = arr.findIndex((s) => s.id === idB);
+    if (ia < 0 || ib < 0) return;
+    [arr[ia], arr[ib]] = [arr[ib], arr[ia]];
+    setServices(arr); // optimistic
+    try {
+      await axios.post(`${API}/services/reorder`, { ordered_ids: arr.map((s) => s.id) });
+    } catch (e) {
+      console.error('Servis sıralama kaydedilemedi:', e);
+      toast.error('Sıralama kaydedilemedi');
+      loadServices();
+    }
+  };
+
   const loadServices = async () => {
     try {
       const res = await axios.get(`${API}/services`);
@@ -2286,12 +2304,25 @@ function App() {
     }
   };
 
-  // ---- Servis kalem (parça/işlem) yardımcıları ----
-  const serviceItemsTotal = (items) => (items || []).reduce((sum, it) => sum + (parseFloat(it.qty) || 0) * (parseFloat(it.unit_price) || 0), 0);
-  const addServiceItem = () => setServiceForm((f) => ({ ...f, items: [...(f.items || []), { name: '', qty: 1, unit_price: 0 }] }));
+  // ---- Servis kalem (parça/işlem) yardımcıları — ₺/€/$ destekli, toplam ₺ ----
+  const serviceItemLineTRY = (it) => {
+    const line = (parseFloat(it.qty) || 0) * (parseFloat(it.unit_price) || 0);
+    const cur = it.currency || 'TRY';
+    if (cur === 'TRY') return line;
+    const r = parseFloat(it.rate) || parseFloat(exchangeRates?.[cur]) || 0;
+    return line * r;
+  };
+  const serviceItemsTotal = (items) => (items || []).reduce((sum, it) => sum + serviceItemLineTRY(it), 0);
+  const addServiceItem = () => setServiceForm((f) => ({ ...f, items: [...(f.items || []), { name: '', qty: 1, unit_price: 0, currency: 'TRY', rate: '' }] }));
   const updateServiceItem = (idx, field, value) => setServiceForm((f) => {
     const items = [...(f.items || [])];
     items[idx] = { ...items[idx], [field]: value };
+    // Döviz seçilince kuru o anki kurdan sabitle (tahsilatlardaki kural)
+    if (field === 'currency' && value !== 'TRY' && !(parseFloat(items[idx].rate) > 0)) {
+      const live = parseFloat(exchangeRates?.[value]);
+      if (live > 0) items[idx].rate = live.toFixed(2);
+    }
+    if (field === 'currency' && value === 'TRY') items[idx].rate = '';
     return { ...f, items };
   });
   const removeServiceItem = (idx) => setServiceForm((f) => ({ ...f, items: (f.items || []).filter((_, i) => i !== idx) }));
@@ -2403,7 +2434,7 @@ function App() {
       plate: svc.plate || '', is_trailer: !!svc.is_trailer,
       arrival_date: svc.arrival_date || '', delivery_date: svc.delivery_date || '',
       operations: svc.operations || '',
-      items: Array.isArray(svc.items) ? svc.items.map((it) => ({ name: it.name || '', qty: it.qty != null ? it.qty : 1, unit_price: it.unit_price != null ? it.unit_price : 0 })) : [],
+      items: Array.isArray(svc.items) ? svc.items.map((it) => ({ name: it.name || '', qty: it.qty != null ? it.qty : 1, unit_price: it.unit_price != null ? it.unit_price : 0, currency: it.currency || 'TRY', rate: it.rate != null ? String(it.rate) : '' })) : [],
       photos: Array.isArray(svc.photos) ? svc.photos : [],
       notes: svc.notes || '',
       cost: svc.cost != null ? String(svc.cost) : '',
@@ -2427,7 +2458,15 @@ function App() {
     }
     const cleanItems = (serviceForm.items || [])
       .filter((it) => (it.name || '').trim() || parseFloat(it.unit_price) > 0)
-      .map((it) => ({ name: (it.name || '').trim(), qty: parseFloat(it.qty) || 0, unit_price: parseFloat(it.unit_price) || 0 }));
+      .map((it) => {
+        const cur = it.currency || 'TRY';
+        let rate = cur !== 'TRY' && it.rate !== '' && it.rate != null ? parseFloat(it.rate) : null;
+        if (cur !== 'TRY' && !(rate > 0)) {
+          const live = parseFloat(exchangeRates?.[cur]);
+          rate = live > 0 ? parseFloat(live.toFixed(4)) : null; // kur kayıt anında sabitlenir
+        }
+        return { name: (it.name || '').trim(), qty: parseFloat(it.qty) || 0, unit_price: parseFloat(it.unit_price) || 0, currency: cur, rate };
+      });
     const itemsCost = serviceItemsTotal(cleanItems);
     const cleanCollections = (serviceForm.collections || [])
       .filter((c) => c.amount !== '' && c.amount != null && !isNaN(parseFloat(c.amount)))
@@ -10606,7 +10645,44 @@ function App() {
                         </div>
                         <div>
                           <Label>Araç Modeli</Label>
-                          <Input value={serviceForm.vehicle_model} onChange={(e) => setServiceForm({ ...serviceForm, vehicle_model: e.target.value })} placeholder="Transit, Ducato ..." />
+                          {(() => {
+                            // Markaya göre hazır model önerileri; elle yazma her zaman serbest
+                            const MODEL_SUGGESTIONS = {
+                              'MERCEDES': ['Sprinter', 'Vito', 'Marco Polo'],
+                              'VOLKSWAGEN': ['Transporter', 'Crafter', 'Caddy', 'Caravelle'],
+                              'FORD': ['Transit', 'Transit Custom', 'Tourneo'],
+                              'IVECO': ['Daily'],
+                              'MAN': ['TGE'],
+                              'FIAT': ['Ducato', 'Doblo'],
+                              'PEUGEOT': ['Boxer', 'Expert'],
+                              'CITROEN': ['Jumper', 'Jumpy'],
+                              'RENAULT': ['Master', 'Trafic'],
+                            };
+                            const brandKey = (serviceForm.vehicle_brand || '').trim().toLocaleUpperCase('tr-TR');
+                            const sugg = MODEL_SUGGESTIONS[brandKey] || [];
+                            return (
+                              <>
+                                {sugg.length > 0 && (
+                                  <div className="mt-1 mb-1.5 flex flex-wrap gap-1.5">
+                                    {sugg.map((m) => {
+                                      const on = (serviceForm.vehicle_model || '') === m;
+                                      return (
+                                        <button
+                                          key={m}
+                                          type="button"
+                                          onClick={() => setServiceForm({ ...serviceForm, vehicle_model: on ? '' : m })}
+                                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors cursor-pointer ${on ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                                        >
+                                          {m}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                                <Input value={serviceForm.vehicle_model} onChange={(e) => setServiceForm({ ...serviceForm, vehicle_model: e.target.value })} placeholder="Transit, Ducato ..." />
+                              </>
+                            );
+                          })()}
                         </div>
                         <div>
                           <div className="flex items-center justify-between">
@@ -10687,9 +10763,19 @@ function App() {
                                     <input type="number" min="0" step="1" value={it.qty} onChange={(e) => updateServiceItem(idx, 'qty', e.target.value)} className="w-full h-8 px-1 border border-slate-200 rounded text-sm text-center tabular-nums focus:outline-none focus:ring-1 focus:ring-emerald-500" />
                                   </td>
                                   <td className="px-1 py-1.5">
-                                    <input type="number" min="0" step="0.01" value={it.unit_price} onChange={(e) => updateServiceItem(idx, 'unit_price', e.target.value)} className="w-full h-8 px-1 border border-slate-200 rounded text-sm text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                                    <div className="flex items-center gap-1">
+                                      <input type="number" min="0" step="0.01" value={it.unit_price} onChange={(e) => updateServiceItem(idx, 'unit_price', e.target.value)} className="w-full h-8 px-1 border border-slate-200 rounded text-sm text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                                      <select value={it.currency || 'TRY'} onChange={(e) => updateServiceItem(idx, 'currency', e.target.value)} className="h-8 px-0.5 border border-slate-200 rounded text-xs bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-emerald-500" title="Para birimi">
+                                        <option value="TRY">₺</option>
+                                        <option value="EUR">€</option>
+                                        <option value="USD">$</option>
+                                      </select>
+                                      {(it.currency && it.currency !== 'TRY') && (
+                                        <input type="number" min="0" step="0.01" value={it.rate ?? ''} onChange={(e) => updateServiceItem(idx, 'rate', e.target.value)} placeholder="kur" title="1 birim = ? ₺" className="w-14 h-8 px-1 border border-slate-200 rounded text-xs text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                                      )}
+                                    </div>
                                   </td>
-                                  <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-slate-700">₺ {formatPrice((parseFloat(it.qty) || 0) * (parseFloat(it.unit_price) || 0))}</td>
+                                  <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-slate-700">₺ {formatPrice(serviceItemLineTRY(it))}</td>
                                   <td className="px-1 py-1.5 text-center">
                                     <button type="button" onClick={() => removeServiceItem(idx)} className="text-rose-400 hover:text-rose-600" title="Kalemi sil"><Trash2 className="w-4 h-4" /></button>
                                   </td>
@@ -10922,7 +11008,8 @@ function App() {
                         <div className="relative flex items-start justify-between gap-4">
                           <div className="min-w-0">
                             <div className="flex items-center gap-2 text-emerald-300 text-[11px] font-bold uppercase tracking-[0.18em] mb-2"><Wrench className="w-3.5 h-3.5" /> Servis Kaydı{s.order_no ? ` · ${s.order_no}` : ''}</div>
-                            <h2 style={{ fontFamily: "'Fraunces', Georgia, serif" }} className="text-3xl sm:text-4xl font-semibold leading-tight">{vehicle}</h2>
+                            <h2 style={{ fontFamily: "'Fraunces', Georgia, serif" }} className="text-3xl sm:text-4xl font-semibold leading-tight">{s.customer_name || vehicle}</h2>
+                            {s.customer_name && <div className="mt-1 text-white/70 text-sm">{vehicle}</div>}
                             <div className="mt-2 flex flex-wrap items-center gap-2">
                               {isTrailer ? <span className="px-2 py-0.5 bg-amber-400/20 text-amber-100 rounded text-xs font-bold border border-amber-300/30">Çekme Karavan</span> : (s.plate && <span className="px-2 py-0.5 bg-white/10 rounded text-xs font-mono font-bold tracking-wider">{s.plate}</span>)}
                               <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${meta.badge}`}><span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} /> {meta.label}</span>
@@ -11096,7 +11183,7 @@ function App() {
               }
               return (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {filtered.map((s) => {
+                  {filtered.map((s, si) => {
                     const meta = SERVICE_STATUS_META[s.status] || SERVICE_STATUS_META.received;
                     const isTrailer = s.is_trailer || !(s.plate || '').trim();
                     const vehicle = [s.vehicle_brand, s.vehicle_model].filter(Boolean).join(' ') || (isTrailer ? 'Çekme Karavan' : 'Araç belirtilmemiş');
@@ -11122,6 +11209,15 @@ function App() {
                                 s.plate && <div className="inline-block mt-1 px-2 py-0.5 bg-slate-100 rounded text-xs font-mono font-bold tracking-wider text-slate-700">{s.plate}</div>
                               )}
                             </div>
+                          </div>
+                          {/* Sıra düzenleme okları (görünen listede komşusuyla yer değiştirir) */}
+                          <div className="flex flex-col shrink-0 -my-1">
+                            <button type="button" disabled={si === 0} onClick={() => swapServices(s.id, filtered[si - 1]?.id)} title="Yukarı taşı" className="text-slate-300 hover:text-emerald-600 disabled:opacity-30 disabled:hover:text-slate-300">
+                              <ChevronUp className="w-4 h-4" />
+                            </button>
+                            <button type="button" disabled={si === filtered.length - 1} onClick={() => swapServices(s.id, filtered[si + 1]?.id)} title="Aşağı taşı" className="text-slate-300 hover:text-emerald-600 disabled:opacity-30 disabled:hover:text-slate-300">
+                              <ChevronDown className="w-4 h-4" />
+                            </button>
                           </div>
                           <div className="flex flex-col items-end gap-1 shrink-0">
                             <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.badge}`}>
