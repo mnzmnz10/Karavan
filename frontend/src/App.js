@@ -623,7 +623,8 @@ function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [loginForm, setLoginForm] = useState({
     username: '',
-    password: ''
+    password: '',
+    remember_me: true // varsayilan acik: surekli elle giris istenmiyor
   });
   const [loginError, setLoginError] = useState('');
   
@@ -1241,7 +1242,7 @@ function App() {
       if (data.success) {
         console.log('Login successful, setting authenticated state');
         setIsAuthenticated(true);
-        setLoginForm({ username: '', password: '' });
+        setLoginForm({ username: '', password: '', remember_me: true });
         toast.success(data.message);
       } else {
         console.log('Login failed:', data.message);
@@ -5322,6 +5323,15 @@ function App() {
                     className="mt-1"
                   />
                 </div>
+                <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={!!loginForm.remember_me}
+                    onChange={(e) => setLoginForm({ ...loginForm, remember_me: e.target.checked })}
+                    className="accent-emerald-600 w-4 h-4"
+                  />
+                  Beni hatırla (30 gün oturum açık kalır)
+                </label>
                 {loginError && (
                   <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
                     <p className="text-sm text-red-600">{loginError}</p>

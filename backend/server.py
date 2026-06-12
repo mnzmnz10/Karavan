@@ -715,6 +715,7 @@ class ExchangeRate(BaseModel):
 class LoginRequest(BaseModel):
     username: str
     password: str
+    remember_me: bool = False  # işaretliyse oturum 30 gün (değilse 24 saat)
 
 class LoginResponse(BaseModel):
     success: bool
@@ -1041,15 +1042,16 @@ class AuthService:
             return False
         return bool(password_hash) and not password_hash.startswith("$2")
 
-    async def create_session(self, username: str) -> str:
-        """Create session token (Mongo'da kalici)"""
+    async def create_session(self, username: str, hours: int = 24) -> str:
+        """Create session token (Mongo'da kalici). hours: oturum süresi
+        (varsayılan 24 saat; 'beni hatırla' ile 30 gün)."""
         session_token = secrets.token_urlsafe(32)
         now = datetime.now(timezone.utc)
         await db.sessions.insert_one({
             'token': session_token,
             'username': username,
             'created_at': now,
-            'expires_at': now + timedelta(hours=24)  # 24 saat oturum
+            'expires_at': now + timedelta(hours=hours)
         })
         return session_token
 
@@ -7561,9 +7563,10 @@ async def login(login_request: LoginRequest, request: Request, response: JSONRes
             )
             logger.info(f"Upgraded legacy password hash to bcrypt for user {user.get('username')}")
 
-        # Create session
+        # Create session ('beni hatırla' -> 30 gün, değilse 24 saat)
         _login_fail_log.pop(client_ip, None)  # başarılı giriş -> sayaç sıfır
-        session_token = await auth_service.create_session(login_request.username)
+        session_hours = 24 * 30 if login_request.remember_me else 24
+        session_token = await auth_service.create_session(login_request.username, hours=session_hours)
         
         # Set session cookie
         # Token SADECE httpOnly cookie'de taşınır; body'de dönmek XSS/log
@@ -7577,7 +7580,7 @@ async def login(login_request: LoginRequest, request: Request, response: JSONRes
         response.set_cookie(
             key="session_token",
             value=session_token,
-            max_age=86400,  # 24 hours in seconds
+            max_age=session_hours * 3600,  # oturum süresiyle aynı
             httponly=True,
             # Prod (HTTPS, Pi): COOKIE_SECURE=true -> cookie sadece HTTPS'te gider.
             # Lokal HTTP gelistirmede default false.
