@@ -8,7 +8,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { WIRE_PRESETS, COLOR_PALETTE, getWirePreset } from '@/features/wiring/lib/wireTypes';
+import { WIRE_PRESETS, COLOR_PALETTE, getWirePreset, getAllWirePresets, saveCustomWirePreset, deleteCustomWirePreset, getCustomWirePresets } from '@/features/wiring/lib/wireTypes';
 import { Trash2, Upload, ArrowUp, ArrowDown, Plus, RotateCw } from 'lucide-react';
 import { uploadImage, fileUrl, removeBackground } from '@/features/wiring/lib/api';
 import { toast } from 'sonner';
@@ -172,17 +172,10 @@ function ProjectForm({ defaults }) {
 
       <div className="border-t border-[var(--border-structural)] pt-3 space-y-3">
         <div className="panel-title">VARSAYILAN KABLO</div>
-        <Field label="Tip">
-          <Select value={defaults.wirePresetId} onValueChange={(v) => {
-            const p = getWirePreset(v);
-            if (p) store.setWireDefaults({ wirePresetId: v, color: p.color, thickness: p.thickness, style: p.style });
-          }}>
-            <SelectTrigger className="tech-input"><SelectValue /></SelectTrigger>
-            <SelectContent className="wiring-portal">
-              {WIRE_PRESETS.map((w) => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </Field>
+        <WirePresetField
+          value={defaults.wirePresetId}
+          onChange={(p) => store.setWireDefaults({ wirePresetId: p.id, color: p.color, thickness: p.thickness, style: p.style })}
+        />
         <Field label="Renk">
           <ColorPicker value={defaults.color} onChange={(c) => store.setWireDefaults({ color: c })} />
         </Field>
@@ -432,17 +425,10 @@ function WireForm({ wire }) {
   const segColors = wire.segmentColors || {};
   return (
     <div className="space-y-3">
-      <Field label="Kablo Tipi">
-        <Select value={wire.wirePresetId || ''} onValueChange={(v) => {
-          const p = getWirePreset(v);
-          if (p) update({ wirePresetId: v, thickness: p.thickness, style: p.style });
-        }}>
-          <SelectTrigger className="tech-input"><SelectValue placeholder="Tip seç" /></SelectTrigger>
-          <SelectContent className="wiring-portal">
-            {WIRE_PRESETS.map((w) => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      </Field>
+      <WirePresetField
+        value={wire.wirePresetId || ''}
+        onChange={(p) => update({ wirePresetId: p.id, thickness: p.thickness, style: p.style, color: p.color })}
+      />
       <Field label="Renk (Tüm Kablo)">
         <ColorPicker value={wire.color} onChange={(c) => update({ color: c })} />
       </Field>
@@ -509,6 +495,87 @@ function WireForm({ wire }) {
         <Trash2 className="w-3 h-3 mr-1" /> KABLOYU SIL
       </Button>
     </div>
+  );
+}
+
+// Kablo tipi seçici + "Yeni Kablo Tipi" ekleme (yerleşik + kullanıcı özel kablolar)
+function WirePresetField({ value, onChange }) {
+  const [version, setVersion] = React.useState(0);
+  const [adding, setAdding] = React.useState(false);
+  const [form, setForm] = React.useState({ name: '', section: '', thickness: '2.4', style: 'solid', color: '#FF3B30' });
+  const all = React.useMemo(() => getAllWirePresets(), [version]);
+  const customIds = React.useMemo(() => new Set(getCustomWirePresets().map((w) => w.id)), [version]);
+
+  const save = () => {
+    if (!form.name.trim()) { toast.error('Kablo adı girin'); return; }
+    const p = saveCustomWirePreset(form);
+    setVersion((v) => v + 1);
+    setAdding(false);
+    setForm({ name: '', section: '', thickness: '2.4', style: 'solid', color: '#FF3B30' });
+    onChange(p); // yeni eklenen otomatik seçilsin
+    toast.success(`"${p.name}" kablo tipi eklendi`);
+  };
+  const removeCustom = (id, e) => {
+    e.stopPropagation();
+    deleteCustomWirePreset(id);
+    setVersion((v) => v + 1);
+    toast.success('Kablo tipi silindi');
+  };
+
+  return (
+    <Field label="Kablo Tipi">
+      <Select value={value} onValueChange={(v) => {
+        const p = getWirePreset(v);
+        if (p) onChange(p);
+      }}>
+        <SelectTrigger className="tech-input"><SelectValue placeholder="Tip seç" /></SelectTrigger>
+        <SelectContent className="wiring-portal">
+          {all.map((w) => (
+            <SelectItem key={w.id} value={w.id}>
+              <span className="flex items-center gap-2">
+                <span className="inline-block w-3 h-3 rounded-sm border border-black/20" style={{ background: w.color }} />
+                {w.name}{customIds.has(w.id) ? ' ★' : ''}
+              </span>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      {!adding ? (
+        <button type="button" onClick={() => setAdding(true)}
+                className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-[var(--accent-cyan)] hover:underline">
+          <Plus className="w-3 h-3" /> Yeni Kablo Tipi
+        </button>
+      ) : (
+        <div className="mt-2 p-2 rounded border border-[var(--border-structural)] bg-black/10 space-y-2">
+          <Input className="tech-input h-7 text-xs" placeholder="Ad (örn. 6 mm² Solar)" value={form.name}
+                 onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          <div className="grid grid-cols-2 gap-2">
+            <Input className="tech-input h-7 text-xs" type="number" step="0.5" placeholder="Kesit mm²" value={form.section}
+                   onChange={(e) => setForm({ ...form, section: e.target.value })} />
+            <Input className="tech-input h-7 text-xs" type="number" step="0.2" min="1" max="12" placeholder="Kalınlık px" value={form.thickness}
+                   onChange={(e) => setForm({ ...form, thickness: e.target.value })} />
+          </div>
+          <ColorPicker value={form.color} onChange={(c) => setForm({ ...form, color: c })} />
+          <div className="flex gap-2">
+            <Button size="sm" className="h-7 text-xs flex-1" onClick={save}>Ekle</Button>
+            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setAdding(false)}>Vazgeç</Button>
+          </div>
+        </div>
+      )}
+
+      {getCustomWirePresets().length > 0 && (
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {getCustomWirePresets().map((w) => (
+            <span key={w.id} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-black/15 border border-[var(--border-structural)]">
+              <span className="inline-block w-2 h-2 rounded-sm" style={{ background: w.color }} />
+              {w.name}
+              <button type="button" onClick={(e) => removeCustom(w.id, e)} className="text-red-400 hover:text-red-300" title="Sil">×</button>
+            </span>
+          ))}
+        </div>
+      )}
+    </Field>
   );
 }
 

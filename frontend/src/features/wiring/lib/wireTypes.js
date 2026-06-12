@@ -19,9 +19,54 @@ export const WIRE_PRESETS = [
   // TTR
   { id: 'ttr_2x15', name: '2x1.5 TTR', section: 1.5, thickness: 2.4, style: 'solid', color: '#8B4513', desc: 'AC iki damarlı' },
   { id: 'ttr_2x25', name: '2x2.5 TTR', section: 2.5, thickness: 2.8, style: 'solid', color: '#8B4513', desc: 'AC iki damarlı' },
+  // Solar (PV) kablolar — çift izolasyonlu, UV dayanımlı
+  { id: 'solar_4', name: '4 mm² Solar (PV)', section: 4, thickness: 2.8, style: 'solid', color: '#FF3B30', desc: 'Panel hattı' },
+  { id: 'solar_6', name: '6 mm² Solar (PV)', section: 6, thickness: 3.2, style: 'solid', color: '#FF3B30', desc: 'Panel/MPPT hattı' },
+  { id: 'solar_10', name: '10 mm² Solar (PV)', section: 10, thickness: 3.8, style: 'solid', color: '#FF3B30', desc: 'Uzun panel hattı' },
   // Signal
   { id: 'licy_8x05', name: '8x0.5 LiCY sinyal', section: 0.5, thickness: 1.4, style: 'dashed', color: '#FFD600', desc: 'Sinyal/veri' },
 ];
+
+// ---- Kullanıcının elle eklediği kablo tipleri (tarayıcıda kalıcı) ----
+const CUSTOM_WIRES_KEY = 'karavan_wiring_custom_presets';
+
+export function getCustomWirePresets() {
+  try {
+    const raw = localStorage.getItem(CUSTOM_WIRES_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveCustomWirePreset(preset) {
+  const list = getCustomWirePresets();
+  const id = preset.id || `custom_${Date.now()}`;
+  const clean = {
+    id,
+    name: (preset.name || 'Özel Kablo').slice(0, 60),
+    section: parseFloat(preset.section) || 0,
+    thickness: Math.max(1, Math.min(12, parseFloat(preset.thickness) || 2.4)),
+    style: ['solid', 'dashed', 'dotted'].includes(preset.style) ? preset.style : 'solid',
+    color: preset.color || '#FF3B30',
+    desc: (preset.desc || '').slice(0, 80),
+    custom: true,
+  };
+  const next = [...list.filter((w) => w.id !== id), clean];
+  localStorage.setItem(CUSTOM_WIRES_KEY, JSON.stringify(next));
+  return clean;
+}
+
+export function deleteCustomWirePreset(id) {
+  const next = getCustomWirePresets().filter((w) => w.id !== id);
+  localStorage.setItem(CUSTOM_WIRES_KEY, JSON.stringify(next));
+}
+
+// Yerleşik + özel kablo tipleri birlikte
+export function getAllWirePresets() {
+  return [...WIRE_PRESETS, ...getCustomWirePresets()];
+}
 
 // Quick color palette (most common)
 export const COLOR_PALETTE = [
@@ -38,5 +83,5 @@ export const COLOR_PALETTE = [
 ];
 
 export function getWirePreset(id) {
-  return WIRE_PRESETS.find(w => w.id === id);
+  return WIRE_PRESETS.find(w => w.id === id) || getCustomWirePresets().find(w => w.id === id);
 }
