@@ -10905,7 +10905,7 @@ function App() {
                             </div>
                             {/* İndirim: % veya ₺ — biri girilince diğeri otomatik hesaplanır */}
                             <div className="flex items-center justify-between text-sm gap-2">
-                              <span className="text-rose-300 shrink-0">İndirim</span>
+                              <span className="font-bold text-rose-200 shrink-0">İndirim</span>
                               <div className="flex items-center gap-1.5">
                                 <div className="flex items-center gap-1">
                                   <input
@@ -11112,9 +11112,12 @@ function App() {
                             <div className="space-y-2 text-sm">
                               {serviceDiscountTRY(s) > 0 ? (
                                 <>
-                                  <div className="flex justify-between text-white/65"><span>Toplam</span><span className="tabular-nums font-semibold text-white/80">₺ {formatPrice(total + serviceDiscountTRY(s))}</span></div>
-                                  <div className="flex justify-between text-white/65"><span>İndirim{s.discount_percent > 0 ? ` (%${s.discount_percent})` : ''}</span><span className="tabular-nums font-semibold text-rose-300">-₺ {formatPrice(serviceDiscountTRY(s))}</span></div>
-                                  <div className="flex justify-between text-white/65"><span>İndirimli Toplam</span><span className="tabular-nums font-semibold text-white">₺ {formatPrice(total)}</span></div>
+                                  <div className="flex justify-between text-white/65"><span>Toplam</span><span className="tabular-nums font-semibold text-white/70 line-through">₺ {formatPrice(total + serviceDiscountTRY(s))}</span></div>
+                                  <div className="flex justify-between items-center rounded-lg bg-rose-500/25 border border-rose-300/40 px-2.5 py-1.5 -mx-1">
+                                    <span className="font-bold text-rose-200">İndirim{s.discount_percent > 0 ? ` (%${s.discount_percent})` : ''}</span>
+                                    <span className="tabular-nums font-black text-rose-200 text-base">-₺ {formatPrice(serviceDiscountTRY(s))}</span>
+                                  </div>
+                                  <div className="flex justify-between"><span className="font-semibold text-white">İndirimli Toplam</span><span className="tabular-nums font-bold text-white text-base">₺ {formatPrice(total)}</span></div>
                                 </>
                               ) : (
                                 <div className="flex justify-between text-white/65"><span>Toplam</span><span className="tabular-nums font-semibold text-white">₺ {formatPrice(total)}</span></div>

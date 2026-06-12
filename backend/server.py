@@ -11930,7 +11930,7 @@ class PDFServiceGenerator(PDFContractGenerator):
             sub_bits.append(f"Araç  ·  <b>{upper_tr(vehicle_txt)}</b>")
         if sub_bits:
             left_flowables.append(Spacer(1, 5))
-            left_flowables.append(Paragraph("   ".join(sub_bits), self.contract_subtitle_style))
+            left_flowables.append(Paragraph("&nbsp;&nbsp;|&nbsp;&nbsp;".join(sub_bits), self.contract_subtitle_style))
 
         def _fmt_date(d):
             if not d:
@@ -12045,16 +12045,31 @@ class PDFServiceGenerator(PDFContractGenerator):
             discount = min(discount, total)
             pct = svc.get("discount_percent")
             pct_txt = f" (%{pct:g})" if pct else ""
-            disc_row = PDFTable([[
-                Paragraph(f"Toplam: {fmt(total)}", self.gt_sub_style),
-                Paragraph(f"İndirim{pct_txt}: -{fmt(discount)}", self.gt_sub_style),
-            ]], colWidths=[9.0*cm, 9.0*cm])
+            # Beyaz zeminde okunur, BELİRGİN stiller (gt_sub_style lacivert panel
+            # içindi, beyaz üstünde soluk kalıyordu)
+            disc_label_style = ParagraphStyle(
+                'SvcDiscLabel', parent=self.styles['Normal'],
+                fontName=self.get_font_name(is_bold=True), fontSize=11,
+                textColor=colors.HexColor('#1B3A5C'), alignment=TA_LEFT)
+            disc_value_style = ParagraphStyle(
+                'SvcDiscValue', parent=self.styles['Normal'],
+                fontName=self.get_font_name(is_bold=True), fontSize=11,
+                textColor=colors.HexColor('#DC2626'), alignment=TA_RIGHT)
+            disc_row = PDFTable([
+                [Paragraph("Ara Toplam", disc_label_style),
+                 Paragraph(fmt(total), ParagraphStyle('SvcDiscV2', parent=disc_value_style, textColor=colors.HexColor('#1B3A5C')))],
+                [Paragraph(f"İndirim{pct_txt}", disc_value_style),
+                 Paragraph(f"-{fmt(discount)}", disc_value_style)],
+            ], colWidths=[12.0*cm, 6.0*cm])
             disc_row.setStyle(TableStyle([
-                ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#FEF2F2')),
+                ('BOX', (0, 0), (-1, -1), 0.8, colors.HexColor('#FECACA')),
+                ('LINEBELOW', (0, 0), (-1, 0), 0.5, colors.HexColor('#FECACA')),
                 ('LEFTPADDING', (0, 0), (-1, -1), 18), ('RIGHTPADDING', (0, 0), (-1, -1), 18),
-                ('TOPPADDING', (0, 0), (-1, -1), 2), ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                ('TOPPADDING', (0, 0), (-1, -1), 7), ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
             ]))
             story.append(disc_row)
+            story.append(Spacer(1, 6))
             total = total - discount
         total_left = [Paragraph("TOPLAM TUTAR", self.gt_label_style), Paragraph("KDV Hariç", self.gt_sub_style)]
         total_right = [Paragraph(f"<b>{fmt(total)}</b>", self.gt_amount_style)]
