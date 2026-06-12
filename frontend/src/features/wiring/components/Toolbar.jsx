@@ -255,17 +255,19 @@ export default function Toolbar({ canvasSvgRef }) {
           </DialogHeader>
           <div className="space-y-3">
             <div>
-              <Label>Parça Listesi</Label>
+              <Label className="text-slate-200">Parça Listesi</Label>
               <Textarea
                 rows={6}
                 value={aiParts}
                 onChange={(e) => setAiParts(e.target.value)}
                 placeholder={'2x 455W güneş paneli\nMPPT 100/30\n200Ah LiFePO4 akü\n2000W inverter\n12V sigorta kutusu\naydınlatma, su pompası, buzdolabı'}
+                className="bg-white text-slate-900 placeholder:text-slate-400 border-slate-300"
               />
             </div>
             <div>
-              <Label>Ek İstek (opsiyonel)</Label>
-              <Input value={aiNotes} onChange={(e) => setAiNotes(e.target.value)} placeholder="örn. paneller paralel bağlansın, 220V priz hattı olsun" />
+              <Label className="text-slate-200">Ek İstek (opsiyonel)</Label>
+              <Input value={aiNotes} onChange={(e) => setAiNotes(e.target.value)} placeholder="örn. paneller paralel bağlansın, 220V priz hattı olsun"
+                className="bg-white text-slate-900 placeholder:text-slate-400 border-slate-300" />
             </div>
             <Button onClick={onAiGenerate} disabled={aiBusy} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white">
               {aiBusy ? 'Şema üretiliyor... (15-30 sn)' : 'Şemayı Üret'}
