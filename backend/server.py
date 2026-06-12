@@ -9815,6 +9815,130 @@ async def wiring_remove_bg(req: WiringRemoveBgRequest):
     await db.wiring_files.insert_one(doc.copy())
     return {"id": file_id, "url": f"/api/wiring-files/{file_id}"}
 
+# ---- AI ile otomatik şema üretimi ----
+# Frontend cihaz kütüphanesinin (devices.js) kataloğu: templateId + port id'leri.
+# AI SADECE bu katalogdan cihaz/port seçebilir; çıktı backend'de doğrulanır,
+# frontend template'lerden tam cihaz objelerini üretip editöre yükler (kullanıcı düzeltir).
+WIRING_DEVICE_CATALOG = [
+    {"templateId": "solar_panel", "name": "Güneş Paneli", "category": "source", "ports": ["pv_plus", "pv_minus"]},
+    {"templateId": "battery", "name": "Akü (kurşun/AGM/JEL)", "category": "storage", "ports": ["plus", "minus"]},
+    {"templateId": "lifepo4", "name": "LiFePO4 Akü", "category": "storage", "ports": ["plus", "minus", "bms_can"]},
+    {"templateId": "dcdc", "name": "DC-DC Şarj (alternatörden)", "category": "charger", "ports": ["in_plus", "in_minus", "out_plus", "out_minus"]},
+    {"templateId": "ac_dc_charger", "name": "AC-DC Şarj Cihazı", "category": "charger", "ports": ["ac_l", "ac_n", "ac_pe", "out_plus", "out_minus"]},
+    {"templateId": "mppt", "name": "MPPT Solar Şarj", "category": "charger", "ports": ["pv_plus", "pv_minus", "bat_plus", "bat_minus"]},
+    {"templateId": "inverter", "name": "İnverter (DC->AC)", "category": "charger", "ports": ["dc_plus", "dc_minus", "ac_l", "ac_n"]},
+    {"templateId": "inverter_charger", "name": "İnverter/Şarj Kombi", "category": "charger", "ports": ["dc_plus", "dc_minus", "ac_in_l", "ac_in_n", "ac_out_l", "ac_out_n"]},
+    {"templateId": "transfer_switch", "name": "Transfer Switch", "category": "charger", "ports": ["in1_l", "in1_n", "in2_l", "out_l", "out_n"]},
+    {"templateId": "positive_bus", "name": "Pozitif Bara", "category": "bus", "ports": ["p1", "p2", "p3", "p4", "p5"]},
+    {"templateId": "negative_bus", "name": "Negatif Bara", "category": "bus", "ports": ["n1", "n2", "n3", "n4", "n5"]},
+    {"templateId": "fuse_box", "name": "Sigorta Kutusu", "category": "protect", "ports": ["in", "o1", "o2", "o3", "o4"]},
+    {"templateId": "mega_fuse", "name": "MEGA Sigorta (ana hat)", "category": "protect", "ports": ["a", "b"]},
+    {"templateId": "midi_fuse", "name": "MIDI Sigorta", "category": "protect", "ports": ["a", "b"]},
+    {"templateId": "anl_fuse", "name": "ANL Sigorta", "category": "protect", "ports": ["a", "b"]},
+    {"templateId": "breaker", "name": "Otomatik Sigorta (DC)", "category": "protect", "ports": ["a", "b"]},
+    {"templateId": "fuse_box_12v", "name": "12V Sigorta Kutusu (tüketiciler)", "category": "protect", "ports": ["in", "o1", "o2", "o3", "o4", "o5"]},
+    {"templateId": "relay", "name": "Röle", "category": "control", "ports": ["coil_plus", "coil_minus", "common", "no", "nc"]},
+    {"templateId": "switch", "name": "Şalter/Ana Kesici", "category": "control", "ports": ["a", "b"]},
+    {"templateId": "rcd", "name": "Kaçak Akım Rölesi (AC)", "category": "protect", "ports": ["in_l", "in_n", "out_l", "out_n"]},
+    {"templateId": "ac_fuse", "name": "AC Sigorta", "category": "protect", "ports": ["a", "b"]},
+    {"templateId": "outlet", "name": "Priz (220V)", "category": "load", "ports": ["l", "n", "pe"]},
+    {"templateId": "light", "name": "Aydınlatma (12V)", "category": "load", "ports": ["plus", "minus"]},
+    {"templateId": "pump", "name": "Su Pompası", "category": "load", "ports": ["plus", "minus"]},
+    {"templateId": "webasto", "name": "Webasto/Dizel Isıtıcı", "category": "load", "ports": ["plus", "minus", "ctrl"]},
+    {"templateId": "fridge", "name": "Buzdolabı (12V)", "category": "load", "ports": ["plus", "minus"]},
+    {"templateId": "fan", "name": "Fan", "category": "load", "ports": ["plus", "minus"]},
+    {"templateId": "tank_level", "name": "Su Seviye Göstergesi", "category": "sensor", "ports": ["plus", "minus", "sig"]},
+    {"templateId": "float", "name": "Şamandıra", "category": "sensor", "ports": ["a", "b"]},
+    {"templateId": "control_panel", "name": "Kontrol Paneli", "category": "control", "ports": ["plus", "minus", "rs485_a", "rs485_b"]},
+    {"templateId": "ground", "name": "Topraklama", "category": "bus", "ports": ["g"]},
+    {"templateId": "chassis", "name": "Şase Bağlantısı", "category": "bus", "ports": ["c"]},
+]
+
+WIRING_AI_PROMPT = """Sen karavan elektrik tesisatı tasarlayan uzman bir mühendissin.
+Kullanıcının parça listesinden, aşağıdaki CİHAZ KATALOĞUNU kullanarak bir bağlantı şeması üret.
+
+KATALOG (templateId ve geçerli port id'leri — SADECE bunları kullan):
+{catalog}
+
+KURALLAR:
+- Tipik 12V karavan akışı: güneş paneli -> MPPT(pv_plus/pv_minus) -> MPPT(bat_plus/bat_minus) -> sigorta -> akü; akü(+) -> ana sigorta/şalter -> pozitif bara; akü(-) -> negatif bara (veya şase); baradan 12V sigorta kutusu -> tüketiciler (+ uçları sigorta çıkışlarına, - uçları negatif baraya); inverter DC+ baradan sigortalı, DC- negatif baradan; AC tarafı: inverter AC L/N -> AC sigorta/RCD -> prizler.
+- HER pozitif ana hatta sigorta koy (akü-bara, inverter hattı, MPPT-akü hattı).
+- Aynı parçadan birden çok varsa (örn. 2 panel) her biri ayrı cihaz olsun (key'leri farklı).
+- Yerleşim: x,y koordinatları 20'nin katı. Kaynaklar solda/üstte (x 60-260), şarj cihazları ortada (x 320-560), akü/baralar ortada-altta, sigorta kutusu sağ-orta, tüketiciler sağda (x 900+). Cihazlar arası en az yatay 220, dikey 160 boşluk; ÇAKIŞMA OLMASIN. Tuval ~1400x900.
+- Kablo renkleri: pozitif '#FF3B30', negatif '#1C1C1E', AC L '#8B4513', AC N '#0A84FF', PE '#FFCC00'.
+- label alanına kablonun işlevini kısaca yaz (örn. 'Akü ana hat +').
+- Katalogda birebir karşılığı olmayan parçayı en yakın template ile temsil et ve cihaz 'name' alanına kullanıcının parça adını yaz.
+
+SADECE şu JSON şemasıyla yanıt ver:
+{{"devices": [{{"key": "d1", "templateId": "...", "name": "ekranda görünecek ad", "x": 100, "y": 100}}],
+"wires": [{{"from_key": "d1", "from_port": "pv_plus", "to_key": "d2", "to_port": "pv_plus", "color": "#FF3B30", "label": "..."}}],
+"notlar": ["şemayla ilgili kısa uyarılar"]}}"""
+
+
+class WiringAiGenerateRequest(BaseModel):
+    parts: str = Field(min_length=3, max_length=4000)   # parça listesi (serbest metin)
+    notes: Optional[str] = Field(None, max_length=1000)  # ek istek/açıklama
+
+
+@api_router.post("/wiring-ai-generate")
+async def wiring_ai_generate(req: WiringAiGenerateRequest):
+    """Parça listesinden AI ile taslak kablo şeması üret (KAYDETMEZ).
+    Çıktı katalogla doğrulanır; frontend editöre yükler, kullanıcı düzeltir."""
+    if not OPENAI_API_KEY:
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY tanımlı değil.")
+    catalog_txt = "\n".join(
+        f"- {c['templateId']} ({c['name']}, {c['category']}): portlar = {', '.join(c['ports'])}"
+        for c in WIRING_DEVICE_CATALOG
+    )
+    sys_prompt = WIRING_AI_PROMPT.format(catalog=catalog_txt)
+    user_prompt = f"PARÇA LİSTESİ:\n{req.parts}"
+    if req.notes:
+        user_prompt += f"\n\nEK İSTEK: {req.notes}"
+    loop = asyncio.get_event_loop()
+    raw = await loop.run_in_executor(None, lambda: _call_openai_chat(
+        [{"role": "system", "content": sys_prompt}, {"role": "user", "content": user_prompt}],
+        max_tokens=4096, temperature=0.2, json_mode=True
+    ))
+    try:
+        plan = json.loads(raw)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=502, detail="AI yanıtı çözümlenemedi, tekrar deneyin.")
+
+    # ---- Doğrulama: sadece katalogdaki template/port'lar; bozuk wire'lar atılır ----
+    by_tpl = {c["templateId"]: set(c["ports"]) for c in WIRING_DEVICE_CATALOG}
+    devices = []
+    keys = {}
+    for d in (plan.get("devices") or []):
+        tid = d.get("templateId")
+        key = str(d.get("key") or "")
+        if not key or tid not in by_tpl or key in keys:
+            continue
+        try:
+            x = int(d.get("x") or 100); y = int(d.get("y") or 100)
+        except (ValueError, TypeError):
+            x, y = 100, 100
+        keys[key] = tid
+        devices.append({"key": key, "templateId": tid,
+                        "name": str(d.get("name") or "")[:120], "x": max(20, x), "y": max(20, y)})
+    wires = []
+    dropped = 0
+    for w in (plan.get("wires") or []):
+        fk, tk = str(w.get("from_key") or ""), str(w.get("to_key") or "")
+        fp, tp = str(w.get("from_port") or ""), str(w.get("to_port") or "")
+        if fk in keys and tk in keys and fp in by_tpl[keys[fk]] and tp in by_tpl[keys[tk]]:
+            wires.append({"from_key": fk, "from_port": fp, "to_key": tk, "to_port": tp,
+                          "color": str(w.get("color") or "#FF3B30")[:9],
+                          "label": str(w.get("label") or "")[:120]})
+        else:
+            dropped += 1
+    if not devices:
+        raise HTTPException(status_code=422, detail="AI geçerli cihaz üretemedi; parça listesini netleştirip tekrar deneyin.")
+    notlar = [str(n)[:300] for n in (plan.get("notlar") or [])][:10]
+    if dropped:
+        notlar.append(f"{dropped} geçersiz bağlantı atıldı (port/cihaz eşleşmedi).")
+    return {"success": True, "devices": devices, "wires": wires, "notlar": notlar}
+
+
 # ---- PDF export (svglib + reportlab; cairosvg yerine Windows uyumu) ----
 @api_router.post("/wiring-export-pdf")
 async def wiring_export_pdf(req: WiringPdfExportRequest):

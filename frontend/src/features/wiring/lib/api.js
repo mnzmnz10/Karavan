@@ -26,6 +26,12 @@ export async function removeBackground(payload) {
   return data; // { id, url }
 }
 
+// Parça listesinden AI ile taslak şema üret (kaydetmez; editöre yüklenir)
+export async function aiGenerateDiagram(parts, notes) {
+  const { data } = await client.post('/wiring-ai-generate', { parts, notes: notes || null });
+  return data; // { devices, wires, notlar }
+}
+
 export async function listProjects() {
   const { data } = await client.get('/wiring-projects');
   return data;

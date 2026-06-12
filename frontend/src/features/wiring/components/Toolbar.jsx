@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   Save, FolderOpen, FilePlus2, Undo2, Redo2, ZoomIn, ZoomOut, Maximize2,
-  Grid3x3, MoveDiagonal, FileDown, Cable, Hand, MousePointer2, Magnet, FileJson, Folders, AlertTriangle, ScanLine,
+  Grid3x3, MoveDiagonal, FileDown, Cable, Hand, MousePointer2, Magnet, FileJson, Folders, AlertTriangle, ScanLine, Sparkles,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useEditorStore, getPortAbsolute } from '@/features/wiring/store/editorStore';
-import { createProject, updateProject, listProjects, getProject, exportPdf, fileUrl } from '@/features/wiring/lib/api';
+import { createProject, updateProject, listProjects, getProject, exportPdf, fileUrl, aiGenerateDiagram } from '@/features/wiring/lib/api';
 import { toast } from 'sonner';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { aStarRoute, routeWire, pathToSvgD, findPathCrossings } from '@/features/wiring/lib/routing';
@@ -63,6 +63,66 @@ export default function Toolbar({ canvasSvgRef }) {
   const store = useEditorStore();
   const [openLoad, setOpenLoad] = React.useState(false);
   const [openBom, setOpenBom] = React.useState(false);
+  // AI şema üretimi
+  const [openAi, setOpenAi] = React.useState(false);
+  const [aiParts, setAiParts] = React.useState('');
+  const [aiNotes, setAiNotes] = React.useState('');
+  const [aiBusy, setAiBusy] = React.useState(false);
+
+  // AI planını (templateId + bağlantı listesi) editör formatına çevirip yükler.
+  // Cihaz boyut/portları frontend template'lerinden gelir; kullanıcı sonra düzeltir.
+  const applyAiPlan = (plan) => {
+    const uid = (p) => `${p}_${Math.random().toString(36).slice(2, 9)}`;
+    const keyToId = {};
+    const devices = [];
+    for (const d of plan.devices || []) {
+      const tpl = DEVICE_TEMPLATES.find((t) => t.id === d.templateId);
+      if (!tpl) continue;
+      const id = uid('d');
+      keyToId[d.key] = id;
+      devices.push({
+        id, templateId: d.templateId, x: d.x, y: d.y, w: tpl.width, h: tpl.height,
+        rotation: 0, name: d.name || tpl.name, brand: '', model: '', notes: '',
+        ratingValue: '', ratingUnit: '', imageId: null, imageUrl: null,
+        ports: (tpl.ports || []).map((p) => ({ ...p })),
+      });
+    }
+    const wires = [];
+    for (const w of plan.wires || []) {
+      const fromId = keyToId[w.from_key];
+      const toId = keyToId[w.to_key];
+      if (!fromId || !toId) continue;
+      wires.push({
+        id: uid('w'),
+        from: { deviceId: fromId, portId: w.from_port },
+        to: { deviceId: toId, portId: w.to_port },
+        color: w.color || '#FF3B30', thickness: 2.4, style: 'solid',
+        wirePresetId: 'nyaf_25', label: w.label || '', showLabel: true,
+        manualPoints: null, lengthM: '',
+      });
+    }
+    store.loadProject({
+      id: null, name: 'AI Taslak Şema', vehicle_name: '', author: '', description: '',
+      data: { devices, wires, paper: store.paper, orientation: store.orientation },
+    });
+    return { deviceCount: devices.length, wireCount: wires.length };
+  };
+
+  const onAiGenerate = async () => {
+    if (!aiParts.trim()) { toast.error('Parça listesini yazın'); return; }
+    try {
+      setAiBusy(true);
+      const res = await aiGenerateDiagram(aiParts.trim(), aiNotes.trim());
+      const { deviceCount, wireCount } = applyAiPlan(res);
+      setOpenAi(false);
+      toast.success(`Taslak şema yüklendi: ${deviceCount} cihaz, ${wireCount} kablo. Kontrol edip düzeltin, sonra kaydedin.`);
+      (res.notlar || []).forEach((n) => toast.info(n, { duration: 8000 }));
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'AI şema üretilemedi');
+    } finally {
+      setAiBusy(false);
+    }
+  };
 
   const onSave = async () => {
     const payload = store.exportJson();
@@ -180,6 +240,39 @@ export default function Toolbar({ canvasSvgRef }) {
         <input type="file" accept="application/json,.json" className="hidden" onChange={onImportJson} />
       </label>
       <ToolBtn icon={Folders} label="JSON Dışa Aktar" onClick={onExportJson} testid="toolbar-export-json" />
+      <Dialog open={openAi} onOpenChange={setOpenAi}>
+        <DialogTrigger asChild>
+          <button className="tool-btn" title="AI ile Şema Üret" data-testid="toolbar-ai" style={{ color: '#34d399' }}>
+            <Sparkles size={16} strokeWidth={1.5} />
+          </button>
+        </DialogTrigger>
+        <DialogContent className="wiring-root max-w-lg">
+          <DialogHeader>
+            <DialogTitle>AI ile Taslak Şema</DialogTitle>
+            <DialogDescription>
+              Parça listesini yaz — ChatGPT bağlantıları kurup taslak şema üretir. Sonra editörde düzeltip kaydedersin (mevcut tuval değişir).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label>Parça Listesi</Label>
+              <Textarea
+                rows={6}
+                value={aiParts}
+                onChange={(e) => setAiParts(e.target.value)}
+                placeholder={'2x 455W güneş paneli\nMPPT 100/30\n200Ah LiFePO4 akü\n2000W inverter\n12V sigorta kutusu\naydınlatma, su pompası, buzdolabı'}
+              />
+            </div>
+            <div>
+              <Label>Ek İstek (opsiyonel)</Label>
+              <Input value={aiNotes} onChange={(e) => setAiNotes(e.target.value)} placeholder="örn. paneller paralel bağlansın, 220V priz hattı olsun" />
+            </div>
+            <Button onClick={onAiGenerate} disabled={aiBusy} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white">
+              {aiBusy ? 'Şema üretiliyor... (15-30 sn)' : 'Şemayı Üret'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Separator orientation="vertical" className="h-6 bg-[var(--border-structural)] mx-1" />
 
