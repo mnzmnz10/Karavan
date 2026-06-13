@@ -1216,12 +1216,7 @@ function App() {
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoginError('');
-    
-    console.log('Login attempt started with:', loginForm.username);
-    
     try {
-      console.log('Making request to:', `${API}/auth/login`);
-      
       const response = await fetch(`${API}/auth/login`, {
         method: 'POST',
         headers: {
@@ -1230,31 +1225,24 @@ function App() {
         credentials: 'include',
         body: JSON.stringify(loginForm)
       });
-      
-      console.log('Response status:', response.status);
-      console.log('Response headers:', Object.fromEntries(response.headers.entries()));
-      
+
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        throw new Error(`HTTP ${response.status}`);
       }
       
       const data = await response.json();
-      console.log('Response data:', data);
-      
+
       if (data.success) {
-        console.log('Login successful, setting authenticated state');
+        // Formu TEMİZLEME — login kartı isAuthenticated ile zaten unmount olur.
+        // Temizlersek tarayıcı submit edilen değerleri göremez ve "şifreyi
+        // kaydet?" sormaz; dokunmayınca tarayıcı kaydeder + sonra otomatik doldurur.
         setIsAuthenticated(true);
-        setLoginForm({ username: '', password: '', remember_me: true });
         toast.success(data.message);
       } else {
-        console.log('Login failed:', data.message);
         setLoginError(data.message || 'Giriş başarısız');
       }
     } catch (error) {
-      console.error('Login error details:', error);
-      console.error('Error message:', error.message);
-      console.error('Error stack:', error.stack);
-      setLoginError(`Giriş sırasında bir hata oluştu: ${error.message}`);
+      setLoginError('Giriş yapılamadı — kullanıcı adı/şifre hatalı olabilir.');
     }
   };
 
@@ -3660,12 +3648,13 @@ function App() {
 
   // Search and category filter effects - OPTİMİZE EDİLDİ
   React.useEffect(() => {
+    if (!isAuthenticated) return; // login olmadan ürün çekme (401 + boş hata önlenir)
     const delayedSearch = setTimeout(() => {
       loadProducts(1, true); // Reset to page 1 when searching/filtering
     }, searchQuery.length >= 2 ? 200 : 400); // HIZLANDIRILDI: Daha hızlı tepki
 
     return () => clearTimeout(delayedSearch);
-  }, [searchQuery, selectedCategory, selectedCompanyFilter]);
+  }, [searchQuery, selectedCategory, selectedCompanyFilter, isAuthenticated]);
 
   // Category dialog search effect - OPTİMİZE EDİLDİ
   React.useEffect(() => {
