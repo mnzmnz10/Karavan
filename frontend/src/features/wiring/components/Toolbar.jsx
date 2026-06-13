@@ -16,6 +16,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { aStarRoute, routeWire, pathToSvgD, findPathCrossings } from '@/features/wiring/lib/routing';
 import { DEVICE_TEMPLATES } from '@/features/wiring/lib/devices';
 import { getWirePreset } from '@/features/wiring/lib/wireTypes';
+import { getDeviceIllustration } from '@/features/wiring/lib/deviceIllustrations';
 import { checkWireSafety, computeNets, netlistToCsv } from '@/features/wiring/lib/electricalCheck';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 
@@ -683,22 +684,25 @@ function serializeCanvasSvg(store, logoDataUrl = null, imageMap = {}) {
     const tpl = getTpl(d.templateId);
     const accent = tpl?.color || '#00E5FF';
     const imgUrl = d.imageId ? imageMap[d.imageId] : null;
+    const illus = (!imgUrl && d.useIllustration !== false) ? getDeviceIllustration(d.templateId, d.w, d.h) : null;
     svg += `<g transform="translate(${d.x} ${d.y}) rotate(${d.rotation || 0} ${d.w / 2} ${d.h / 2})">`;
-    svg += `<rect x="0" y="0" width="${d.w}" height="${d.h}" fill="#FFFFFF" stroke="#333" stroke-width="1" />`;
-    svg += `<rect x="0" y="0" width="${d.w}" height="3" fill="${accent}" />`;
-    // Embed uploaded device photo (if any)
-    if (imgUrl) {
-      const imgX = 4, imgY = 8;
-      const imgW = d.w - 8;
-      const imgH = d.h - 30;
-      svg += `<image x="${imgX}" y="${imgY}" width="${imgW}" height="${imgH}" preserveAspectRatio="xMidYMid meet" xlink:href="${imgUrl}" />`;
+    if (illus) {
+      // Hazır illüstrasyon (kendi gövdesini çizer; çerçeve/accent yok)
+      svg += illus;
+    } else {
+      svg += `<rect x="0" y="0" width="${d.w}" height="${d.h}" fill="#FFFFFF" stroke="#333" stroke-width="1" />`;
+      svg += `<rect x="0" y="0" width="${d.w}" height="3" fill="${accent}" />`;
+      if (imgUrl) {
+        svg += `<image x="4" y="8" width="${d.w - 8}" height="${d.h - 30}" preserveAspectRatio="xMidYMid meet" xlink:href="${imgUrl}" />`;
+      }
+      if (d.ratingValue) {
+        svg += `<text x="${d.w / 2}" y="${d.h / 2 - 8}" text-anchor="middle" font-size="10" font-family="${monoFamily}" fill="#000" font-weight="bold">${escape(d.ratingValue)} ${escape(d.ratingUnit || '')}</text>`;
+      }
     }
-    svg += `<text x="${d.w / 2}" y="${d.h - 8}" text-anchor="middle" font-size="11" font-family="${monoFamily}" fill="#000">${escape(d.name)}</text>`;
-    if (d.brand || d.model) {
+    // İsim: illüstrasyonlu cihazda altta dış, kutuda iç
+    svg += `<text x="${d.w / 2}" y="${illus ? d.h + 13 : d.h - 8}" text-anchor="middle" font-size="11" font-family="${monoFamily}" fill="#000">${escape(d.name)}</text>`;
+    if ((d.brand || d.model) && !illus) {
       svg += `<text x="${d.w / 2}" y="${d.h / 2 + 4}" text-anchor="middle" font-size="9" font-family="${monoFamily}" fill="#555">${escape([d.brand, d.model].filter(Boolean).join(' / '))}</text>`;
-    }
-    if (d.ratingValue) {
-      svg += `<text x="${d.w / 2}" y="${d.h / 2 - 8}" text-anchor="middle" font-size="10" font-family="${monoFamily}" fill="#000" font-weight="bold">${escape(d.ratingValue)} ${escape(d.ratingUnit || '')}</text>`;
     }
     for (const port of d.ports) {
       const abs = getPortAbsolute(d, port);

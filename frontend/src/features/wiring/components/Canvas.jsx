@@ -3,6 +3,7 @@ import { useEditorStore, getPortAbsolute } from '@/features/wiring/store/editorS
 import { routeWire, aStarRoute, pathToSvgD, findPathCrossings, exitPoint } from '@/features/wiring/lib/routing';
 import { getDeviceTemplate } from '@/features/wiring/lib/devices';
 import { getWirePreset } from '@/features/wiring/lib/wireTypes';
+import { getDeviceIllustration } from '@/features/wiring/lib/deviceIllustrations';
 import { fileUrl } from '@/features/wiring/lib/api';
 
 function getWireDisplayLabel(wire) {
@@ -656,6 +657,11 @@ function DeviceSvg({ device, selected, onMouseDown, onPortMouseDown, onCornerMou
   const tpl = getDeviceTemplate(device.templateId);
   const Icon = tpl?.icon;
   const accent = tpl?.color || '#00E5FF';
+  // Yüklü görsel YOKSA ve cihaz için hazır illüstrasyon VARSA onu kullan (Victron tarzı)
+  const hasImage = device.imageId || device.imageUrl;
+  const illustration = (!hasImage && device.useIllustration !== false)
+    ? getDeviceIllustration(device.templateId, device.w, device.h)
+    : null;
   return (
     <g
       className={`device-node ${selected ? 'selected' : ''}`}
@@ -663,6 +669,13 @@ function DeviceSvg({ device, selected, onMouseDown, onPortMouseDown, onCornerMou
       onMouseDown={onMouseDown}
       data-testid={`canvas-device-${device.id}`}
     >
+      {illustration ? (
+        // Hazır çizim: çerçeve/ikon yerine illüstrasyon (seçiliyse ince vurgu)
+        <g dangerouslySetInnerHTML={{ __html:
+          illustration + (selected ? `<rect x="1" y="1" width="${device.w - 2}" height="${device.h - 2}" rx="6" fill="none" stroke="#FFD600" stroke-width="2"/>` : '')
+        }} pointerEvents="none" />
+      ) : (
+      <>
       <rect
         className="device-frame"
         x={0} y={0} width={device.w} height={device.h}
@@ -704,13 +717,15 @@ function DeviceSvg({ device, selected, onMouseDown, onPortMouseDown, onCornerMou
           </foreignObject>
         </g>
       ) : null}
+      </>
+      )}
 
-      {/* Device name */}
-      <text x={device.w / 2} y={device.h - 8} textAnchor="middle" fill="#F8F9FA" fontSize="10" fontFamily="JetBrains Mono, monospace">
+      {/* Device name — illüstrasyonlu cihazda altta dış etiket, kutuda iç */}
+      <text x={device.w / 2} y={illustration ? device.h + 14 : device.h - 8} textAnchor="middle" fill="#F8F9FA" fontSize="10" fontFamily="JetBrains Mono, monospace" fontWeight={illustration ? 'bold' : 'normal'}>
         {device.name}
       </text>
       {device.brand || device.model ? (
-        <text x={device.w / 2} y={device.h + 12} textAnchor="middle" fill="#8B949E" fontSize="9" fontFamily="JetBrains Mono, monospace">
+        <text x={device.w / 2} y={device.h + (illustration ? 28 : 12)} textAnchor="middle" fill="#8B949E" fontSize="9" fontFamily="JetBrains Mono, monospace">
           {[device.brand, device.model].filter(Boolean).join(' / ')}
         </text>
       ) : null}
