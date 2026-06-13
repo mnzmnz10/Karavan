@@ -14,6 +14,7 @@ const initialState = () => ({
 
   devices: [],
   wires: [],
+  groups: [], // bölge kutuları: { id, title, x, y, w, h, color }
 
   zoom: 1,
   panX: 0,
@@ -47,7 +48,7 @@ export const useEditorStore = create((set, get) => ({
 
   // ===== History =====
   pushHistory: () => set((s) => {
-    const snap = JSON.parse(JSON.stringify({ devices: s.devices, wires: s.wires }));
+    const snap = JSON.parse(JSON.stringify({ devices: s.devices, wires: s.wires, groups: s.groups }));
     // Değişiklik yoksa (örn. taşımadan tıklama) tekrar kaydetme — history şişmesin.
     const last = s.history[s.historyIndex];
     if (last && JSON.stringify(last) === JSON.stringify(snap)) return {};
@@ -60,13 +61,13 @@ export const useEditorStore = create((set, get) => ({
     if (s.historyIndex <= 0) return {};
     const idx = s.historyIndex - 1;
     const snap = s.history[idx];
-    return { devices: JSON.parse(JSON.stringify(snap.devices)), wires: JSON.parse(JSON.stringify(snap.wires)), historyIndex: idx, selectedId: null, selectedType: null };
+    return { devices: JSON.parse(JSON.stringify(snap.devices)), wires: JSON.parse(JSON.stringify(snap.wires)), groups: JSON.parse(JSON.stringify(snap.groups || [])), historyIndex: idx, selectedId: null, selectedType: null };
   }),
   redo: () => set((s) => {
     if (s.historyIndex >= s.history.length - 1) return {};
     const idx = s.historyIndex + 1;
     const snap = s.history[idx];
-    return { devices: JSON.parse(JSON.stringify(snap.devices)), wires: JSON.parse(JSON.stringify(snap.wires)), historyIndex: idx, selectedId: null, selectedType: null };
+    return { devices: JSON.parse(JSON.stringify(snap.devices)), wires: JSON.parse(JSON.stringify(snap.wires)), groups: JSON.parse(JSON.stringify(snap.groups || [])), historyIndex: idx, selectedId: null, selectedType: null };
   }),
 
   // ===== Project =====
@@ -82,11 +83,12 @@ export const useEditorStore = create((set, get) => ({
       description: proj.description || '',
       devices: data.devices || [],
       wires: data.wires || [],
+      groups: data.groups || [],
       paper: data.paper || 'A4',
       orientation: data.orientation || 'landscape',
       logoId: data.logoId || null,
       routingMode: data.routingMode || 'astar',
-      history: [{ devices: data.devices || [], wires: data.wires || [] }],
+      history: [{ devices: data.devices || [], wires: data.wires || [], groups: data.groups || [] }],
       historyIndex: 0,
     };
   }),
@@ -97,10 +99,10 @@ export const useEditorStore = create((set, get) => ({
       vehicle_name: s.vehicleName,
       author: s.author,
       description: s.description,
-      data: { devices: s.devices, wires: s.wires, paper: s.paper, orientation: s.orientation, logoId: s.logoId, routingMode: s.routingMode },
+      data: { devices: s.devices, wires: s.wires, groups: s.groups, paper: s.paper, orientation: s.orientation, logoId: s.logoId, routingMode: s.routingMode },
     };
   },
-  newProject: () => set(() => ({ ...initialState(), history: [{ devices: [], wires: [] }], historyIndex: 0 })),
+  newProject: () => set(() => ({ ...initialState(), history: [{ devices: [], wires: [], groups: [] }], historyIndex: 0 })),
 
   // ===== Devices =====
   addDevice: (templateId, x, y) => {
@@ -278,6 +280,23 @@ export const useEditorStore = create((set, get) => ({
         y: Math.round(d.y / grid) * grid,
       })),
     }));
+  },
+
+  // ===== Groups (bölge kutuları) =====
+  addGroup: (x = 80, y = 80) => {
+    get().pushHistory();
+    const group = { id: uid('g'), title: 'YENİ BÖLGE', x, y, w: 320, h: 240, color: '#0A84FF' };
+    set((s) => ({ groups: [...s.groups, group], selectedId: group.id, selectedType: 'group' }));
+  },
+  updateGroup: (id, patch) => set((s) => ({
+    groups: s.groups.map((g) => (g.id === id ? { ...g, ...patch } : g)),
+  })),
+  moveGroup: (id, x, y) => set((s) => ({
+    groups: s.groups.map((g) => (g.id === id ? { ...g, x, y } : g)),
+  })),
+  removeGroup: (id) => {
+    get().pushHistory();
+    set((s) => ({ groups: s.groups.filter((g) => g.id !== id), selectedId: null, selectedType: null }));
   },
 
   // ===== Clipboard =====

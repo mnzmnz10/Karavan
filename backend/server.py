@@ -9869,8 +9869,13 @@ KURALLAR:
 - label alanına kablonun işlevini kısaca yaz (örn. 'Akü ana hat +').
 - Katalogda birebir karşılığı olmayan parçayı en yakın template ile temsil et ve cihaz 'name' alanına kullanıcının parça adını yaz.
 
+- HER cihaza bir "zone" (bölge) etiketi ver — Victron tarzı gruplama: "Solar Sistem",
+  "Dağıtım", "İnverter/Şarj Sistemi", "Kontrol Sistemi", "Akü", "12V Tüketiciler",
+  "AC Tüketiciler". Aynı zone'daki cihazları yan yana/yakın konumlandır (zone'lar
+  arası boşluk bırak) ki bölge kutuları üst üste binmesin.
+
 SADECE şu JSON şemasıyla yanıt ver:
-{{"devices": [{{"key": "d1", "templateId": "...", "name": "ekranda görünecek ad", "x": 100, "y": 100}}],
+{{"devices": [{{"key": "d1", "templateId": "...", "name": "ekranda görünecek ad", "x": 100, "y": 100, "zone": "Solar Sistem"}}],
 "wires": [{{"from_key": "d1", "from_port": "pv_plus", "to_key": "d2", "to_port": "pv_plus", "color": "#FF3B30", "label": "..."}}],
 "notlar": ["şemayla ilgili kısa uyarılar"]}}"""
 
@@ -9919,7 +9924,8 @@ async def wiring_ai_generate(req: WiringAiGenerateRequest):
             x, y = 100, 100
         keys[key] = tid
         devices.append({"key": key, "templateId": tid,
-                        "name": str(d.get("name") or "")[:120], "x": max(20, x), "y": max(20, y)})
+                        "name": str(d.get("name") or "")[:120], "x": max(20, x), "y": max(20, y),
+                        "zone": str(d.get("zone") or "")[:60]})
     wires = []
     dropped = 0
     for w in (plan.get("wires") or []):

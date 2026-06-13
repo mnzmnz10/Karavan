@@ -32,7 +32,7 @@ function Field({ label, children, testid }) {
 
 export default function PropertiesPanel() {
   const store = useEditorStore();
-  const { selectedId, selectedType, devices, wires, pendingWireDefaults } = store;
+  const { selectedId, selectedType, devices, wires, groups, pendingWireDefaults } = store;
 
   let body = null;
   if (selectedType === 'device' && selectedId) {
@@ -41,6 +41,9 @@ export default function PropertiesPanel() {
   } else if (selectedType === 'wire' && selectedId) {
     const wire = wires.find((w) => w.id === selectedId);
     if (wire) body = <WireForm wire={wire} />;
+  } else if (selectedType === 'group' && selectedId) {
+    const group = (groups || []).find((g) => g.id === selectedId);
+    if (group) body = <GroupForm group={group} />;
   } else {
     body = <ProjectForm defaults={pendingWireDefaults} />;
   }
@@ -52,7 +55,7 @@ export default function PropertiesPanel() {
     >
       <div className="px-3 py-2 border-b border-[var(--border-structural)] flex items-center justify-between">
         <div className="panel-title">
-          {selectedType === 'device' ? 'CIHAZ ÖZELLIKLERI' : selectedType === 'wire' ? 'KABLO ÖZELLIKLERI' : 'PROJE BILGILERI'}
+          {selectedType === 'device' ? 'CIHAZ ÖZELLIKLERI' : selectedType === 'wire' ? 'KABLO ÖZELLIKLERI' : selectedType === 'group' ? 'BÖLGE ÖZELLIKLERI' : 'PROJE BILGILERI'}
         </div>
       </div>
       <ScrollArea className="flex-1">
@@ -493,6 +496,40 @@ function WireForm({ wire }) {
       <Button variant="ghost" size="sm" className="w-full h-8 rounded-none text-[var(--accent-danger)] hover:bg-[var(--bg-hover)]"
               onClick={() => store.removeWire(wire.id)} data-testid="delete-wire-btn">
         <Trash2 className="w-3 h-3 mr-1" /> KABLOYU SIL
+      </Button>
+    </div>
+  );
+}
+
+function GroupForm({ group }) {
+  const store = useEditorStore();
+  const GROUP_COLORS = ['#0A84FF', '#00C853', '#FF9500', '#FF3B30', '#AF52DE', '#5AC8FA', '#8E8E93', '#FFD600'];
+  return (
+    <div className="space-y-3">
+      <Field label="Bölge Başlığı">
+        <Input className="tech-input" value={group.title}
+               onChange={(e) => store.updateGroup(group.id, { title: e.target.value })}
+               placeholder="örn. SOLAR SİSTEM" />
+      </Field>
+      <Field label="Renk">
+        <div className="grid grid-cols-8 gap-1">
+          {GROUP_COLORS.map((c) => (
+            <button key={c} type="button" onClick={() => store.updateGroup(group.id, { color: c })}
+                    className="h-6 border" style={{ background: c, borderColor: group.color === c ? '#FFF' : 'transparent' }} />
+          ))}
+        </div>
+      </Field>
+      <div className="grid grid-cols-2 gap-2">
+        <Field label="Genişlik"><Input className="tech-input" type="number" value={Math.round(group.w)}
+          onChange={(e) => store.updateGroup(group.id, { w: Math.max(120, parseInt(e.target.value) || 120) })} /></Field>
+        <Field label="Yükseklik"><Input className="tech-input" type="number" value={Math.round(group.h)}
+          onChange={(e) => store.updateGroup(group.id, { h: Math.max(90, parseInt(e.target.value) || 90) })} /></Field>
+      </div>
+      <div className="text-[10px] text-[var(--text-tertiary)] font-mono">
+        Başlık şeridinden sürükle, köşelerden boyutlandır. Cihazlar bölgenin üstüne serbestçe yerleştirilir.
+      </div>
+      <Button variant="destructive" size="sm" className="w-full h-8 text-xs" onClick={() => store.removeGroup(group.id)}>
+        <Trash2 className="w-3 h-3 mr-1" /> BÖLGEYİ SİL
       </Button>
     </div>
   );

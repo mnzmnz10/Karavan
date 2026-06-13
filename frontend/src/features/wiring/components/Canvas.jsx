@@ -22,7 +22,7 @@ function paperSize(paper, orientation) {
 const CanvasInner = React.forwardRef(function CanvasInner(_, ref) {
   const store = useEditorStore();
   const {
-    devices, wires, zoom, panX, panY, showGrid, gridSize, snapToGrid,
+    devices, wires, groups, zoom, panX, panY, showGrid, gridSize, snapToGrid,
     tool, wireDrawing, selectedId, selectedType, showLabels, showBridges,
     paper, orientation, multiSelect, routingMode,
   } = store;
@@ -38,6 +38,8 @@ const CanvasInner = React.forwardRef(function CanvasInner(_, ref) {
   const [selRect, setSelRect] = useState(null);
   const [dragMulti, setDragMulti] = useState(null);
   const [resizeDevice, setResizeDevice] = useState(null);
+  const [dragGroup, setDragGroup] = useState(null);
+  const [resizeGroup, setResizeGroup] = useState(null);
 
   React.useImperativeHandle(ref, () => ({
     svgRef,
@@ -47,6 +49,10 @@ const CanvasInner = React.forwardRef(function CanvasInner(_, ref) {
       for (const d of devices) {
         minX = Math.min(minX, d.x); minY = Math.min(minY, d.y);
         maxX = Math.max(maxX, d.x + d.w); maxY = Math.max(maxY, d.y + d.h);
+      }
+      for (const g of (store.groups || [])) {
+        minX = Math.min(minX, g.x); minY = Math.min(minY, g.y);
+        maxX = Math.max(maxX, g.x + g.w); maxY = Math.max(maxY, g.y + g.h);
       }
       const pad = 80;
       minX -= pad; minY -= pad; maxX += pad; maxY += pad;
@@ -214,6 +220,28 @@ const CanvasInner = React.forwardRef(function CanvasInner(_, ref) {
       setDragMulti({ ...dragMulti, lastX: dragMulti.lastX + dx, lastY: dragMulti.lastY + dy });
       return;
     }
+    if (dragGroup) {
+      let nx = x - dragGroup.offsetX;
+      let ny = y - dragGroup.offsetY;
+      if (snapToGrid) { nx = Math.round(nx / gridSize) * gridSize; ny = Math.round(ny / gridSize) * gridSize; }
+      store.moveGroup(dragGroup.id, nx, ny);
+      return;
+    }
+    if (resizeGroup) {
+      const r = resizeGroup;
+      const minW = 120, minH = 90;
+      let nx = r.origX, ny = r.origY, nw = r.origW, nh = r.origH;
+      if (r.corner.includes('e')) nw = Math.max(minW, x - r.origX);
+      if (r.corner.includes('s')) nh = Math.max(minH, y - r.origY);
+      if (r.corner.includes('w')) { const newX = Math.min(x, r.origX + r.origW - minW); nw = r.origW + (r.origX - newX); nx = newX; }
+      if (r.corner.includes('n')) { const newY = Math.min(y, r.origY + r.origH - minH); nh = r.origH + (r.origY - newY); ny = newY; }
+      if (snapToGrid) {
+        nx = Math.round(nx / gridSize) * gridSize; ny = Math.round(ny / gridSize) * gridSize;
+        nw = Math.max(minW, Math.round(nw / gridSize) * gridSize); nh = Math.max(minH, Math.round(nh / gridSize) * gridSize);
+      }
+      store.updateGroup(r.id, { x: nx, y: ny, w: nw, h: nh });
+      return;
+    }
     if (resizeDevice) {
       const r = resizeDevice;
       const minW = 40, minH = 30;
@@ -279,7 +307,7 @@ const CanvasInner = React.forwardRef(function CanvasInner(_, ref) {
 
   const handleMouseUp = () => {
     // Bir sürükleme/boyutlandırma bittiyse durumu history'e yaz (taşıma artık geri alınabilir).
-    const wasManipulating = dragDevice || dragMulti || draggingWirePoint || dragLabel || resizeDevice;
+    const wasManipulating = dragDevice || dragMulti || draggingWirePoint || dragLabel || resizeDevice || dragGroup || resizeGroup;
     if (selRect) {
       // pick devices whose bbox intersects rect
       const ids = devices.filter((d) =>
@@ -293,6 +321,8 @@ const CanvasInner = React.forwardRef(function CanvasInner(_, ref) {
     if (dragDevice) setDragDevice(null);
     if (dragMulti) setDragMulti(null);
     if (resizeDevice) setResizeDevice(null);
+    if (dragGroup) setDragGroup(null);
+    if (resizeGroup) setResizeGroup(null);
     if (draggingWirePoint) setDraggingWirePoint(null);
     if (dragLabel) setDragLabel(null);
     if (wasManipulating) store.pushHistory();
@@ -464,6 +494,29 @@ const CanvasInner = React.forwardRef(function CanvasInner(_, ref) {
             <line x1={-5000} y1={alignGuides.hy} x2={5000} y2={alignGuides.hy} stroke="#FFD600" strokeWidth={1 / zoom} strokeDasharray={`${4 / zoom} ${4 / zoom}`} pointerEvents="none" />
           )}
 
+          {/* Bölge grupları (en arkada — cihaz/kabloların altında) */}
+          <g>
+            {groups.map((g) => (
+              <GroupSvg
+                key={g.id}
+                group={g}
+                selected={selectedId === g.id && selectedType === 'group'}
+                zoom={zoom}
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                  store.select(g.id, 'group');
+                  const { x, y } = screenToCanvas(e.clientX, e.clientY);
+                  setDragGroup({ id: g.id, offsetX: x - g.x, offsetY: y - g.y });
+                }}
+                onCornerMouseDown={(e, corner) => {
+                  e.stopPropagation();
+                  store.select(g.id, 'group');
+                  setResizeGroup({ id: g.id, corner, origX: g.x, origY: g.y, origW: g.w, origH: g.h });
+                }}
+              />
+            ))}
+          </g>
+
           {/* Wires */}
           <g>
             {wirePaths.map((w) => (
@@ -563,6 +616,41 @@ const CanvasInner = React.forwardRef(function CanvasInner(_, ref) {
     </div>
   );
 });
+
+// Bölge kutusu: başlıklı yarı-saydam container (cihazların ARKASINDA).
+function GroupSvg({ group, selected, zoom, onMouseDown, onCornerMouseDown }) {
+  const { x, y, w, h, color, title } = group;
+  const corners = [
+    { c: 'nw', cx: x, cy: y }, { c: 'ne', cx: x + w, cy: y },
+    { c: 'sw', cx: x, cy: y + h }, { c: 'se', cx: x + w, cy: y + h },
+  ];
+  const hs = 10 / zoom;
+  const headerH = 30;
+  return (
+    <g>
+      {/* Gövde — sadece kenar+başlık tıklanabilir; içi cihazları engellemez */}
+      <rect x={x} y={y} width={w} height={h} rx={10}
+            fill={color} fillOpacity={0.05}
+            stroke={selected ? '#FFD600' : color} strokeOpacity={selected ? 1 : 0.5}
+            strokeWidth={(selected ? 2 : 1.5) / zoom} pointerEvents="none" />
+      {/* Başlık şeridi (tıklanabilir = taşı) */}
+      <g onMouseDown={onMouseDown} style={{ cursor: 'move' }}>
+        <rect x={x} y={y} width={w} height={headerH} rx={10} fill={color} fillOpacity={0.18} />
+        <rect x={x} y={y + headerH - 10} width={w} height={10} fill={color} fillOpacity={0.18} />
+        <text x={x + 12} y={y + 20} fill={color} fontSize={14} fontWeight="700"
+              style={{ letterSpacing: '0.08em', userSelect: 'none' }}>
+          {(title || '').toUpperCase()}
+        </text>
+      </g>
+      {selected && corners.map((cn) => (
+        <rect key={cn.c} x={cn.cx - hs / 2} y={cn.cy - hs / 2} width={hs} height={hs}
+              fill="#FFD600" stroke="#1a1a1a" strokeWidth={1 / zoom}
+              style={{ cursor: `${cn.c}-resize` }}
+              onMouseDown={(e) => onCornerMouseDown(e, cn.c)} />
+      ))}
+    </g>
+  );
+}
 
 function DeviceSvg({ device, selected, onMouseDown, onPortMouseDown, onCornerMouseDown, wireDrawingActive }) {
   const tpl = getDeviceTemplate(device.templateId);

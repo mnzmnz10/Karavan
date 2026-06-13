@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   Save, FolderOpen, FilePlus2, Undo2, Redo2, ZoomIn, ZoomOut, Maximize2,
-  Grid3x3, MoveDiagonal, FileDown, Cable, Hand, MousePointer2, Magnet, FileJson, Folders, AlertTriangle, ScanLine, Sparkles,
+  Grid3x3, MoveDiagonal, FileDown, Cable, Hand, MousePointer2, Magnet, FileJson, Folders, AlertTriangle, ScanLine, Sparkles, Group,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -85,7 +85,7 @@ export default function Toolbar({ canvasSvgRef }) {
       devices.push({
         id, templateId: d.templateId, x: snap(d.x || 80), y: snap(d.y || 80), w: tpl.width, h: tpl.height,
         rotation: 0, name: d.name || tpl.name, brand: '', model: '', notes: '',
-        ratingValue: '', ratingUnit: '', imageId: null, imageUrl: null,
+        ratingValue: '', ratingUnit: '', imageId: null, imageUrl: null, zone: d.zone || '',
         ports: (tpl.ports || []).map((p) => ({ ...p })),
       });
     }
@@ -123,13 +123,35 @@ export default function Toolbar({ canvasSvgRef }) {
         manualPoints: null, lengthM: '',
       });
     }
+    // Bölge kutuları: aynı zone'daki cihazların bounding box'ından üret (Victron tarzı)
+    const ZONE_COLORS = ['#0A84FF', '#00C853', '#FF9500', '#AF52DE', '#FF3B30', '#5AC8FA', '#8E8E93'];
+    const zoneMap = {};
+    devices.forEach((d) => {
+      const z = (d.zone || '').trim();
+      if (!z) return;
+      (zoneMap[z] = zoneMap[z] || []).push(d);
+    });
+    const groups = [];
+    const GPAD = 28;
+    Object.keys(zoneMap).forEach((z, i) => {
+      const ds = zoneMap[z];
+      const x0 = Math.min(...ds.map((d) => d.x)) - GPAD;
+      const y0 = Math.min(...ds.map((d) => d.y)) - GPAD - 18; // başlık için ekstra
+      const x1 = Math.max(...ds.map((d) => d.x + d.w)) + GPAD;
+      const y1 = Math.max(...ds.map((d) => d.y + d.h)) + GPAD;
+      groups.push({
+        id: uid('g'), title: z.toUpperCase(),
+        x: snap(x0), y: snap(y0), w: snap(x1 - x0), h: snap(y1 - y0),
+        color: ZONE_COLORS[i % ZONE_COLORS.length],
+      });
+    });
     store.loadProject({
       id: null, name: 'AI Taslak Şema', vehicle_name: '', author: '', description: '',
-      data: { devices, wires, paper: store.paper, orientation: store.orientation },
+      data: { devices, wires, groups, paper: store.paper, orientation: store.orientation },
     });
     // Şema sağda/geniş olabilir; render olunca ekrana sığdır (yoksa boş ekran gibi görünür)
     setTimeout(() => { try { canvasSvgRef?.current?.fitToContent?.(); } catch { /* yoksay */ } }, 120);
-    return { deviceCount: devices.length, wireCount: wires.length };
+    return { deviceCount: devices.length, wireCount: wires.length, groupCount: groups.length };
   };
 
   const onAiGenerate = async () => {
@@ -137,9 +159,9 @@ export default function Toolbar({ canvasSvgRef }) {
     try {
       setAiBusy(true);
       const res = await aiGenerateDiagram(aiParts.trim(), aiNotes.trim());
-      const { deviceCount, wireCount } = applyAiPlan(res);
+      const { deviceCount, wireCount, groupCount } = applyAiPlan(res);
       setOpenAi(false);
-      toast.success(`Taslak şema yüklendi: ${deviceCount} cihaz, ${wireCount} kablo. Kontrol edip düzeltin, sonra kaydedin.`);
+      toast.success(`Taslak şema yüklendi: ${deviceCount} cihaz, ${wireCount} kablo, ${groupCount} bölge. Kontrol edip düzeltin, sonra kaydedin.`);
       (res.notlar || []).forEach((n) => toast.info(n, { duration: 8000 }));
     } catch (e) {
       toast.error(e?.response?.data?.detail || 'AI şema üretilemedi');
@@ -321,6 +343,7 @@ export default function Toolbar({ canvasSvgRef }) {
 
       <Separator orientation="vertical" className="h-6 bg-[var(--border-structural)] mx-1" />
 
+      <ToolBtn icon={Group} label="Bölge Ekle" onClick={() => store.addGroup(80, 80)} testid="toolbar-add-group" />
       <ToolBtn icon={Grid3x3} label="Grid" onClick={() => store.toggleGrid()} active={store.showGrid} testid="toolbar-grid" />
       <ToolBtn icon={Magnet} label="Snap" onClick={() => store.toggleSnap()} active={store.snapToGrid} testid="toolbar-snap" />
       <ToolBtn icon={MoveDiagonal} label="Otomatik Hizala" onClick={() => store.autoArrange()} testid="toolbar-auto-arrange" />
@@ -542,7 +565,7 @@ const PAPER_PT = {
 };
 
 function serializeCanvasSvg(store, logoDataUrl = null, imageMap = {}) {
-  const { devices, wires, paper, orientation, projectName, routingMode } = store;
+  const { devices, wires, groups, paper, orientation, projectName, routingMode } = store;
   let p = PAPER_PT[paper] || PAPER_PT.A4;
   if (orientation === 'portrait') p = { w: p.h, h: p.w };
   const W = p.w * 2, H = p.h * 2;
@@ -551,6 +574,11 @@ function serializeCanvasSvg(store, logoDataUrl = null, imageMap = {}) {
   for (const d of devices) {
     minX = Math.min(minX, d.x); minY = Math.min(minY, d.y);
     maxX = Math.max(maxX, d.x + d.w); maxY = Math.max(maxY, d.y + d.h);
+  }
+  // Bölge kutuları da sınırlara dahil (cihazdan taşabilir)
+  for (const g of (groups || [])) {
+    minX = Math.min(minX, g.x); minY = Math.min(minY, g.y);
+    maxX = Math.max(maxX, g.x + g.w); maxY = Math.max(maxY, g.y + g.h);
   }
   if (!isFinite(minX)) { minX = 0; minY = 0; maxX = W; maxY = H; }
   // Reserve space at the top for the project-name header
@@ -608,6 +636,12 @@ function serializeCanvasSvg(store, logoDataUrl = null, imageMap = {}) {
   }
   svg += `<text x="${titleX}" y="${titleY}" text-anchor="middle" font-size="22" font-weight="bold" font-family="${sansFamily}" fill="#000">${escape(projectName || 'KARAVAN ŞEMA')}</text>`;
   svg += `<line x1="${minX + 40}" y1="${minY + headerH - 4}" x2="${maxX - 40}" y2="${minY + headerH - 4}" stroke="#000" stroke-width="0.8" />`;
+
+  // Bölge kutuları (en arkada — cihaz/kabloların altında)
+  for (const g of (groups || [])) {
+    svg += `<rect x="${g.x}" y="${g.y}" width="${g.w}" height="${g.h}" rx="10" fill="${g.color}" fill-opacity="0.06" stroke="${g.color}" stroke-opacity="0.5" stroke-width="1.5" />`;
+    svg += `<text x="${g.x + 12}" y="${g.y + 22}" font-size="15" font-weight="bold" font-family="${sansFamily}" fill="${g.color}" letter-spacing="1.2">${escape((g.title || '').toUpperCase())}</text>`;
+  }
 
   // Wires
   for (const wp of wirePaths) {
