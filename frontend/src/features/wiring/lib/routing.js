@@ -310,10 +310,32 @@ export function aStarRoute(start, end, obstacles = [], ctx = null, opts = {}) {
   const pts = [];
   let cur = goal;
   while (cur) { pts.unshift({ x: cur.x, y: cur.y }); cur = cur.parent; }
-  const full = simplify([{ x: start.x, y: start.y }, ...pts, { x: end.x, y: end.y }]);
+  // Port noktası grid'e denk gelmediğinde start/end ile ilk grid düğümü arası
+  // DİYAGONAL çıkıyordu. exitPoint'leri (port ekseninde dik çıkış) path'e dahil et
+  // ve tüm yolu ortogonalleştir (port yönüne göre L köşesi ekle).
+  const startHoriz = start.side === 'left' || start.side === 'right';
+  const full = simplify(orthogonalize(
+    [{ x: start.x, y: start.y }, ea, ...pts, eb, { x: end.x, y: end.y }],
+    startHoriz
+  ));
 
   if (ctx) markPathUsed(full, ctx, gridSize);
   return full;
+}
+
+// Diyagonal segmentleri ortogonal L köşesine böler (port ekseni korunur).
+function orthogonalize(points, startHorizontal) {
+  if (points.length < 2) return points;
+  const out = [points[0]];
+  for (let i = 1; i < points.length; i++) {
+    const a = out[out.length - 1];
+    const b = points[i];
+    if (a.x !== b.x && a.y !== b.y) {
+      out.push(startHorizontal ? { x: b.x, y: a.y } : { x: a.x, y: b.y });
+    }
+    out.push(b);
+  }
+  return out;
 }
 
 export function markPathUsed(points, ctx, gridSize = 10) {

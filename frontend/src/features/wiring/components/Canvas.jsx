@@ -343,11 +343,15 @@ const CanvasInner = React.forwardRef(function CanvasInner(_, ref) {
     e.preventDefault();
     const id = e.dataTransfer.getData('device-template');
     if (!id) return;
-    let { x, y } = screenToCanvas(e.clientX, e.clientY);
-    if (snapToGrid) { x = Math.round(x / gridSize) * gridSize; y = Math.round(y / gridSize) * gridSize; }
+    const pos = screenToCanvas(e.clientX, e.clientY);
     const tpl = getDeviceTemplate(id) || store.customTemplates.find((t) => t.id === id);
     if (tpl) {
-      store.addDevice(id, x - tpl.width / 2, y - tpl.height / 2);
+      // Önce merkezden top-left'e çevir, SONRA grid'e snap et — yoksa cihaz
+      // boyutu grid'in katı değilse top-left off-grid kalıp sürükleyince zıplıyordu
+      let tlx = pos.x - tpl.width / 2;
+      let tly = pos.y - tpl.height / 2;
+      if (snapToGrid) { tlx = Math.round(tlx / gridSize) * gridSize; tly = Math.round(tly / gridSize) * gridSize; }
+      store.addDevice(id, tlx, tly);
     }
   };
 

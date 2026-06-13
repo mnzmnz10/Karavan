@@ -73,6 +73,8 @@ export default function Toolbar({ canvasSvgRef }) {
   // Cihaz boyut/portları frontend template'lerinden gelir; kullanıcı sonra düzeltir.
   const applyAiPlan = (plan) => {
     const uid = (p) => `${p}_${Math.random().toString(36).slice(2, 9)}`;
+    const GRID = 20;
+    const snap = (n) => Math.round(n / GRID) * GRID;
     const keyToId = {};
     const devices = [];
     for (const d of plan.devices || []) {
@@ -81,17 +83,37 @@ export default function Toolbar({ canvasSvgRef }) {
       const id = uid('d');
       keyToId[d.key] = id;
       devices.push({
-        id, templateId: d.templateId, x: d.x, y: d.y, w: tpl.width, h: tpl.height,
+        id, templateId: d.templateId, x: snap(d.x || 80), y: snap(d.y || 80), w: tpl.width, h: tpl.height,
         rotation: 0, name: d.name || tpl.name, brand: '', model: '', notes: '',
         ratingValue: '', ratingUnit: '', imageId: null, imageUrl: null,
         ports: (tpl.ports || []).map((p) => ({ ...p })),
       });
+    }
+    // Çakışma çözücü: üst üste/çok yakın gelen cihazları aşağı kaydır (AI bazen
+    // koordinatları çakıştırıyor; pad=40 boşluk bırak)
+    const PAD = 40;
+    const overlaps = (a, b) =>
+      a.x < b.x + b.w + PAD && a.x + a.w + PAD > b.x &&
+      a.y < b.y + b.h + PAD && a.y + a.h + PAD > b.y;
+    for (let i = 0; i < devices.length; i++) {
+      let guard = 0;
+      for (let j = 0; j < i; j++) {
+        if (overlaps(devices[i], devices[j])) {
+          devices[i].y = snap(devices[j].y + devices[j].h + PAD);
+          j = -1; // baştan tara (yeni konum başkasıyla çakışabilir)
+          if (guard++ > 200) break;
+        }
+      }
     }
     const wires = [];
     for (const w of plan.wires || []) {
       const fromId = keyToId[w.from_key];
       const toId = keyToId[w.to_key];
       if (!fromId || !toId) continue;
+      // Port id'lerini gerçek cihaz portlarıyla doğrula (hayalet bağlantı olmasın)
+      const fromDev = devices.find((d) => d.id === fromId);
+      const toDev = devices.find((d) => d.id === toId);
+      if (!fromDev?.ports.some((p) => p.id === w.from_port) || !toDev?.ports.some((p) => p.id === w.to_port)) continue;
       wires.push({
         id: uid('w'),
         from: { deviceId: fromId, portId: w.from_port },
@@ -105,6 +127,8 @@ export default function Toolbar({ canvasSvgRef }) {
       id: null, name: 'AI Taslak Şema', vehicle_name: '', author: '', description: '',
       data: { devices, wires, paper: store.paper, orientation: store.orientation },
     });
+    // Şema sağda/geniş olabilir; render olunca ekrana sığdır (yoksa boş ekran gibi görünür)
+    setTimeout(() => { try { canvasSvgRef?.current?.fitToContent?.(); } catch { /* yoksay */ } }, 120);
     return { deviceCount: devices.length, wireCount: wires.length };
   };
 
