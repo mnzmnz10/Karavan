@@ -2565,12 +2565,15 @@ function App() {
     const disc = parseFloat(quote?.discount_percentage) || 0;
     const labor = parseFloat(quote?.labor_cost) || 0;
     const quoteItems = (quote?.products || []).map((p) => {
-      const full = products.find((prod) => prod.id === p.id);
-      const nm = full?.name || p.name || 'Ürün';
+      // İsim/fiyat TEKLİF ANI snapshot'ından (canlı ürün değil — fiyat değişmiş olabilir)
+      const nm = p.name || products.find((prod) => prod.id === p.id)?.name || 'Ürün';
       const qty = parseFloat(p.quantity) || 1;
-      // Birim fiyat (TL): teklifte özel fiyat varsa onu, yoksa ürünün TL liste fiyatı; indirimi uygula
-      let unit = parseFloat(p.custom_price);
-      if (!unit || isNaN(unit)) unit = parseFloat(full?.list_price_try) || 0;
+      // Birim fiyat zaten teklif anında TL'ye çevrilmiş: list_price_try (özel fiyat
+      // varsa create_quote bunu custom_price*kur ile yazıyor). custom_price'ı DOĞRUDAN
+      // kullanma — o ürünün kendi para biriminde (€/$) olabilir, TL değil.
+      let unit = parseFloat(p.list_price_try);
+      if (!unit || isNaN(unit)) unit = parseFloat(p.discounted_price_try);
+      if (!unit || isNaN(unit)) unit = parseFloat(p.list_price) || 0; // manuel kalem (TL)
       unit = unit * (1 - disc / 100);
       return { name: nm, qty, unit_price: Math.round(unit) };
     });
