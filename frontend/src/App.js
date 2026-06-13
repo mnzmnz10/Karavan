@@ -20,7 +20,9 @@ import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSens
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+// Env tanımsızsa boş string -> API relative '/api' olur (nginx aynı origin proxy).
+// undefined olursa "undefined/api" üretip 405'e yol açıyordu.
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 const API = `${BACKEND_URL}/api`;
 
 // Sözleşme kalem satırı — dnd-kit ile sürükle-bırak (telefon uygulaması gibi animasyonlu yeniden sıralama).

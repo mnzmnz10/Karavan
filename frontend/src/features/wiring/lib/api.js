@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || ''; // tanımsızsa relative /api
 export const API = `${BACKEND_URL}/api`;
 
 // Karavan backend'ine port edildi: tüm uçlar "wiring-" namespace'inde
