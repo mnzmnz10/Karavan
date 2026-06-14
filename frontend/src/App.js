@@ -10,7 +10,7 @@ import { Badge } from './components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from './components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select';
-import { Trash2, Upload, RefreshCw, Plus, TrendingUp, Building2, Package, DollarSign, Edit, Save, X, FileText, Check, Archive, Download, Wrench, Eye, EyeOff, AlertTriangle, Tags, Copy, Pin, StickyNote, Users, Star, Search, Phone, Mail, MapPin, Calculator, Battery, Loader2, ScanSearch, LogOut, PlusCircle, MinusCircle, History, Settings, ChevronUp, ChevronDown, GripVertical, Cable, Folder, FolderOpen, CheckCircle2 } from 'lucide-react';
+import { Trash2, Upload, RefreshCw, Plus, TrendingUp, Building2, Package, DollarSign, Edit, Save, X, FileText, Check, Archive, Download, Wrench, Eye, EyeOff, AlertTriangle, Tags, Copy, Pin, StickyNote, Users, Star, Search, Phone, Mail, MapPin, Calculator, Battery, Loader2, ScanSearch, LogOut, PlusCircle, MinusCircle, History, Settings, ChevronUp, ChevronDown, GripVertical, Cable, Folder, FolderOpen, CheckCircle2, Bell } from 'lucide-react';
 import KabloSemasiSection from '@/features/wiring/KabloSemasiSection';
 import { toast } from 'sonner';
 import { Toaster } from './components/ui/sonner';
@@ -669,6 +669,9 @@ function App() {
   const emptyServiceForm = { customer_name: '', phone: '', vehicle_brand: '', vehicle_model: '', plate: '', is_trailer: false, arrival_date: '', delivery_date: '', operations: '', items: [], photos: [], notes: '', cost: '', advance_amount: '', discount_amount: '', discount_percent: '', collections: [], payment_account: '', warranty_months: '', warranty_note: '', status: 'received' };
   const [services, setServices] = useState([]);
   const [serviceForm, setServiceForm] = useState(emptyServiceForm);
+  const [photoLightbox, setPhotoLightbox] = useState(null); // büyütülen servis fotosu (data:/url) — read modunda tıkla-aç
+  const [serviceItemSearch, setServiceItemSearch] = useState(''); // servis kalemine üründen ekleme araması
+  const [termosaChanges, setTermosaChanges] = useState(null); // Termosa fiyat değişiklik popup'ı: { source, sessions:[{id,company_id}], rows:[changed+_sessionId+_company], applying }
   const [serviceEditingId, setServiceEditingId] = useState(null); // düzenlenen kayıt id (null = yeni)
   const [serviceDialogOpen, setServiceDialogOpen] = useState(false);
   const [viewingService, setViewingService] = useState(null); // detay önizleme (sözleşmeler gibi)
@@ -2033,20 +2036,36 @@ function App() {
     }
   };
 
-  // "Termosa Ürünlerini Kontrol Et": adı 'Termosa' olan firmayı otomatik bulur, firma seçmeye gerek yok
+  // Bir import-session satırlarından SADECE fiyatı değişenleri al + session/firma etiketle
+  const termosaMapChanged = (rows, sessionId, companyName) =>
+    (rows || [])
+      .filter((x) => x.change_type === 'increase' || x.change_type === 'decrease')
+      .map((x) => ({ ...x, _sessionId: sessionId, _company: companyName || 'Termosa' }));
+
+  // session id'den değişen satırları çek (login akışı — run-all ürün listesi dönmez)
+  const fetchTermosaSessionChanged = async (sessionId, companyName) => {
+    try {
+      const r = await axios.get(`${API}/import-sessions/${sessionId}`);
+      return termosaMapChanged(r.data?.rows || [], sessionId, companyName);
+    } catch {
+      return [];
+    }
+  };
+
+  // "Termosa Ürünlerini Kontrol Et": adı 'Termosa' olan firmayı otomatik bulur.
+  // Sonuç POPUP'ta SADECE fiyatı değişen ürünleri gösterir.
   const checkTermosaPrices = async () => {
     const urls = (termosaCats || '').split('\n').map((s) => s.trim()).filter(Boolean);
     try {
       setTermosaSyncRunning(true);
       const r = await axios.post(`${API}/supplier-sync/termosa/check-auto`, { category_urls: urls });
       const session = r.data.import_session;
-      if (session) {
-        setAiImportSession(session);
-        setAiPreviewProducts(session.rows || []);
-        setAiPreviewCompanyId(session.company_id);
+      const rows = session ? termosaMapChanged(session.rows, session.id, r.data.company_name || 'Termosa') : [];
+      if (rows.length > 0) {
+        setTermosaChanges({ source: 'manual', sessions: [{ id: session.id, company_id: session.company_id }], rows, applying: false });
+      } else {
+        toast.success('Fiyat kontrolü tamam — değişiklik yok');
       }
-      const pc = r.data.summary?.price_changes ?? 0;
-      toast.success(pc > 0 ? `${r.data.company_name || 'Termosa'}: ${pc} üründe fiyat değişti — önizlemeyi kontrol edin` : 'Fiyat kontrolü tamam, değişiklik yok');
     } catch (error) {
       console.error('Termosa kontrol hatası:', error);
       toast.error(error.response?.data?.detail || 'Fiyat kontrolü başarısız');
@@ -2055,16 +2074,47 @@ function App() {
     }
   };
 
-  // Sisteme her girişte: açık Termosa kontrollerini sessizce çalıştır
+  // Sisteme her girişte: açık Termosa kontrollerini arka planda çalıştır;
+  // fiyatı değişen ürün varsa POPUP bildirimiyle göster.
   const autoCheckTermosaOnLogin = async () => {
     try {
       const r = await axios.post(`${API}/supplier-sync/termosa/run-all`);
-      if ((r.data?.checked || 0) > 0) {
-        const tc = r.data.total_changed || 0;
-        if (tc > 0) toast.info(`Termosa otomatik kontrol: ${tc} üründe fiyat değişti`);
+      const results = r.data?.results || [];
+      const changed = [];
+      const sessions = [];
+      for (const res of results) {
+        if ((res.summary?.price_changes || 0) > 0 && res.session_id) {
+          const rows = await fetchTermosaSessionChanged(res.session_id, res.company_name);
+          if (rows.length) { changed.push(...rows); sessions.push({ id: res.session_id, company_id: res.company_id }); }
+        }
+      }
+      if (changed.length > 0) {
+        setTermosaChanges({ source: 'login', sessions, rows: changed, applying: false });
       }
     } catch (error) {
       console.warn('Termosa otomatik kontrol atlandı:', error?.response?.status);
+    }
+  };
+
+  // Popup'taki fiyat değişikliklerini onayla → CRM'de fiyatları güncelle
+  const applyTermosaChanges = async () => {
+    if (!termosaChanges) return;
+    setTermosaChanges((c) => ({ ...c, applying: true }));
+    try {
+      let updated = 0;
+      for (const s of termosaChanges.sessions) {
+        const rows = termosaChanges.rows
+          .filter((r) => r._sessionId === s.id)
+          .map((r) => ({ ...r, action: 'update', list_price: parseFloat(r.list_price) || 0, currency: r.currency || 'USD' }));
+        if (rows.length) { await axios.post(`${API}/import-sessions/${s.id}/apply`, { rows }); updated += rows.length; }
+      }
+      toast.success(`${updated} ürün fiyatı güncellendi`);
+      await loadProducts(1, true);
+      setTermosaChanges(null);
+    } catch (error) {
+      console.error('Termosa güncelleme hatası:', error);
+      toast.error(error.response?.data?.detail || 'Güncelleme başarısız');
+      setTermosaChanges((c) => (c ? { ...c, applying: false } : c));
     }
   };
 
@@ -2282,15 +2332,31 @@ function App() {
   };
   const serviceItemsTotal = (items) => (items || []).reduce((sum, it) => sum + serviceItemLineTRY(it), 0);
   const addServiceItem = () => setServiceForm((f) => ({ ...f, items: [...(f.items || []), { name: '', qty: 1, unit_price: 0, currency: 'TRY', rate: '' }] }));
+  // Üründen servis kalemi ekle (isim + fiyat + para birimi ürün kartından gelir)
+  const addServiceItemFromProduct = (p) => {
+    const price = (parseFloat(p.discounted_price) > 0 ? parseFloat(p.discounted_price) : parseFloat(p.list_price)) || 0;
+    const currency = p.currency || 'TRY';
+    const item = { name: p.name, qty: 1, unit_price: price, currency, rate: '' };
+    if (currency !== 'TRY') {
+      const live = parseFloat(exchangeRates?.[currency]);
+      if (live > 0) item.rate = live.toFixed(2);
+    }
+    setServiceForm((f) => ({ ...f, items: [...(f.items || []), item] }));
+    setServiceItemSearch('');
+  };
   const updateServiceItem = (idx, field, value) => setServiceForm((f) => {
     const items = [...(f.items || [])];
     items[idx] = { ...items[idx], [field]: value };
-    // Döviz seçilince kuru o anki kurdan sabitle (tahsilatlardaki kural)
-    if (field === 'currency' && value !== 'TRY' && !(parseFloat(items[idx].rate) > 0)) {
-      const live = parseFloat(exchangeRates?.[value]);
-      if (live > 0) items[idx].rate = live.toFixed(2);
+    // Döviz DEĞİŞİNCE kuru DAİMA seçilen para biriminin güncel kuruna yenile
+    // (eski: sadece rate boşken set ediyordu → EUR'dan USD'ye geçince EUR kuru kalıyordu).
+    if (field === 'currency') {
+      if (value === 'TRY') {
+        items[idx].rate = '';
+      } else {
+        const live = parseFloat(exchangeRates?.[value]);
+        items[idx].rate = live > 0 ? live.toFixed(2) : '';
+      }
     }
-    if (field === 'currency' && value === 'TRY') items[idx].rate = '';
     return { ...f, items };
   });
   const removeServiceItem = (idx) => setServiceForm((f) => ({ ...f, items: (f.items || []).filter((_, i) => i !== idx) }));
@@ -2339,11 +2405,15 @@ function App() {
     let v = value;
     if (field === 'amount' && v !== '' && v != null) { const n = parseFloat(v); if (!isNaN(n) && n < 0) v = Math.abs(n).toString(); }
     collections[idx] = { ...collections[idx], [field]: v };
-    // Döviz seçilince kuru O ANKİ kurdan sabitle (boş bırakılırsa kalan tutar
-    // gelecekte kur değiştikçe oynar — rapor 07 bulgusu). Kullanıcı isterse ezer.
-    if (field === 'currency' && v !== 'TRY' && !(parseFloat(collections[idx].rate) > 0)) {
-      const live = parseFloat(exchangeRates?.[v]);
-      if (live > 0) collections[idx].rate = live.toFixed(2);
+    // Döviz DEĞİŞİNCE kuru DAİMA seçilen para biriminin güncel kuruna yenile
+    // (EUR→USD geçince eski kur kalmasın). TRY seçilince temizle. Kullanıcı sonra ezebilir.
+    if (field === 'currency') {
+      if (v === 'TRY') {
+        collections[idx].rate = '';
+      } else {
+        const live = parseFloat(exchangeRates?.[v]);
+        collections[idx].rate = live > 0 ? live.toFixed(2) : '';
+      }
     }
     return { ...f, collections };
   });
@@ -10740,9 +10810,51 @@ function App() {
                           <Package className="w-3.5 h-3.5" /> Yapılan İşlemler / Parçalar
                         </div>
                         <Button type="button" size="sm" variant="outline" onClick={addServiceItem} className="h-8 text-xs font-bold border-emerald-200 text-emerald-700 hover:bg-emerald-50">
-                          <Plus className="w-3.5 h-3.5 mr-1" /> Kalem Ekle
+                          <Plus className="w-3.5 h-3.5 mr-1" /> Boş Kalem
                         </Button>
                       </div>
+
+                      {/* Üründen kalem ekle — ürün listesinden ara, seç, eklensin */}
+                      <div className="relative mb-2">
+                        <div className="flex items-center gap-2 h-9 px-3 rounded-lg border border-slate-200 bg-slate-50 focus-within:ring-1 focus-within:ring-emerald-500">
+                          <Search className="w-4 h-4 text-emerald-500 shrink-0" />
+                          <input
+                            type="text"
+                            placeholder="Üründen kalem ekle — ürün adı veya marka yazın..."
+                            value={serviceItemSearch}
+                            onChange={(e) => setServiceItemSearch(e.target.value)}
+                            className="w-full bg-transparent border-none text-sm focus:outline-none placeholder-slate-400"
+                          />
+                        </div>
+                        {serviceItemSearch.trim() && (
+                          <div className="absolute z-30 mt-1 left-0 right-0 bg-white border border-slate-200 rounded-xl shadow-2xl max-h-64 overflow-y-auto">
+                            {(products || [])
+                              .filter((p) => p.name.toLowerCase().includes(serviceItemSearch.toLowerCase()) || (p.brand && p.brand.toLowerCase().includes(serviceItemSearch.toLowerCase())))
+                              .slice(0, 8)
+                              .map((p) => (
+                                <div key={p.id} onClick={() => addServiceItemFromProduct(p)}
+                                     className="p-2.5 hover:bg-emerald-50 cursor-pointer flex items-center justify-between text-xs border-b border-slate-50">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    {p.image_url ? (
+                                      <img src={p.image_url} alt="" className="w-8 h-8 object-cover rounded shrink-0" />
+                                    ) : (
+                                      <div className="w-8 h-8 bg-slate-100 rounded flex items-center justify-center text-slate-300 shrink-0"><Package className="w-4 h-4" /></div>
+                                    )}
+                                    <div className="min-w-0">
+                                      <div className="font-bold text-slate-800 truncate">{p.name}</div>
+                                      {p.brand && <div className="text-[10px] text-slate-400 uppercase font-black">{p.brand}</div>}
+                                    </div>
+                                  </div>
+                                  <span className="font-extrabold text-emerald-700 shrink-0 ml-2">₺ {formatPrice(p.list_price_try || 0)}</span>
+                                </div>
+                              ))}
+                            {(products || []).filter((p) => p.name.toLowerCase().includes(serviceItemSearch.toLowerCase()) || (p.brand && p.brand.toLowerCase().includes(serviceItemSearch.toLowerCase()))).length === 0 && (
+                              <div className="p-3 text-slate-400 italic text-center text-xs">Eşleşen ürün yok</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
                       {(serviceForm.items || []).length === 0 ? (
                         <p className="text-xs text-slate-400 italic py-2">Henüz kalem yok. "Kalem Ekle" ile yapılan işlem / parça ekleyin (her satır ayrı; toplam otomatik hesaplanır).</p>
                       ) : (
@@ -10775,7 +10887,7 @@ function App() {
                                         <option value="USD">$</option>
                                       </select>
                                       {(it.currency && it.currency !== 'TRY') && (
-                                        <input type="number" min="0" step="0.01" value={it.rate ?? ''} onChange={(e) => updateServiceItem(idx, 'rate', e.target.value)} placeholder="kur" title="1 birim = ? ₺" className="w-14 h-8 px-1 border border-slate-200 rounded text-xs text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                                        <input type="number" min="0" step="0.01" value={it.rate ?? ''} onChange={(e) => updateServiceItem(idx, 'rate', e.target.value)} placeholder="kur" title="1 birim = ? ₺" className="w-20 h-8 px-1.5 border border-slate-200 rounded text-xs text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-emerald-500" />
                                       )}
                                     </div>
                                   </td>
@@ -11069,11 +11181,21 @@ function App() {
                           <div className="mb-3 flex items-center gap-2 text-[11px] font-black uppercase tracking-wider text-[#1B3A5C]"><Eye className="w-3.5 h-3.5" /> Fotoğraflar ({s.photos.length})</div>
                           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
                             {s.photos.map((src, i) => (
-                              <a key={i} href={src} target="_blank" rel="noreferrer" className="block aspect-square rounded-lg overflow-hidden ring-1 ring-slate-200 hover:ring-emerald-400">
+                              <button key={i} type="button" onClick={() => setPhotoLightbox(src)}
+                                className="block aspect-square rounded-lg overflow-hidden ring-1 ring-slate-200 hover:ring-emerald-400 cursor-zoom-in">
                                 <img src={src} alt={`foto ${i + 1}`} className="w-full h-full object-cover" />
-                              </a>
+                              </button>
                             ))}
                           </div>
+                        </div>
+                      )}
+
+                      {photoLightbox && (
+                        <div className="fixed inset-0 z-[200] bg-black/80 flex items-center justify-center p-4 cursor-zoom-out"
+                             onClick={() => setPhotoLightbox(null)}>
+                          <img src={photoLightbox} alt="foto" className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" />
+                          <button type="button" onClick={() => setPhotoLightbox(null)}
+                                  className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/90 text-slate-800 flex items-center justify-center text-xl font-bold hover:bg-white">×</button>
                         </div>
                       )}
 
@@ -12557,6 +12679,73 @@ function App() {
         >
           <ChevronDown className="w-6 h-6 transition-transform group-hover:translate-y-0.5" />
         </button>
+      )}
+
+      {/* Termosa fiyat değişikliği popup'ı — login otomatik + ürün ekleme "Kontrol Et" */}
+      {termosaChanges && (
+        <div className="fixed inset-0 z-[200] bg-black/50 flex items-center justify-center p-4"
+             onClick={() => { if (!termosaChanges.applying) setTermosaChanges(null); }}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden"
+               onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <div className="text-base font-black text-[#1B3A5C] flex items-center gap-2">
+                  <Bell className="w-4 h-4 text-amber-500" /> Termosa Fiyat Değişiklikleri
+                </div>
+                <div className="text-xs text-slate-500 mt-0.5">
+                  {termosaChanges.source === 'login' ? 'Girişte otomatik kontrol' : 'Fiyat kontrolü'} · {termosaChanges.rows.length} üründe değişiklik
+                </div>
+              </div>
+              <button type="button" onClick={() => { if (!termosaChanges.applying) setTermosaChanges(null); }}
+                      className="w-8 h-8 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-500 text-xl">×</button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 px-5 py-3">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-[11px] uppercase tracking-wider text-slate-400 border-b border-slate-100">
+                    <th className="text-left font-bold py-2">Ürün</th>
+                    <th className="text-right font-bold py-2">Eski</th>
+                    <th className="text-right font-bold py-2">Yeni</th>
+                    <th className="text-right font-bold py-2">Değişim</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {termosaChanges.rows.map((r, i) => {
+                    const cur = r.currency === 'EUR' ? '€' : r.currency === 'USD' ? '$' : '₺';
+                    const up = r.change_type === 'increase';
+                    return (
+                      <tr key={i} className="border-b border-slate-50">
+                        <td className="py-2 pr-2">
+                          <div className="font-semibold text-slate-800 leading-tight">{r.name || r.matched_product_name}</div>
+                          {r.code ? <div className="text-[10px] text-slate-400 font-mono">{r.code}</div> : null}
+                        </td>
+                        <td className="py-2 text-right text-slate-400 line-through whitespace-nowrap">{formatPrice(r.old_list_price)} {cur}</td>
+                        <td className="py-2 text-right font-bold text-slate-800 whitespace-nowrap">{formatPrice(r.list_price)} {cur}</td>
+                        <td className={`py-2 text-right font-bold whitespace-nowrap ${up ? 'text-red-600' : 'text-emerald-600'}`}>
+                          {up ? '▲' : '▼'} {Math.abs(r.price_change_percent || 0)}%
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-end gap-2">
+              <button type="button" disabled={termosaChanges.applying}
+                      onClick={() => setTermosaChanges(null)}
+                      className="px-4 h-9 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-50">
+                Kapat
+              </button>
+              <button type="button" disabled={termosaChanges.applying}
+                      onClick={applyTermosaChanges}
+                      className="px-4 h-9 rounded-lg text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50">
+                {termosaChanges.applying ? 'Güncelleniyor…' : 'Fiyatları Güncelle'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Toast Notifications */}

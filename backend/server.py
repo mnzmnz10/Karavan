@@ -12055,7 +12055,7 @@ class PDFServiceGenerator(PDFContractGenerator):
         buffer = BytesIO()
         doc = SimpleDocTemplate(
             buffer, pagesize=A4,
-            rightMargin=1.5*cm, leftMargin=1.5*cm, topMargin=1.5*cm, bottomMargin=1.5*cm,
+            rightMargin=1.5*cm, leftMargin=1.5*cm, topMargin=1.3*cm, bottomMargin=1.1*cm,
             title=f"Servis Formu - {svc.get('order_no', '')}", author="Çorlu Karavan",
         )
         story = []
@@ -12120,13 +12120,13 @@ class PDFServiceGenerator(PDFContractGenerator):
         header_tbl = PDFTable([[header_left_cell, meta_flowables]], colWidths=[12.3*cm, 5.7*cm])
         header_tbl.setStyle(TableStyle([
             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('TOPPADDING', (0,0), (-1,-1), 15), ('BOTTOMPADDING', (0,0), (-1,-1), 15),
+            ('TOPPADDING', (0,0), (-1,-1), 10), ('BOTTOMPADDING', (0,0), (-1,-1), 10),
             ('LEFTPADDING', (0,0), (0,-1), 18), ('LEFTPADDING', (1,0), (1,-1), 0),
             ('RIGHTPADDING', (0,0), (0,-1), 8), ('RIGHTPADDING', (1,0), (1,-1), 18),
             ('LINEBEFORE', (0,0), (0,-1), 4, colors.HexColor('#10B981')),
         ]))
         story.append(RoundedCard([header_tbl], width=18.0*cm, bg_color=colors.HexColor('#1B3A5C'), corner_radius=8, padding=0))
-        story.append(Spacer(1, 14))
+        story.append(Spacer(1, 10))
 
         # ---- Müşteri & Araç bilgi kartı ----
         is_trailer = svc.get("is_trailer") or not (svc.get("plate") or "").strip()
@@ -12145,11 +12145,11 @@ class PDFServiceGenerator(PDFContractGenerator):
             ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#F4F6F9')),
             ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor('#D9E0E8')),
             ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#E5EAF0')),
-            ('TOPPADDING', (0,0), (-1,-1), 9), ('BOTTOMPADDING', (0,0), (-1,-1), 9),
+            ('TOPPADDING', (0,0), (-1,-1), 7), ('BOTTOMPADDING', (0,0), (-1,-1), 7),
             ('LEFTPADDING', (0,0), (-1,-1), 10), ('RIGHTPADDING', (0,0), (-1,-1), 10),
         ]))
         story.append(info_tbl)
-        story.append(Spacer(1, 14))
+        story.append(Spacer(1, 9))
 
         # ---- Parça / İşlem kalemleri tablosu ----
         items = svc.get("items") or []
@@ -12191,7 +12191,7 @@ class PDFServiceGenerator(PDFContractGenerator):
             items_tbl = PDFTable(rows, colWidths=[0.9*cm, 9.6*cm, 1.8*cm, 2.85*cm, 2.85*cm])
             items_tbl.setStyle(TableStyle(tstyles))
             story.append(items_tbl)
-            story.append(Spacer(1, 12))
+            story.append(Spacer(1, 8))
 
         # ---- Toplam tutar paneli (avans/kalan PDF'te GÖSTERİLMEZ — sadece sistemde) ----
         total = svc.get("cost")
@@ -12235,13 +12235,13 @@ class PDFServiceGenerator(PDFContractGenerator):
         total_tbl = PDFTable([[total_left, total_right]], colWidths=[8.3*cm, 9.7*cm])
         total_tbl.setStyle(TableStyle([
             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('TOPPADDING', (0,0), (-1,-1), 14), ('BOTTOMPADDING', (0,0), (-1,-1), 14),
+            ('TOPPADDING', (0,0), (-1,-1), 10), ('BOTTOMPADDING', (0,0), (-1,-1), 10),
             ('LEFTPADDING', (0,0), (0,-1), 18), ('LEFTPADDING', (1,0), (1,-1), 0),
             ('RIGHTPADDING', (0,0), (0,-1), 8), ('RIGHTPADDING', (1,0), (1,-1), 18),
             ('LINEBEFORE', (0,0), (0,-1), 4, colors.HexColor('#10B981')),
         ]))
         story.append(RoundedCard([total_tbl], width=18.0*cm, bg_color=colors.HexColor('#1B3A5C'), corner_radius=8, padding=0))
-        story.append(Spacer(1, 14))
+        story.append(Spacer(1, 10))
 
         # ---- Garanti ----
         wm = svc.get("warranty_months")
@@ -12270,7 +12270,7 @@ class PDFServiceGenerator(PDFContractGenerator):
                 ('LEFTPADDING', (0,0), (-1,-1), 12), ('RIGHTPADDING', (0,0), (-1,-1), 12),
             ]))
             story.append(RoundedCard([w_tbl], width=18.0*cm, bg_color=colors.HexColor('#FEF3C7'), border_color=colors.HexColor('#FDE68A'), border_width=0.5, corner_radius=8, padding=0))
-            story.append(Spacer(1, 14))
+            story.append(Spacer(1, 9))
 
         # ---- Yapılan işlemler / notlar ----
         body_txt = []
@@ -12295,11 +12295,11 @@ class PDFServiceGenerator(PDFContractGenerator):
                 ('LEFTPADDING', (0,0), (-1,-1), 12), ('RIGHTPADDING', (0,0), (-1,-1), 12),
             ]))
             story.append(n_tbl)
-            story.append(Spacer(1, 18))
+            story.append(Spacer(1, 10))
 
         # ---- İmza ----
         sig_style = ParagraphStyle('SvcSig', parent=self.styles['Normal'], fontName=self.get_font_name(is_bold=True), fontSize=9, textColor=colors.HexColor('#1B3A5C'), alignment=TA_CENTER)
-        sig_sub = ParagraphStyle('SvcSigSub', parent=self.styles['Normal'], fontName=self.get_font_name(), fontSize=8, textColor=colors.HexColor('#94A3B8'), alignment=TA_CENTER, spaceBefore=22)
+        sig_sub = ParagraphStyle('SvcSigSub', parent=self.styles['Normal'], fontName=self.get_font_name(), fontSize=8, textColor=colors.HexColor('#94A3B8'), alignment=TA_CENTER, spaceBefore=16)
         sig_tbl = PDFTable([[
             # Resmi kayıt MSZ KARAVAN (sözleşme imzasıyla tutarlı)
             [Paragraph("MSZ KARAVAN", sig_style), Paragraph("Yetkili İmza", sig_sub)],
@@ -12307,9 +12307,13 @@ class PDFServiceGenerator(PDFContractGenerator):
         ]], colWidths=[9.0*cm, 9.0*cm])
         sig_tbl.setStyle(TableStyle([
             ('VALIGN', (0,0), (-1,-1), 'TOP'),
-            ('TOPPADDING', (0,0), (-1,-1), 10), ('LEFTPADDING', (0,0), (-1,-1), 20), ('RIGHTPADDING', (0,0), (-1,-1), 20),
+            ('TOPPADDING', (0,0), (-1,-1), 8), ('LEFTPADDING', (0,0), (-1,-1), 20), ('RIGHTPADDING', (0,0), (-1,-1), 20),
         ]))
-        story.append(sig_tbl)
+        # İmza bloğu bölünmesin (az içerikte tek sayfada kalsın)
+        try:
+            story.append(KeepTogether(sig_tbl))
+        except Exception:
+            story.append(sig_tbl)
 
         doc.build(story, onFirstPage=self._draw_page_decorations, onLaterPages=self._draw_page_decorations)
         buffer.seek(0)
