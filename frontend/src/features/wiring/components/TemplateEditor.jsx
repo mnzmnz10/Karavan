@@ -298,7 +298,7 @@ export default function TemplateEditor({ open, onOpenChange, template, onSaved }
                   onClick={() => onOpenChange(false)}>
             İPTAL
           </Button>
-          <Button className="rounded-none h-9 bg-[var(--accent-cyan)] text-black hover:bg-[var(--accent-cyan)]/90"
+          <Button className="rounded-none h-9 bg-[var(--accent-cyan)] text-white hover:bg-[var(--accent-cyan)]/90"
                   disabled={saving} onClick={onSave} data-testid="tpl-save-btn">
             {saving ? 'KAYDEDİLİYOR...' : (template?.id ? 'GÜNCELLE' : 'KÜTÜPHANEYE EKLE')}
           </Button>

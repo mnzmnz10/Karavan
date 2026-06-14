@@ -860,37 +860,14 @@ function App() {
   // Ref to track if quote draft is initialized/restored from localStorage
   const quoteDraftLoadedRef = useRef(false);
 
-  // 1. Auto-Restore Quote Draft on Mount
+  // 1. Mount: teklif formu BOŞ başlasın — otomatik taslak geri-yükleme KAPALI.
+  // (Kullanıcı isteği: hiçbir teklif elle açılmadan otomatik dolu gelmesin.)
+  // Eski taslak varsa temizlenir; auto-save aşağıda yine çalışır ama otomatik uygulanmaz.
   useEffect(() => {
     try {
-      const savedDraft = localStorage.getItem('karavan_quote_draft');
-      if (savedDraft) {
-        const draft = JSON.parse(savedDraft);
-        console.log('📦 Bulunan teklif taslağı geri yükleniyor...', draft);
-        
-        if (draft.quoteName) setQuoteName(draft.quoteName);
-        if (draft.quoteDiscount !== undefined) setQuoteDiscount(draft.quoteDiscount);
-        if (draft.quoteLaborCost !== undefined) setQuoteLaborCost(draft.quoteLaborCost);
-        if (draft.quoteNotes) setQuoteNotes(draft.quoteNotes);
-        if (draft.selectedQuoteCustomer) setSelectedQuoteCustomer(draft.selectedQuoteCustomer);
-        
-        if (draft.selectedProducts) {
-          setSelectedProducts(new Map(draft.selectedProducts));
-        }
-        if (draft.selectedProductsData) {
-          setSelectedProductsData(new Map(draft.selectedProductsData));
-        }
-        if (draft.selectedProductsCustomPrices) {
-          setSelectedProductsCustomPrices(new Map(draft.selectedProductsCustomPrices));
-        }
-        
-        // Wait a small timeout to show after other mounts
-        setTimeout(() => {
-          toast.success('Yarım kalan teklif taslağınız otomatik olarak geri yüklendi.');
-        }, 100);
-      }
+      localStorage.removeItem('karavan_quote_draft');
     } catch (err) {
-      console.error('Teklif taslağı geri yükleme hatası:', err);
+      console.error('Teklif taslağı temizleme hatası:', err);
     } finally {
       quoteDraftLoadedRef.current = true;
     }

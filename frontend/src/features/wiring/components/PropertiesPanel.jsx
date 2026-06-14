@@ -8,8 +8,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { WIRE_PRESETS, COLOR_PALETTE, getWirePreset, getAllWirePresets, saveCustomWirePreset, deleteCustomWirePreset, getCustomWirePresets } from '@/features/wiring/lib/wireTypes';
-import { Trash2, Upload, ArrowUp, ArrowDown, Plus, RotateCw } from 'lucide-react';
+import { WIRE_PRESETS, COLOR_PALETTE, getWirePreset, getAllWirePresets, saveCustomWirePreset, deleteCustomWirePreset, getCustomWirePresets, calcWireSection, presetForSection } from '@/features/wiring/lib/wireTypes';
+import { Trash2, Upload, ArrowUp, ArrowDown, Plus, RotateCw, Calculator } from 'lucide-react';
 import { uploadImage, fileUrl, removeBackground } from '@/features/wiring/lib/api';
 import { toast } from 'sonner';
 import { getPortAbsolute } from '@/features/wiring/store/editorStore';
@@ -234,10 +234,16 @@ function DeviceForm({ device }) {
         </Field>
         <div className="grid grid-cols-2 gap-2">
           <Field label="Genişlik">
-            <Input type="number" value={device.w} onChange={(e) => update({ w: Math.max(40, parseInt(e.target.value) || 40) })} className="tech-input" />
+            <Input type="number" value={device.w}
+                   onChange={(e) => update({ w: parseInt(e.target.value) || 0 })}
+                   onBlur={(e) => update({ w: Math.max(40, parseInt(e.target.value) || 40) })}
+                   className="tech-input" />
           </Field>
           <Field label="Yükseklik">
-            <Input type="number" value={device.h} onChange={(e) => update({ h: Math.max(30, parseInt(e.target.value) || 30) })} className="tech-input" />
+            <Input type="number" value={device.h}
+                   onChange={(e) => update({ h: parseInt(e.target.value) || 0 })}
+                   onBlur={(e) => update({ h: Math.max(30, parseInt(e.target.value) || 30) })}
+                   className="tech-input" />
           </Field>
         </div>
         <div className="grid grid-cols-2 gap-2">
@@ -461,6 +467,8 @@ function WireForm({ wire }) {
         <Input type="number" value={wire.lengthM} onChange={(e) => update({ lengthM: e.target.value })} className="tech-input" />
       </Field>
 
+      <WireSizingCalc wire={wire} update={update} />
+
       {segmentCount >= 2 && (
         <div className="border-t border-[var(--border-structural)] pt-2 space-y-1.5">
           <div className="flex items-center justify-between">
@@ -501,6 +509,102 @@ function WireForm({ wire }) {
   );
 }
 
+// Otomatik kablo kesiti hesaplayıcı (Gridless-tarzı): akım + uzunluk + voltaj + max Vdüşüm → mm²
+function WireSizingCalc({ wire, update }) {
+  const lengthM = parseFloat(wire.lengthM) || 0;
+  const currentA = wire.currentA ?? '';
+  const systemV = wire.systemV ?? '12';
+  const maxVdropPct = wire.maxVdropPct ?? '3';
+
+  const result = React.useMemo(
+    () => calcWireSection(currentA, lengthM, systemV, maxVdropPct),
+    [currentA, lengthM, systemV, maxVdropPct]
+  );
+
+  const applyPreset = () => {
+    if (!result) return;
+    const p = presetForSection(result.section);
+    if (p) {
+      update({ wirePresetId: p.id, thickness: p.thickness, style: p.style, color: p.color,
+               label: `${result.section} mm²` });
+      toast.success(`${p.name} uygulandı (${result.section} mm²)`);
+    } else {
+      toast.error(`${result.section} mm² için uygun preset yok — elle ekleyin`);
+    }
+  };
+
+  const vdropOk = result && result.vDropPct <= (parseFloat(maxVdropPct) || 3);
+
+  return (
+    <div className="border-t border-[var(--border-structural)] pt-2 space-y-2">
+      <div className="panel-title flex items-center gap-1">
+        <Calculator className="w-3 h-3" /> KESİT HESABI
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        <Field label="Akım (A)">
+          <Input type="number" value={currentA} placeholder="örn. 30"
+                 onChange={(e) => update({ currentA: e.target.value })} className="tech-input" data-testid="wire-current-input" />
+        </Field>
+        <Field label="Sistem (V)">
+          <Select value={String(systemV)} onValueChange={(v) => update({ systemV: v })}>
+            <SelectTrigger className="tech-input"><SelectValue /></SelectTrigger>
+            <SelectContent className="wiring-portal">
+              <SelectItem value="12">12V</SelectItem>
+              <SelectItem value="24">24V</SelectItem>
+              <SelectItem value="48">48V</SelectItem>
+            </SelectContent>
+          </Select>
+        </Field>
+        <Field label="Max V%">
+          <Input type="number" step="0.5" value={maxVdropPct}
+                 onChange={(e) => update({ maxVdropPct: e.target.value })} className="tech-input" />
+        </Field>
+      </div>
+      <div className="text-[10px] text-[var(--text-tertiary)] font-mono">
+        İnverter/şarj için %2-3, aydınlatma/USB için %6 önerilir.
+      </div>
+
+      {result ? (
+        <div className={`border p-2 space-y-1 ${result.ok ? 'border-[var(--border-interactive)]' : 'border-[var(--accent-danger)]'}`}>
+          <div className="flex items-baseline justify-between">
+            <span className="text-[10px] text-[var(--text-secondary)] font-mono">ÖNERİLEN KESİT</span>
+            <span className="font-mono text-base text-[var(--accent-cyan)]" data-testid="wire-calc-section">{result.section} mm²</span>
+          </div>
+          <div className="flex items-center justify-between text-[11px] font-mono">
+            <span className="text-[var(--text-secondary)]">Voltaj düşümü</span>
+            <span className={vdropOk ? 'text-[var(--text-primary)]' : 'text-[var(--accent-danger)]'}>
+              {result.vDropPct.toFixed(2)}% ({result.vDropV.toFixed(2)} V)
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-[11px] font-mono">
+            <span className="text-[var(--text-secondary)]">Ampacity</span>
+            <span className="text-[var(--text-primary)]">{result.ampacity} A</span>
+          </div>
+          {!result.ok && (
+            <div className="text-[10px] text-[var(--accent-danger)] font-mono">
+              ⚠ En büyük standart kesit (95mm²) bile yetmiyor — uzunluğu/akımı kontrol edin veya paralel hat kullanın.
+            </div>
+          )}
+          {result.ok && result.limitedBy === 'vdrop' && (
+            <div className="text-[10px] text-[var(--text-tertiary)] font-mono">Kesit voltaj düşümüyle sınırlandı (uzun hat).</div>
+          )}
+          {result.ok && result.limitedBy === 'ampacity' && (
+            <div className="text-[10px] text-[var(--text-tertiary)] font-mono">Kesit taşıma kapasitesiyle sınırlandı.</div>
+          )}
+          <Button variant="ghost" size="sm" className="w-full h-7 rounded-none text-[var(--accent-cyan)] hover:bg-[var(--bg-hover)] mt-1"
+                  onClick={applyPreset} data-testid="wire-calc-apply">
+            BU KABLOYU UYGULA
+          </Button>
+        </div>
+      ) : (
+        <div className="text-[10px] text-[var(--text-tertiary)] font-mono">
+          Akım + uzunluk girince önerilen kesit burada görünür.
+        </div>
+      )}
+    </div>
+  );
+}
+
 function GroupForm({ group }) {
   const store = useEditorStore();
   const GROUP_COLORS = ['#0A84FF', '#00C853', '#FF9500', '#FF3B30', '#AF52DE', '#5AC8FA', '#8E8E93', '#FFD600'];
@@ -521,9 +625,11 @@ function GroupForm({ group }) {
       </Field>
       <div className="grid grid-cols-2 gap-2">
         <Field label="Genişlik"><Input className="tech-input" type="number" value={Math.round(group.w)}
-          onChange={(e) => store.updateGroup(group.id, { w: Math.max(120, parseInt(e.target.value) || 120) })} /></Field>
+          onChange={(e) => store.updateGroup(group.id, { w: parseInt(e.target.value) || 0 })}
+          onBlur={(e) => store.updateGroup(group.id, { w: Math.max(120, parseInt(e.target.value) || 120) })} /></Field>
         <Field label="Yükseklik"><Input className="tech-input" type="number" value={Math.round(group.h)}
-          onChange={(e) => store.updateGroup(group.id, { h: Math.max(90, parseInt(e.target.value) || 90) })} /></Field>
+          onChange={(e) => store.updateGroup(group.id, { h: parseInt(e.target.value) || 0 })}
+          onBlur={(e) => store.updateGroup(group.id, { h: Math.max(90, parseInt(e.target.value) || 90) })} /></Field>
       </div>
       <div className="text-[10px] text-[var(--text-tertiary)] font-mono">
         Başlık şeridinden sürükle, köşelerden boyutlandır. Cihazlar bölgenin üstüne serbestçe yerleştirilir.

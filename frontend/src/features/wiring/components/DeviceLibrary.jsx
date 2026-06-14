@@ -113,7 +113,7 @@ export default function DeviceLibrary() {
                           <Icon size={16} strokeWidth={1.5} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="text-xs text-white truncate">{d.name}</div>
+                          <div className="text-xs text-[var(--text-primary)] truncate">{d.name}</div>
                           <div className="text-[10px] text-[var(--text-secondary)] font-mono">
                             {d.ports.length} port
                           </div>

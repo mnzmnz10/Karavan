@@ -462,16 +462,16 @@ const CanvasInner = React.forwardRef(function CanvasInner(_, ref) {
       >
         <defs>
           <pattern id="smallGrid" width={gridSize} height={gridSize} patternUnits="userSpaceOnUse">
-            <path d={`M ${gridSize} 0 L 0 0 0 ${gridSize}`} fill="none" stroke="#14171F" strokeWidth="1" />
+            <path d={`M ${gridSize} 0 L 0 0 0 ${gridSize}`} fill="none" stroke="#EDF1F5" strokeWidth="1" />
           </pattern>
           <pattern id="largeGrid" width={gridSize * 5} height={gridSize * 5} patternUnits="userSpaceOnUse">
             <rect width={gridSize * 5} height={gridSize * 5} fill="url(#smallGrid)" />
-            <path d={`M ${gridSize * 5} 0 L 0 0 0 ${gridSize * 5}`} fill="none" stroke="#1C202B" strokeWidth="1.2" />
+            <path d={`M ${gridSize * 5} 0 L 0 0 0 ${gridSize * 5}`} fill="none" stroke="#DDE4EB" strokeWidth="1.2" />
           </pattern>
         </defs>
 
-        {/* Background */}
-        <rect data-canvas-bg="1" x={-5000} y={-5000} width={10000} height={10000} fill="var(--bg-canvas)" />
+        {/* Background — beyaz (PDF beyaz kağıtla birebir) */}
+        <rect data-canvas-bg="1" x={-5000} y={-5000} width={10000} height={10000} fill="#FFFFFF" />
 
         <g transform={`translate(${panX} ${panY}) scale(${zoom})`}>
           {showGrid && (
@@ -481,7 +481,7 @@ const CanvasInner = React.forwardRef(function CanvasInner(_, ref) {
           {/* Paper boundaries */}
           <rect
             x={0} y={0} width={sizeW} height={sizeH}
-            fill="none" stroke="#2D3548" strokeWidth={1 / zoom}
+            fill="none" stroke="#C9D2DC" strokeWidth={1 / zoom}
             strokeDasharray={`${6 / zoom} ${6 / zoom}`}
             data-canvas-bg="1"
             pointerEvents="none"
@@ -598,8 +598,8 @@ const CanvasInner = React.forwardRef(function CanvasInner(_, ref) {
           {selRect && (
             <rect
               x={selRect.x} y={selRect.y} width={selRect.w} height={selRect.h}
-              fill="rgba(0, 229, 255, 0.08)"
-              stroke="#00E5FF"
+              fill="rgba(37, 99, 235, 0.08)"
+              stroke="#2563EB"
               strokeWidth={1 / zoom}
               strokeDasharray={`${4 / zoom} ${3 / zoom}`}
               pointerEvents="none"
@@ -656,7 +656,13 @@ function GroupSvg({ group, selected, zoom, onMouseDown, onCornerMouseDown }) {
 function DeviceSvg({ device, selected, onMouseDown, onPortMouseDown, onCornerMouseDown, wireDrawingActive }) {
   const tpl = getDeviceTemplate(device.templateId);
   const Icon = tpl?.icon;
-  const accent = tpl?.color || '#00E5FF';
+  const accent = tpl?.color || '#2563EB';
+  // Portları side'a göre grupla — yan yana portlarda label çakışmasını önlemek için
+  // (aynı kenardaki label'lar offset sırasına göre kademelendirilir).
+  const sideGroups = {};
+  device.ports.forEach((pp) => { (sideGroups[pp.side] = sideGroups[pp.side] || []).push(pp); });
+  Object.values(sideGroups).forEach((list) => list.sort((a, b) => a.offset - b.offset));
+  const portIdxInSide = (p) => (sideGroups[p.side] || []).indexOf(p);
   // Yüklü görsel YOKSA ve cihaz için hazır illüstrasyon VARSA onu kullan (Victron tarzı)
   const hasImage = device.imageId || device.imageUrl;
   const illustration = (!hasImage && device.useIllustration !== false)
@@ -679,10 +685,10 @@ function DeviceSvg({ device, selected, onMouseDown, onPortMouseDown, onCornerMou
       <rect
         className="device-frame"
         x={0} y={0} width={device.w} height={device.h}
-        fill="#0D0F14" stroke="#2D3548" strokeWidth="1"
-        rx="2"
+        fill="#FFFFFF" stroke="#C8CFD8" strokeWidth="1"
+        rx="4"
       />
-      <rect x={0} y={0} width={device.w} height={4} fill={accent} opacity={0.6} />
+      <rect x={0} y={0} width={device.w} height={4} fill={accent} opacity={0.85} rx="4" />
 
       {device.imageId || device.imageUrl ? (() => {
         const boxX = 4, boxY = 8, boxW = device.w - 8, boxH = device.h - 30;
@@ -709,23 +715,23 @@ function DeviceSvg({ device, selected, onMouseDown, onPortMouseDown, onCornerMou
           </>
         );
       })() : Icon ? (
-        <g transform={`translate(${device.w / 2 - 14} ${device.h / 2 - 22})`} pointerEvents="none">
-          <foreignObject x={0} y={0} width={28} height={28}>
-            <div style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B949E' }}>
-              <Icon size={24} strokeWidth={1.5} />
-            </div>
-          </foreignObject>
-        </g>
+        // Inline SVG ikon (foreignObject DEĞİL) — hem aydınlık temada net hem svglib PDF'inde render eder
+        <Icon
+          x={device.w / 2 - 13} y={device.h / 2 - 18}
+          width={26} height={26}
+          color="#475569" strokeWidth={1.6}
+          pointerEvents="none"
+        />
       ) : null}
       </>
       )}
 
       {/* Device name — illüstrasyonlu cihazda altta dış etiket, kutuda iç */}
-      <text x={device.w / 2} y={illustration ? device.h + 14 : device.h - 8} textAnchor="middle" fill="#F8F9FA" fontSize="10" fontFamily="JetBrains Mono, monospace" fontWeight={illustration ? 'bold' : 'normal'}>
+      <text x={device.w / 2} y={illustration ? device.h + 14 : device.h - 8} textAnchor="middle" fill="#1A2230" fontSize="10" fontFamily="Montserrat, sans-serif" fontWeight={illustration ? 'bold' : '600'}>
         {device.name}
       </text>
       {device.brand || device.model ? (
-        <text x={device.w / 2} y={device.h + (illustration ? 28 : 12)} textAnchor="middle" fill="#8B949E" fontSize="9" fontFamily="JetBrains Mono, monospace">
+        <text x={device.w / 2} y={device.h + (illustration ? 28 : 12)} textAnchor="middle" fill="#5B6675" fontSize="9" fontFamily="Montserrat, sans-serif">
           {[device.brand, device.model].filter(Boolean).join(' / ')}
         </text>
       ) : null}
@@ -735,24 +741,38 @@ function DeviceSvg({ device, selected, onMouseDown, onPortMouseDown, onCornerMou
         const abs = getPortAbsolute(device, p);
         const lx = abs.x - device.x;
         const ly = abs.y - device.y;
+        // Yan yana (top/bottom) portlarda yatay metin çakışmasını önlemek için
+        // komşu label'ları kademelendir (tek/çift index farklı mesafede).
+        const idx = portIdxInSide(p);
+        const stagger = (p.side === 'top' || p.side === 'bottom') ? (idx % 2) * 10 : 0;
+        const labelX = p.side === 'right' ? 9 : p.side === 'left' ? -9 : 0;
+        const labelY = p.side === 'top' ? -9 - stagger
+          : p.side === 'bottom' ? 17 + stagger
+          : 3;
+        const anchor = p.side === 'right' ? 'start' : p.side === 'left' ? 'end' : 'middle';
         return (
           <g key={p.id} transform={`translate(${lx} ${ly})`}>
             <rect
               x={-4} y={-4} width={8} height={8}
               fill={p.color}
-              stroke="#F8F9FA"
-              strokeWidth="1"
+              stroke="#FFFFFF"
+              strokeWidth="1.5"
+              rx="1.5"
               className="port-handle"
               onMouseDown={(e) => onPortMouseDown(e, p)}
               data-testid={`port-${device.id}-${p.id}`}
             />
             <text
-              x={p.side === 'right' ? 8 : p.side === 'left' ? -8 : 0}
-              y={p.side === 'top' ? -8 : p.side === 'bottom' ? 16 : 2}
-              textAnchor={p.side === 'right' ? 'start' : p.side === 'left' ? 'end' : 'middle'}
-              fill="#8B949E"
-              fontSize="8"
-              fontFamily="JetBrains Mono, monospace"
+              className="port-label"
+              x={labelX} y={labelY}
+              textAnchor={anchor}
+              fill="#475569"
+              fontSize="7.5"
+              fontFamily="Montserrat, sans-serif"
+              fontWeight="600"
+              stroke="#FFFFFF"
+              strokeWidth="2.5"
+              style={{ paintOrder: 'stroke', strokeLinejoin: 'round' }}
               pointerEvents="none"
             >
               {p.name}
@@ -773,7 +793,7 @@ function DeviceSvg({ device, selected, onMouseDown, onPortMouseDown, onCornerMou
             <rect
               key={corner}
               x={hx - 4} y={hy - 4} width={8} height={8}
-              fill="#00E5FF" stroke="#0D0F14" strokeWidth="1"
+              fill="#2563EB" stroke="#FFFFFF" strokeWidth="1.5"
               style={{ cursor }}
               onMouseDown={(e) => onCornerMouseDown?.(e, corner)}
               data-testid={`resize-handle-${corner}`}
@@ -835,7 +855,7 @@ function WireSvg({ wire, selected, showLabel, labelAnchor, bridges, onSelect, on
   const dHit = pathToSvgD(points, 4);
   const bridgeRadius = 6;
   const bridgeMarks = bridges.map((c, i) => (
-    <circle key={i} cx={c.x} cy={c.y} r={bridgeRadius} fill="var(--bg-canvas)" stroke={color} strokeWidth={thickness} />
+    <circle key={i} cx={c.x} cy={c.y} r={bridgeRadius} fill="#FFFFFF" stroke={color} strokeWidth={thickness} />
   ));
 
   // Not: Etiket (kablo kesit/tip yazısı) artık burada DEĞİL — tüm kablolardan ve
@@ -858,7 +878,7 @@ function WireSvg({ wire, selected, showLabel, labelAnchor, bridges, onSelect, on
         <rect
           key={i}
           x={p.x - 4} y={p.y - 4} width={8} height={8}
-          fill="#00E5FF" stroke="#0D0F14" strokeWidth="1"
+          fill="#2563EB" stroke="#FFFFFF" strokeWidth="1.5"
           style={{ cursor: 'move' }}
           onMouseDown={(e) => onPointMouseDown(i, e)}
         />
@@ -877,10 +897,10 @@ function WireLabel({ wire, labelAnchor, showLabel, onLabelMouseDown }) {
   if (wire.labelOffset) { lx += wire.labelOffset.x; ly += wire.labelOffset.y; }
   return (
     <g transform={`translate(${lx} ${ly})`} onMouseDown={onLabelMouseDown} style={{ cursor: 'move' }}>
-      <rect x={-label.length * 2 - 3} y={-6} width={label.length * 4 + 6} height={10}
-            fill="#0D0F14" stroke={wire.color} strokeWidth="0.6" rx="1" />
-      <text x={0} y={0.5} textAnchor="middle" alignmentBaseline="middle" fill="#F8F9FA"
-            fontSize="6.5" fontFamily="JetBrains Mono, monospace">
+      <rect x={-label.length * 2.2 - 4} y={-6.5} width={label.length * 4.4 + 8} height={13}
+            fill="#FFFFFF" stroke={wire.color} strokeWidth="0.7" rx="3" />
+      <text x={0} y={0.5} textAnchor="middle" alignmentBaseline="middle" fill="#1A2230"
+            fontSize="7" fontFamily="Montserrat, sans-serif" fontWeight="600">
         {label}
       </text>
     </g>

@@ -9946,11 +9946,40 @@ async def wiring_ai_generate(req: WiringAiGenerateRequest):
 
 
 # ---- PDF export (svglib + reportlab; cairosvg yerine Windows uyumu) ----
+_wiring_fonts_ready = False
+
+
+def _ensure_wiring_fonts():
+    """Wiring SVG'sindeki font-family='Montserrat' text'leri için Türkçe glyph
+    destekli TTF'leri reportlab'a kaydet (svglib bunları kullanır). Bir kez çalışır."""
+    global _wiring_fonts_ready
+    if _wiring_fonts_ready:
+        return
+    try:
+        # svglib'in KENDİ font map'ine kaydet (reportlab registerFont tek başına
+        # svglib tarafından kullanılmıyor; svglib.register_font hem svglib map'ine
+        # hem reportlab'a yazar). Doğrulandı: Türkçe glyph'ler doğru render ediyor.
+        from svglib.svglib import register_font
+        font_dir = Path(__file__).parent / 'fonts'
+        reg = font_dir / 'Montserrat-Regular.ttf'
+        bold = font_dir / 'Montserrat-Bold.ttf'
+        if reg.exists():
+            register_font('Montserrat', str(reg), weight='normal', rlgFontName='Montserrat')
+            if bold.exists():
+                register_font('Montserrat', str(bold), weight='bold', rlgFontName='Montserrat-Bold')
+            logger.info("Wiring PDF fonts (Montserrat) registered via svglib")
+    except Exception as e:
+        logger.warning(f"Wiring font kaydı başarısız (Helvetica fallback): {e}")
+    finally:
+        _wiring_fonts_ready = True
+
+
 @api_router.post("/wiring-export-pdf")
 async def wiring_export_pdf(req: WiringPdfExportRequest):
     if not req.svg or "<svg" not in req.svg:
         raise HTTPException(400, "Geçersiz SVG verisi.")
     try:
+        _ensure_wiring_fonts()
         from svglib.svglib import svg2rlg
         from reportlab.graphics import renderPDF
         drawing = svg2rlg(BytesIO(req.svg.encode("utf-8")))

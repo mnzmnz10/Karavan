@@ -1,65 +1,63 @@
-/* Kablo Şeması editörü — izole koyu tema değişkenleri.
-   kablosemasi reposundan port edildi; Karavan'ın açık temasını bozmamak için
-   global :root yerine .wiring-root scope'una hapsedildi.
-   Dialog/Select gibi portal ile body'ye render olan bileşenler için aynı
-   değişkenler .wiring-portal class'ında da tanımlı (DialogContent/SelectContent'e
-   bu class eklenir). */
+/* Kablo Şeması editörü — izole AYDINLIK CAD/mühendislik tema değişkenleri.
+   Karavan ana temasıyla uyumlu; beyaz canvas PDF (beyaz kağıt) ile birebir tutar.
+   Global :root yerine .wiring-root scope'una hapsedildi. Portal ile body'ye
+   render olan bileşenler (Dialog/Select) için .wiring-portal'da da tanımlı. */
 .wiring-root,
 .wiring-portal {
-  /* Editöre özgü renkler */
-  --bg-canvas: #07080A;
-  --bg-panel: #0D0F14;
-  --bg-input: #14171F;
-  --bg-hover: #1C202B;
-  --border-structural: #1C202B;
-  --border-interactive: #2D3548;
-  --accent-cyan: #00E5FF;
-  --accent-yellow: #FFD600;
-  --accent-danger: #FF3366;
-  --accent-success: #00FF66;
-  --accent-warning: #FF9800;
-  --text-primary: #F8F9FA;
-  --text-secondary: #8B949E;
-  --text-tertiary: #484F58;
+  /* Editöre özgü renkler (aydınlık) */
+  --bg-canvas: #FFFFFF;
+  --bg-panel: #F4F6F8;
+  --bg-input: #FFFFFF;
+  --bg-hover: #E9EDF2;
+  --border-structural: #E3E7EC;
+  --border-interactive: #C8CFD8;
+  /* Vurgu: Karavan mavisi (değişken adı geriye uyum için --accent-cyan kaldı) */
+  --accent-cyan: #2563EB;
+  --accent-yellow: #CA8A04;
+  --accent-danger: #DC2626;
+  --accent-success: #16A34A;
+  --accent-warning: #D97706;
+  --text-primary: #1A2230;
+  --text-secondary: #5B6675;
+  --text-tertiary: #9AA4B2;
 
-  /* shadcn/Radix HSL değişkenleri (koyu tema) — cihaz ekleme paneli, kart,
-     input, select, dialog vb. bileşenlerin doğru görünmesi için. */
-  --background: 220 14% 5%;
-  --foreground: 210 17% 98%;
-  --card: 220 16% 7%;
-  --card-foreground: 210 17% 98%;
-  --popover: 220 16% 7%;
-  --popover-foreground: 210 17% 98%;
-  --primary: 187 100% 50%;
-  --primary-foreground: 220 14% 5%;
-  --secondary: 220 12% 14%;
-  --secondary-foreground: 210 17% 98%;
-  --muted: 220 12% 14%;
-  --muted-foreground: 215 8% 58%;
-  --accent: 220 12% 14%;
-  --accent-foreground: 210 17% 98%;
-  --destructive: 348 100% 60%;
-  --destructive-foreground: 210 17% 98%;
-  --border: 220 18% 14%;
-  --input: 220 18% 14%;
-  --ring: 187 100% 50%;
-  --radius: 2px;
+  /* shadcn/Radix HSL değişkenleri (aydınlık tema) */
+  --background: 0 0% 100%;
+  --foreground: 220 24% 14%;
+  --card: 210 20% 98%;
+  --card-foreground: 220 24% 14%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 220 24% 14%;
+  --primary: 217 91% 53%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 210 16% 93%;
+  --secondary-foreground: 220 24% 14%;
+  --muted: 210 16% 93%;
+  --muted-foreground: 220 9% 46%;
+  --accent: 210 16% 93%;
+  --accent-foreground: 220 24% 14%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 214 20% 90%;
+  --input: 214 20% 90%;
+  --ring: 217 91% 53%;
+  --radius: 4px;
 }
 
-/* ===== kablosemasi index.css custom class'ları (port edildi, @apply'sız) ===== */
+/* ===== custom class'lar (aydınlık tema) ===== */
 
-/* Canvas grid çizgileri */
+/* Canvas grid çizgileri — açık gri ince hat */
 .canvas-grid {
   background-image:
-    linear-gradient(to right, #14171F 1px, transparent 1px),
-    linear-gradient(to bottom, #14171F 1px, transparent 1px);
+    linear-gradient(to right, #EAEEF3 1px, transparent 1px),
+    linear-gradient(to bottom, #EAEEF3 1px, transparent 1px);
 }
 .wiring-root svg :focus { outline: none; }
 
 /* Kablo (wire) hover parıltısı */
 .wire-path { transition: filter 120ms ease; cursor: pointer; }
-.wire-path:hover { filter: drop-shadow(0 0 4px currentColor); }
-.wire-path.selected { filter: drop-shadow(0 0 6px currentColor); }
+.wire-path:hover { filter: drop-shadow(0 0 3px currentColor); }
+.wire-path.selected { filter: drop-shadow(0 0 4px currentColor); }
 
 /* Cihaz düğümü hover/seçili durumu */
 .device-node { cursor: move; }
@@ -81,31 +79,32 @@
   height: 2rem; width: 2rem;
   display: inline-flex; align-items: center; justify-content: center;
   color: var(--text-secondary);
-  border-radius: 2px;
+  border-radius: var(--radius);
   transition: background-color 120ms ease, color 120ms ease;
 }
-.tool-btn:hover { background-color: var(--bg-hover); color: #fff; }
-.tool-btn.active { color: var(--accent-cyan); border-bottom: 1px solid var(--accent-cyan); }
+.tool-btn:hover { background-color: var(--bg-hover); color: var(--text-primary); }
+.tool-btn.active { color: var(--accent-cyan); background-color: #E8F0FE; }
 
-/* Panel başlık etiketleri (form label'ları) */
+/* Panel başlık etiketleri */
 .panel-title {
   font-size: 10px;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--text-secondary);
+  font-weight: 600;
 }
 
 /* Cihaz kütüphanesi kartı */
 .lib-item {
-  border: 1px solid #1C202B;
-  background: #0D0F14;
+  border: 1px solid var(--border-structural);
+  background: #FFFFFF;
   padding: 0.5rem;
   cursor: grab;
   display: flex; align-items: center; gap: 0.5rem;
-  border-radius: 2px;
-  transition: background-color 120ms ease, border-color 120ms ease;
+  border-radius: var(--radius);
+  transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
 }
-.lib-item:hover { background: #14171F; border-color: var(--accent-cyan); }
+.lib-item:hover { background: #F8FAFD; border-color: var(--accent-cyan); box-shadow: 0 1px 3px rgba(37,99,235,0.12); }
 .lib-item:active { cursor: grabbing; }
 
 /* Teknik input'lar */
@@ -114,11 +113,11 @@
   font-size: 0.75rem;
   background: var(--bg-input);
   border: 1px solid var(--border-interactive);
-  color: #fff;
-  border-radius: 2px;
-  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-primary);
+  border-radius: var(--radius);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
 }
-.tech-input:focus { outline: none; border-color: var(--accent-cyan); }
+.tech-input:focus { outline: none; border-color: var(--accent-cyan); box-shadow: 0 0 0 2px rgba(37,99,235,0.15); }
 
 /* Range slider rengi */
 .wiring-root input[type='range'],

@@ -29,7 +29,7 @@ export default function KabloSemasiSection({ fullscreen = false }) {
     ? '-m-8 h-screen w-[calc(100%+4rem)]'
     : 'h-[85vh] w-full rounded-2xl border border-slate-200 shadow-sm';
   return (
-    <div className={`wiring-root ${sizeCls} flex flex-col bg-[var(--bg-canvas)] text-white overflow-hidden`}>
+    <div className={`wiring-root ${sizeCls} flex flex-col bg-[var(--bg-canvas)] text-[var(--text-primary)] overflow-hidden`}>
       <Toolbar canvasSvgRef={canvasRef} />
       <div className="flex-1 flex overflow-hidden">
         <DeviceLibrary />

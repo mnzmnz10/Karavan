@@ -221,6 +221,12 @@ export default function Toolbar({ canvasSvgRef }) {
 
   const onExportPdf = async () => {
     try {
+      const svgEl = canvasSvgRef?.current?.svgRef?.current;
+      if (!svgEl) { toast.error('Canvas hazır değil'); return; }
+      // Seçim tutamaçları PDF'e girmesin → seçimi kaldır ve re-render'ı bekle
+      store.select(null, null);
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+
       let logoDataUrl = null;
       if (store.logoId) {
         logoDataUrl = await fetchImageAsDataUrl(store.logoId);
@@ -230,7 +236,7 @@ export default function Toolbar({ canvasSvgRef }) {
       const imageEntries = await Promise.all(uniqueImageIds.map(async (id) => [id, await fetchImageAsDataUrl(id)]));
       const imageMap = Object.fromEntries(imageEntries.filter(([, url]) => url));
 
-      const svg = serializeCanvasSvg(store, logoDataUrl, imageMap);
+      const svg = serializeCanvasSvg(svgEl, store, logoDataUrl, imageMap);
       const blob = await exportPdf({
         svg,
         paper: store.paper,
@@ -268,7 +274,7 @@ export default function Toolbar({ canvasSvgRef }) {
 
   return (
     <div className="h-12 border-b border-[var(--border-structural)] bg-[var(--bg-panel)] flex items-center px-2 gap-1 select-none">
-      <div className="font-display font-semibold text-sm text-white pr-3 tracking-wider">
+      <div className="font-display font-semibold text-sm text-[var(--text-primary)] pr-3 tracking-wider">
         KARAVAN<span className="text-[var(--accent-cyan)]">.</span>SCHEMA
       </div>
       <Separator orientation="vertical" className="h-6 bg-[var(--border-structural)] mx-1" />
@@ -302,7 +308,7 @@ export default function Toolbar({ canvasSvgRef }) {
           </DialogHeader>
           <div className="space-y-3">
             <div>
-              <Label className="text-slate-200">Parça Listesi</Label>
+              <Label className="text-[var(--text-primary)]">Parça Listesi</Label>
               <Textarea
                 rows={6}
                 value={aiParts}
@@ -312,7 +318,7 @@ export default function Toolbar({ canvasSvgRef }) {
               />
             </div>
             <div>
-              <Label className="text-slate-200">Ek İstek (opsiyonel)</Label>
+              <Label className="text-[var(--text-primary)]">Ek İstek (opsiyonel)</Label>
               <Input value={aiNotes} onChange={(e) => setAiNotes(e.target.value)} placeholder="örn. paneller paralel bağlansın, 220V priz hattı olsun"
                 className="bg-white text-slate-900 placeholder:text-slate-400 border-slate-300" />
             </div>
@@ -395,7 +401,7 @@ function LoadDialog({ onClose }) {
                         onClose();
                       }}>
                 <div>
-                  <div className="text-xs text-white">{p.name}</div>
+                  <div className="text-xs text-[var(--text-primary)]">{p.name}</div>
                   <div className="text-[10px] text-[var(--text-secondary)] font-mono">{p.vehicle_name || 'araç yok'} · {(p.updated_at || '').slice(0, 16)}</div>
                 </div>
                 <FolderOpen size={14} className="text-[var(--accent-cyan)]" />
@@ -475,7 +481,7 @@ function BomDialog({ onClose }) {
               <ScrollArea className="h-64 border border-[var(--border-structural)] p-2">
                 {[...devSummary.entries()].map(([name, count]) => (
                   <div key={name} className="text-xs flex justify-between font-mono">
-                    <span className="text-white">{name}</span><span className="text-[var(--accent-cyan)]">×{count}</span>
+                    <span className="text-[var(--text-primary)]">{name}</span><span className="text-[var(--accent-cyan)]">×{count}</span>
                   </div>
                 ))}
               </ScrollArea>
@@ -485,7 +491,7 @@ function BomDialog({ onClose }) {
               <ScrollArea className="h-64 border border-[var(--border-structural)] p-2">
                 {[...wireSummary.entries()].map(([k, totalM]) => (
                   <div key={k} className="text-xs flex justify-between font-mono">
-                    <span className="text-white">{k.split('|')[0]}</span>
+                    <span className="text-[var(--text-primary)]">{k.split('|')[0]}</span>
                     <span className="text-[var(--accent-cyan)]">{totalM ? `${totalM} m` : '—'}</span>
                   </div>
                 ))}
@@ -542,7 +548,7 @@ function BomDialog({ onClose }) {
                   {net.ports.map((p, i) => (
                     <div key={i} className="text-[10px] font-mono flex items-center gap-2">
                       <span className="w-2 h-2 inline-block" style={{ background: p.color }} />
-                      <span className="text-white">{p.deviceName}</span>
+                      <span className="text-[var(--text-primary)]">{p.deviceName}</span>
                       <span className="text-[var(--text-secondary)]">.{p.portName}</span>
                     </div>
                   ))}
@@ -565,158 +571,72 @@ const PAPER_PT = {
   A2: { w: 2245, h: 1587 },
 };
 
-function serializeCanvasSvg(store, logoDataUrl = null, imageMap = {}) {
-  const { devices, wires, groups, paper, orientation, projectName, routingMode } = store;
-  let p = PAPER_PT[paper] || PAPER_PT.A4;
-  if (orientation === 'portrait') p = { w: p.h, h: p.w };
-  const W = p.w * 2, H = p.h * 2;
+// Ekran=PDF: canvas'ın GERÇEK DOM SVG'sini serialize eder (store'dan yeniden
+// kurmaz). Böylece PDF ekranla birebir aynı olur. Transient süsler (grid, paper,
+// arka plan, seçim tutamaçları) çıkarılır; cihaz görselleri data-URL gömülür;
+// içerik identity transform'a alınıp beyaz zemin + başlık ile sarılır.
+function serializeCanvasSvg(svgEl, store, logoDataUrl = null, imageMap = {}) {
+  const { devices, groups, projectName } = store;
 
+  // İçerik sınırları (store'dan — viewBox için)
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const d of devices) {
     minX = Math.min(minX, d.x); minY = Math.min(minY, d.y);
     maxX = Math.max(maxX, d.x + d.w); maxY = Math.max(maxY, d.y + d.h);
   }
-  // Bölge kutuları da sınırlara dahil (cihazdan taşabilir)
   for (const g of (groups || [])) {
     minX = Math.min(minX, g.x); minY = Math.min(minY, g.y);
     maxX = Math.max(maxX, g.x + g.w); maxY = Math.max(maxY, g.y + g.h);
   }
-  if (!isFinite(minX)) { minX = 0; minY = 0; maxX = W; maxY = H; }
-  // Reserve space at the top for the project-name header
-  const headerH = 60;
-  const pad = 60;
+  if (!isFinite(minX)) { minX = 0; minY = 0; maxX = 800; maxY = 600; }
+  const headerH = 60, pad = 60;
   minX -= pad; maxX += pad; maxY += pad;
   minY -= (pad + headerH);
   const bw = maxX - minX, bh = maxY - minY;
 
-  const obstacles = devices.map((d) => ({ x: d.x, y: d.y, w: d.w, h: d.h, id: d.id }));
-  const routeCtx = { usedHoriz: new Set(), usedVert: new Set() };
-  const wirePaths = wires.map((w) => {
-    const fromDev = devices.find((d) => d.id === w.from.deviceId);
-    const toDev = devices.find((d) => d.id === w.to.deviceId);
-    if (!fromDev || !toDev) return null;
-    const fromPort = fromDev.ports.find((p) => p.id === w.from.portId);
-    const toPort = toDev.ports.find((p) => p.id === w.to.portId);
-    if (!fromPort || !toPort) return null;
-    const from = getPortAbsolute(fromDev, fromPort);
-    const to = getPortAbsolute(toDev, toPort);
-    if (w.manualPoints && w.manualPoints.length) return { wire: w, points: w.manualPoints };
-    const pts = routingMode === 'astar'
-      ? aStarRoute(from, to, obstacles, routeCtx, { gridSize: 10, stub: 24 })
-      : routeWire(from, to, obstacles.filter((o) => o.id !== w.from.deviceId && o.id !== w.to.deviceId), 24);
-    return { wire: w, points: pts };
-  }).filter(Boolean);
-
-  const bridges = new Map();
-  for (let i = 0; i < wirePaths.length; i++) {
-    for (let j = i + 1; j < wirePaths.length; j++) {
-      const cs = findPathCrossings(wirePaths[i].points, wirePaths[j].points);
-      for (const c of cs) {
-        const key = wirePaths[j].wire.id;
-        if (!bridges.has(key)) bridges.set(key, []);
-        bridges.get(key).push(c);
+  // Canlı SVG'yi klonla ve temizle
+  const clone = svgEl.cloneNode(true);
+  // Pan/zoom grubunu identity'ye al (dünya koordinatları kalsın)
+  const contentG = clone.querySelector('g[transform]');
+  if (contentG) contentG.removeAttribute('transform');
+  // Arka plan / grid / paper / hizalama + seçim tutamaçlarını çıkar
+  clone.querySelectorAll('[data-canvas-bg]').forEach((n) => n.remove());
+  clone.querySelectorAll('[data-testid^="resize-handle-"]').forEach((n) => n.remove());
+  // Port label halo'su (beyaz stroke + paint-order) svglib'de bozulur → sıyır
+  clone.querySelectorAll('text.port-label').forEach((t) => {
+    t.setAttribute('stroke', 'none');
+    t.removeAttribute('stroke-width');
+    if (t.style) t.style.paintOrder = '';
+  });
+  // Cihaz görselleri: backend URL href → gömülü data-URL
+  const ids = Object.keys(imageMap);
+  if (ids.length) {
+    clone.querySelectorAll('image').forEach((img) => {
+      const href = img.getAttribute('href')
+        || img.getAttributeNS('http://www.w3.org/1999/xlink', 'href') || '';
+      for (const id of ids) {
+        if (imageMap[id] && href.includes(id)) {
+          img.setAttribute('href', imageMap[id]);
+          try { img.removeAttributeNS('http://www.w3.org/1999/xlink', 'href'); } catch (e) { /* yoksa geç */ }
+          break;
+        }
       }
-    }
+    });
   }
+  const innerXml = contentG ? new XMLSerializer().serializeToString(contentG) : '';
 
   const escape = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  // Use Liberation Mono/Sans which are present on the cairosvg server and support
-  // the full Turkish glyph set (ı, ş, ğ, ç, ü, ö, İ ...). Fallback chain still
-  // includes the generic monospace family if substitutions are needed.
-  const monoFamily = 'Liberation Mono, DejaVu Sans Mono, monospace';
-  const sansFamily = 'Liberation Sans, DejaVu Sans, sans-serif';
+  const titleX = minX + bw / 2;
+  const titleY = minY + (headerH / 2) + 6;
 
-  let svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="${minX} ${minY} ${bw} ${bh}" width="${bw}" height="${bh}">`;
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="${minX} ${minY} ${bw} ${bh}" width="${bw}" height="${bh}" font-family="Montserrat, sans-serif">`;
   svg += `<rect x="${minX}" y="${minY}" width="${bw}" height="${bh}" fill="#FFFFFF" />`;
-
-  // ===== Top header: ONLY the project name, ~16pt =====
-  const titleY = minY + (headerH / 2) + 6;     // baseline near vertical center
-  const titleX = minX + bw / 2;                 // centered horizontally
   if (logoDataUrl) {
     svg += `<image x="${minX + 20}" y="${minY + 10}" width="${headerH - 20}" height="${headerH - 20}" preserveAspectRatio="xMidYMid meet" xlink:href="${logoDataUrl}" />`;
   }
-  svg += `<text x="${titleX}" y="${titleY}" text-anchor="middle" font-size="22" font-weight="bold" font-family="${sansFamily}" fill="#000">${escape(projectName || 'KARAVAN ŞEMA')}</text>`;
-  svg += `<line x1="${minX + 40}" y1="${minY + headerH - 4}" x2="${maxX - 40}" y2="${minY + headerH - 4}" stroke="#000" stroke-width="0.8" />`;
-
-  // Bölge kutuları (en arkada — cihaz/kabloların altında)
-  for (const g of (groups || [])) {
-    svg += `<rect x="${g.x}" y="${g.y}" width="${g.w}" height="${g.h}" rx="10" fill="${g.color}" fill-opacity="0.06" stroke="${g.color}" stroke-opacity="0.5" stroke-width="1.5" />`;
-    svg += `<text x="${g.x + 12}" y="${g.y + 22}" font-size="15" font-weight="bold" font-family="${sansFamily}" fill="${g.color}" letter-spacing="1.2">${escape((g.title || '').toUpperCase())}</text>`;
-  }
-
-  // Wires
-  for (const wp of wirePaths) {
-    const w = wp.wire;
-    const dash = w.style === 'dashed' ? '8 4' : w.style === 'dotted' ? '2 4' : 'none';
-    const segCols = w.segmentColors && Object.keys(w.segmentColors).length > 0 ? w.segmentColors : null;
-    if (segCols) {
-      for (let i = 0; i < wp.points.length - 1; i++) {
-        const a = wp.points[i], b = wp.points[i + 1];
-        const col = segCols[i] || w.color;
-        svg += `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="${col}" stroke-width="${w.thickness}" stroke-dasharray="${dash}" stroke-linecap="round" />`;
-      }
-    } else {
-      const dStr = pathToSvgD(wp.points, 4);
-      svg += `<path d="${dStr}" fill="none" stroke="${w.color}" stroke-width="${w.thickness}" stroke-dasharray="${dash}" stroke-linecap="round" stroke-linejoin="round" />`;
-    }
-    const bs = bridges.get(w.id) || [];
-    for (const b of bs) {
-      svg += `<circle cx="${b.x}" cy="${b.y}" r="6" fill="#FFFFFF" stroke="${w.color}" stroke-width="${w.thickness}" />`;
-    }
-    if (w.showLabel !== false && wp.points.length >= 2) {
-      const labelText = getWireDisplayLabel(w);
-      if (labelText) {
-        const mid = Math.floor(wp.points.length / 2);
-        const a = wp.points[Math.max(0, mid - 1)];
-        const b = wp.points[mid] || a;
-        let lx = (a.x + b.x) / 2;
-        let ly = (a.y + b.y) / 2;
-        if (w.labelOffset) { lx += w.labelOffset.x; ly += w.labelOffset.y; }
-        const padX = labelText.length * 3 + 4;
-        svg += `<rect x="${lx - padX}" y="${ly - 9}" width="${padX * 2}" height="14" fill="#FFFFFF" stroke="${w.color}" stroke-width="0.8" />`;
-        svg += `<text x="${lx}" y="${ly + 3}" text-anchor="middle" font-size="9" font-family="${monoFamily}" fill="#000">${escape(labelText)}</text>`;
-      }
-    }
-  }
-
-  // Devices
-  for (const d of devices) {
-    const tpl = getTpl(d.templateId);
-    const accent = tpl?.color || '#00E5FF';
-    const imgUrl = d.imageId ? imageMap[d.imageId] : null;
-    const illus = (!imgUrl && d.useIllustration !== false) ? getDeviceIllustration(d.templateId, d.w, d.h) : null;
-    svg += `<g transform="translate(${d.x} ${d.y}) rotate(${d.rotation || 0} ${d.w / 2} ${d.h / 2})">`;
-    if (illus) {
-      // Hazır illüstrasyon (kendi gövdesini çizer; çerçeve/accent yok)
-      svg += illus;
-    } else {
-      svg += `<rect x="0" y="0" width="${d.w}" height="${d.h}" fill="#FFFFFF" stroke="#333" stroke-width="1" />`;
-      svg += `<rect x="0" y="0" width="${d.w}" height="3" fill="${accent}" />`;
-      if (imgUrl) {
-        svg += `<image x="4" y="8" width="${d.w - 8}" height="${d.h - 30}" preserveAspectRatio="xMidYMid meet" xlink:href="${imgUrl}" />`;
-      }
-      if (d.ratingValue) {
-        svg += `<text x="${d.w / 2}" y="${d.h / 2 - 8}" text-anchor="middle" font-size="10" font-family="${monoFamily}" fill="#000" font-weight="bold">${escape(d.ratingValue)} ${escape(d.ratingUnit || '')}</text>`;
-      }
-    }
-    // İsim: illüstrasyonlu cihazda altta dış, kutuda iç
-    svg += `<text x="${d.w / 2}" y="${illus ? d.h + 13 : d.h - 8}" text-anchor="middle" font-size="11" font-family="${monoFamily}" fill="#000">${escape(d.name)}</text>`;
-    if ((d.brand || d.model) && !illus) {
-      svg += `<text x="${d.w / 2}" y="${d.h / 2 + 4}" text-anchor="middle" font-size="9" font-family="${monoFamily}" fill="#555">${escape([d.brand, d.model].filter(Boolean).join(' / '))}</text>`;
-    }
-    for (const port of d.ports) {
-      const abs = getPortAbsolute(d, port);
-      const lx = abs.x - d.x;
-      const ly = abs.y - d.y;
-      svg += `<rect x="${lx - 4}" y="${ly - 4}" width="8" height="8" fill="${port.color}" stroke="#000" stroke-width="0.5" />`;
-      const tx = port.side === 'right' ? lx + 8 : port.side === 'left' ? lx - 8 : lx;
-      const ty = port.side === 'top' ? ly - 8 : port.side === 'bottom' ? ly + 16 : ly + 2;
-      const anchor = port.side === 'right' ? 'start' : port.side === 'left' ? 'end' : 'middle';
-      svg += `<text x="${tx}" y="${ty}" text-anchor="${anchor}" font-size="8" font-family="${monoFamily}" fill="#000">${escape(port.name)}</text>`;
-    }
-    svg += `</g>`;
-  }
-
+  svg += `<text x="${titleX}" y="${titleY}" text-anchor="middle" font-size="22" font-weight="bold" font-family="Montserrat, sans-serif" fill="#1A2230">${escape(projectName || 'KARAVAN ŞEMA')}</text>`;
+  svg += `<line x1="${minX + 40}" y1="${minY + headerH - 4}" x2="${maxX - 40}" y2="${minY + headerH - 4}" stroke="#1A2230" stroke-width="0.8" />`;
+  svg += innerXml;
   svg += `</svg>`;
   return svg;
 }
