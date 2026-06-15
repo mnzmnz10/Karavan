@@ -795,6 +795,7 @@ function App() {
   const [showQuoteDiscountedPrices, setShowQuoteDiscountedPrices] = useState(false); // Teklif indirimli fiyat görünürlüğü - Varsayılan KAPALI
   const [selectedProductsCustomPrices, setSelectedProductsCustomPrices] = useState(new Map()); // Map<productId, customPrice>
   const [quoteSubTab, setQuoteSubTab] = useState('create'); // Teklif alt sekmesi: 'create' veya 'list'
+  const [quoteView, setQuoteView] = useState('grid'); // Teklifler görünümü: 'grid' (kart liste) | 'editor' (düzenleme)
   
   // Hızlı ürün ekleme için state'ler
   const [quickAddSearch, setQuickAddSearch] = useState('');
@@ -1881,7 +1882,7 @@ function App() {
       const products = (r.data.products || []).map((p) => ({
         name: p.name || '', brand: p.brand || '',
         list_price: p.list_price ?? '', discounted_price: p.discounted_price ?? '',
-        currency: p.currency || 'EUR', description: '', image_url: p.image_url || '',
+        currency: p.currency || 'EUR', description: p.description || '', specs: p.specs || '', image_url: p.image_url || '',
         // code+source_url ürünle kaydedilir -> fiyat kontrolünde güvenilir eşleşme
         code: p.code || '', source_url: p.source_url || ''
       }));
@@ -2304,7 +2305,11 @@ function App() {
     setServiceDialogOpen(true);
   };
 
-  const openServiceView = (svc) => { setViewingService(svc); };
+  const openServiceView = async (svc) => {
+    // Liste fotoğrafsız gelir (hız) — detay açılınca tam kaydı (foto dahil) çek
+    setViewingService(svc);
+    try { const r = await axios.get(`${API}/services/${svc.id}`); if (r.data) setViewingService(r.data); } catch (e) { /* liste objesi kalsın */ }
+  };
   const backFromServiceView = () => { setViewingService(null); };
 
   // Aynı araç/müşterinin geçmiş servis kayıtları
@@ -2455,7 +2460,10 @@ function App() {
   };
   const removeServicePhoto = (idx) => setServiceForm((f) => ({ ...f, photos: (f.photos || []).filter((_, i) => i !== idx) }));
 
-  const openEditServiceDialog = (svc) => {
+  const openEditServiceDialog = async (svcArg) => {
+    // Liste fotoğrafsız gelir (hız) — düzenleme açılınca tam kaydı (foto dahil) çek
+    let svc = svcArg;
+    try { const r = await axios.get(`${API}/services/${svcArg.id}`); if (r.data) svc = r.data; } catch (e) { /* liste objesi kalsın */ }
     setServiceEditingId(svc.id);
     // Tahsilatlar: yeni alan. Eski kayıtta yoksa ve avans varsa, avansı ilk tahsilat satırına taşı.
     let collections = Array.isArray(svc.collections)
@@ -3393,6 +3401,7 @@ function App() {
     setEditForm({
       name: product.name,
       description: product.description || '',
+      specs: product.specs || '', // Teknik özellikler
       brand: product.brand || '', // Marka bilgisini yükle
       company_id: product.company_id || '', // Firma bilgisini yükle
       image_url: product.image_url || '',
@@ -3426,6 +3435,7 @@ function App() {
       const updateData = {
         name: editForm.name,
         description: editForm.description || null,
+        specs: editForm.specs || null, // Teknik özellikler
         brand: editForm.brand || null, // Marka alanını backend'e gönder
         company_id: editForm.company_id, // Firma alanını backend'e gönder
         image_url: editForm.image_url || null,
@@ -3977,6 +3987,44 @@ function App() {
     setLoadedQuote(null); // Yüklenen teklifi de temizle
     setQuoteName(''); // Teklif adını da temizle
     setSelectedQuoteCustomer(''); // Seçili müşteriyi de temizle
+  };
+
+  // Kayıtlı teklifi düzenleme alanına yükle (kart/buton ortak) + editör moduna geç
+  const openQuoteForEdit = (quote) => {
+    try {
+      const productIds = new Map();
+      const productData = new Map();
+      const customPrices = new Map();
+      quote.products.forEach((p) => {
+        productIds.set(p.id, p.quantity || 1);
+        if (p.custom_price !== undefined && p.custom_price !== null) {
+          let loadedCustomPrice = parseFloat(p.custom_price);
+          const fullProduct = products.find((prod) => prod.id === p.id);
+          if (fullProduct && fullProduct.currency && fullProduct.currency !== 'TRY') {
+            const rate = parseFloat(exchangeRates[fullProduct.currency]) || (fullProduct.currency === 'USD' ? 34.0 : 37.0);
+            if (loadedCustomPrice > (parseFloat(fullProduct.list_price) || 0) * 3) {
+              loadedCustomPrice = loadedCustomPrice / rate;
+            }
+          }
+          customPrices.set(p.id, loadedCustomPrice);
+        }
+        const fullProduct = products.find((prod) => prod.id === p.id);
+        productData.set(p.id, fullProduct ? { ...fullProduct, quantity: p.quantity || 1 } : p);
+      });
+      setSelectedProducts(new Map(productIds));
+      setSelectedProductsData(new Map(productData));
+      setSelectedProductsCustomPrices(customPrices);
+      setQuoteDiscount(quote.discount_percentage);
+      setQuoteLaborCost(quote.labor_cost || 0);
+      setQuoteNotes(quote.notes || '');
+      setLoadedQuote({ ...quote });
+      setQuoteName(quote.name);
+      setSelectedQuoteCustomer(quote.customer_id || '');
+      setQuoteView('editor');
+      toast.success(`"${quote.name}" teklifi yüklendi`);
+    } catch (e) {
+      toast.error('Teklif yükleme başarısız oldu');
+    }
   };
 
   // Teklifi kaydet (PDF indirmeden)
@@ -5171,6 +5219,7 @@ function App() {
       company_id: '',
       category_id: '',
       description: '',
+      specs: '',
       image_url: '',
       list_price: '',
       discounted_price: '',
@@ -5190,6 +5239,7 @@ function App() {
         name: newProductForm.name,
         company_id: newProductForm.company_id,
         description: newProductForm.description || null,
+        specs: newProductForm.specs || null,
         image_url: newProductForm.image_url || null,
         list_price: parseFloat(newProductForm.list_price),
         currency: newProductForm.currency
@@ -8654,11 +8704,25 @@ function App() {
 
                         <div>
                           <Label htmlFor="product-description">Açıklama (Opsiyonel)</Label>
-                          <Input
+                          <textarea
                             id="product-description"
                             placeholder="Ürün açıklaması"
                             value={newProductForm.description}
                             onChange={(e) => setNewProductForm({...newProductForm, description: e.target.value})}
+                            rows={4}
+                            className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 whitespace-pre-wrap"
+                          />
+                        </div>
+
+                        <div>
+                          <Label htmlFor="product-specs">Teknik Özellikler (Opsiyonel)</Label>
+                          <textarea
+                            id="product-specs"
+                            placeholder="Ölçü / ağırlık / kapasite / voltaj..."
+                            value={newProductForm.specs || ''}
+                            onChange={(e) => setNewProductForm({...newProductForm, specs: e.target.value})}
+                            rows={5}
+                            className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 whitespace-pre-wrap"
                           />
                         </div>
 
@@ -9002,7 +9066,8 @@ function App() {
                                       <span className="text-xs">Seç / Adet</span>
                                     </div>
                                   </TableHead>
-                                  <TableHead className="w-80">Ürün</TableHead>
+                                  <TableHead className="w-72">Ürün</TableHead>
+                                  <TableHead className="w-72">Teknik Özellikler</TableHead>
                                   <TableHead className="w-32">Firma</TableHead>
                                   <TableHead className="w-28">Marka</TableHead>
                                   <TableHead className="w-28">Liste Fiyatı</TableHead>
@@ -9010,8 +9075,6 @@ function App() {
                                   <TableHead className="w-24">Para Birimi</TableHead>
                                   <TableHead className="w-28">TL Fiyat</TableHead>
                                   {showDiscountedPrices && <TableHead className="w-28">TL İndirimli</TableHead>}
-                                  <TableHead className="w-24">Stok</TableHead>
-                                  <TableHead className="w-16">Toplu</TableHead>
                                   <TableHead className="w-24">İşlemler</TableHead>
                                 </TableRow>
                               </TableHeader>
@@ -9065,11 +9128,12 @@ function App() {
                                               className="min-w-[200px]"
                                               placeholder="Ürün adı"
                                             />
-                                            <Input
-                                              value={editForm.description}
+                                            <textarea
+                                              value={editForm.description || ''}
                                               onChange={(e) => setEditForm({...editForm, description: e.target.value})}
-                                              className="min-w-[200px]"
-                                              placeholder="Açıklama (opsiyonel)"
+                                              rows={4}
+                                              className="min-w-[200px] w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 whitespace-pre-wrap"
+                                              placeholder="Açıklama"
                                             />
                                             <Input
                                               value={editForm.brand}
@@ -9123,7 +9187,7 @@ function App() {
                                               )}
                                               <div className="flex-1 min-w-0">
                                                 <div className="flex items-center gap-2">
-                                                  <div className="font-medium truncate pr-2" title={product.name}>{product.name}</div>
+                                                  <div className="font-medium break-words pr-2" title={product.name}>{product.name}</div>
                                                   <button
                                                     onClick={() => toggleProductFavorite(product.id)}
                                                     className={`flex-shrink-0 p-1 rounded-full hover:bg-gray-100 transition-colors ${
@@ -9144,10 +9208,27 @@ function App() {
                                           </div>
                                         )}
                                       </TableCell>
+                                      <TableCell className="w-72 align-top">
+                                        {isEditing ? (
+                                          <textarea
+                                            value={editForm.specs || ''}
+                                            onChange={(e) => setEditForm({...editForm, specs: e.target.value})}
+                                            rows={5}
+                                            placeholder="Ölçü / ağırlık / kapasite / voltaj..."
+                                            className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 whitespace-pre-wrap"
+                                          />
+                                        ) : (
+                                          product.specs ? (
+                                            <div className="text-xs text-slate-600 whitespace-pre-wrap break-words leading-snug pr-1">{product.specs}</div>
+                                          ) : (
+                                            <span className="text-gray-400 text-sm">-</span>
+                                          )
+                                        )}
+                                      </TableCell>
                                       <TableCell className="w-32">
                                         {isEditing ? (
-                                          <Select 
-                                            value={editForm.company_id} 
+                                          <Select
+                                            value={editForm.company_id}
                                             onValueChange={(value) => setEditForm({...editForm, company_id: value})}
                                           >
                                             <SelectTrigger className="w-28">
@@ -9249,35 +9330,6 @@ function App() {
                                         </TableCell>
                                       )}
                                       <TableCell className="w-24">
-                                        {product.is_favorite ? (
-                                          <Input
-                                            type="number"
-                                            min="0"
-                                            value={product.stock_quantity || 0}
-                                            onChange={(e) => updateProductStock(product.id, parseInt(e.target.value) || 0)}
-                                            className="w-16 text-center text-sm"
-                                            placeholder="0"
-                                          />
-                                        ) : (
-                                          <span className="text-gray-400 text-sm">-</span>
-                                        )}
-                                      </TableCell>
-                                      <TableCell className="w-16">
-                                        {/* Toplu işlem seçimi - Sağ tarafta */}
-                                        <Button
-                                          size="sm"
-                                          variant={selectedProductsForBulk.has(product.id) ? "default" : "outline"}
-                                          onClick={() => toggleProductSelectionForBulk(product.id)}
-                                          className={selectedProductsForBulk.has(product.id) ? "bg-blue-600 hover:bg-blue-700" : ""}
-                                        >
-                                          {selectedProductsForBulk.has(product.id) ? (
-                                            <Check className="w-4 h-4" />
-                                          ) : (
-                                            <Plus className="w-4 h-4" />
-                                          )}
-                                        </Button>
-                                      </TableCell>
-                                      <TableCell className="w-24">
                                         <div className="flex gap-2">
                                           {isEditing ? (
                                             <>
@@ -9351,6 +9403,84 @@ function App() {
             </TabsContent>
                            {/* Quotes Tab - Redesigned to be high-productivity and single-screen */}
           <TabsContent value="quotes" className="space-y-6">
+            {quoteView === 'grid' ? (
+              <div className="space-y-4">
+                {/* Arama */}
+                <div className="relative max-w-md">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={quoteSearchTerm}
+                    onChange={(e) => { setQuoteSearchTerm(e.target.value); filterQuotes(e.target.value); }}
+                    placeholder="Teklif ara — başlık, müşteri, ürün..."
+                    className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {/* + Yeni Teklif — her zaman sabit en başta */}
+                  <button type="button" onClick={() => { clearSelection(); setQuoteView('editor'); }} className="group bg-emerald-50/40 hover:bg-emerald-50 rounded-2xl border-2 border-dashed border-emerald-300 hover:border-emerald-400 transition-colors p-5 flex flex-col items-center justify-center text-center gap-2 min-h-[180px]">
+                    <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform"><Plus className="w-6 h-6" /></div>
+                    <div className="font-bold text-emerald-700">Yeni Teklif Oluştur</div>
+                    <div className="text-xs text-emerald-500/80">Sıfırdan boş teklif hazırla</div>
+                  </button>
+
+                  {filteredQuotes.map((quote) => (
+                    <div key={quote.id} onClick={() => openQuoteForEdit(quote)}
+                         className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md hover:border-emerald-200 transition-all p-5 flex flex-col gap-2 cursor-pointer">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-[10px] font-black tracking-wider text-emerald-700/80 mb-1 tabular-nums">
+                            QT-{(quote.id || '').replace(/-/g, '').slice(0, 8).toUpperCase()}
+                          </div>
+                          <div className="font-extrabold text-slate-900 text-[15px] truncate leading-snug" title={quote.name}>{quote.name || 'İsimsiz Teklif'}</div>
+                        </div>
+                        <div className="text-right whitespace-nowrap shrink-0">
+                          <span className="font-black text-slate-950 text-base tabular-nums">₺ {formatPrice(quote.total_net_price)}</span>
+                          {quote.discount_percentage > 0 && (
+                            <div className="text-[11px] text-rose-500 font-extrabold mt-0.5">%{quote.discount_percentage} İndirim</div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 text-xs font-bold text-slate-500">
+                        <span className="bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-full ring-1 ring-emerald-100">{quote.products?.length || 0} Ürün</span>
+                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">{quote.created_at ? new Date(quote.created_at).toLocaleDateString('tr-TR') : ''}</span>
+                      </div>
+                      <div className="flex items-center gap-2 pt-2 border-t border-slate-100 mt-auto" onClick={(e) => e.stopPropagation()}>
+                        <Button size="sm" className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs" onClick={() => openQuoteForEdit(quote)}>
+                          <Edit className="w-4 h-4 mr-1" /> Düzenle
+                        </Button>
+                        <Button size="sm" variant="ghost" className="text-slate-500" onClick={() => window.open(`${API}/quotes/${quote.id}/pdf`, '_blank')} title="PDF indir">
+                          <Download className="w-4 h-4" />
+                        </Button>
+                        <Button size="sm" variant="ghost" className="text-amber-600 hover:text-amber-700" onClick={() => sendQuoteToService(quote)} title="Servise Gönder">
+                          <Wrench className="w-4 h-4" />
+                        </Button>
+                        <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-700" onClick={async () => {
+                          if (!window.confirm(`"${quote.name}" teklifini silmek istediğinizden emin misiniz?`)) return;
+                          try {
+                            const response = await fetch(`${API}/quotes/${quote.id}`, { method: 'DELETE' });
+                            if (response.ok) { toast.success('Teklif silindi'); await fetchQuotes(); if (loadedQuote?.id === quote.id) clearSelection(); }
+                            else toast.error('Teklif silinemedi');
+                          } catch (e) { toast.error('Teklif silinemedi'); }
+                        }} title="Sil">
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {filteredQuotes.length === 0 && (
+                  <div className="text-center py-8 text-sm text-slate-400">
+                    {quotes.length === 0 ? 'Henüz teklif yok — yukarıdaki kartla yeni teklif oluştur.' : 'Bu aramaya uygun teklif yok.'}
+                  </div>
+                )}
+              </div>
+            ) : (
+            <>
+            <button type="button" onClick={() => { clearSelection(); setQuoteView('grid'); }} className="inline-flex items-center gap-1.5 text-sm font-bold text-slate-600 hover:text-emerald-700 mb-1">
+              <ChevronUp className="w-4 h-4 -rotate-90" /> Tekliflere Dön
+            </button>
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
               
               {/* PDF Canvas Workspace (col-span-3) - A4 Styled Sheet */}
@@ -9396,7 +9526,7 @@ function App() {
                           <p className="truncate text-sm font-bold text-amber-900" title={loadedQuote.name}>{loadedQuote.name}</p>
                         </div>
                         <Button
-                          onClick={() => { clearSelection(); toast.success('Teklif kapatıldı — yeni teklif alanına geçildi'); }}
+                          onClick={() => { clearSelection(); setQuoteView('grid'); toast.success('Teklif kapatıldı'); }}
                           className="shrink-0 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl flex items-center gap-1.5 px-4"
                         >
                           <X className="w-4 h-4" /> Teklifi Kapat
@@ -10039,12 +10169,68 @@ function App() {
                 </div>
               </div>
 
-              {/* Controls Panel & History (col-span-1) */}
-              <div className="lg:col-span-1 space-y-5">
+              {/* Yapışkan düzenleme paneli — eski "Kayıtlı Teklifler" editörde kaldırıldı (kart grid'den seçiliyor) */}
+              <div className="lg:col-span-1 space-y-4">
+                <div className="lg:sticky lg:top-6 space-y-4">
+                  {/* Kısayol aksiyonlar */}
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-2">
+                    <Button onClick={saveQuote} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl">
+                      <Save className="w-4 h-4 mr-1.5" /> {loadedQuote ? 'Teklifi Güncelle' : 'Teklifi Kaydet'}
+                    </Button>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button variant="outline" className="text-xs font-bold rounded-xl" onClick={() => { if (loadedQuote?.id) window.open(`${API}/quotes/${loadedQuote.id}/pdf`, '_blank'); else toast.info('Önce teklifi kaydedin'); }}>
+                        <Download className="w-4 h-4 mr-1" /> PDF
+                      </Button>
+                      <Button variant="outline" className="text-xs font-bold rounded-xl" onClick={() => { clearSelection(); setQuoteView('grid'); }}>
+                        <X className="w-4 h-4 mr-1" /> Kapat
+                      </Button>
+                    </div>
+                    {loadedQuote && (
+                      <Button variant="outline" className="w-full text-xs font-bold rounded-xl border-amber-200 text-amber-700 hover:bg-amber-50" onClick={() => sendQuoteToService(loadedQuote)}>
+                        <Wrench className="w-4 h-4 mr-1.5" /> Servise Gönder
+                      </Button>
+                    )}
+                  </div>
 
-                {/* 2. Action Controls Panel (Moved to calculations card) */}
+                  {/* Müşteri seçimi (editörde eksikti) */}
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-2">
+                    <div className="text-[11px] font-black uppercase tracking-wider text-slate-500">Müşteri</div>
+                    <select value={selectedQuoteCustomer || ''} onChange={(e) => setSelectedQuoteCustomer(e.target.value)} className="w-full h-9 px-2 rounded-lg border border-slate-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                      <option value="">Müşteri seç (opsiyonel)</option>
+                      {(customers || []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                    <div className="text-[10px] text-slate-400">Seçilince teklif başlığı müşteri adıyla dolar.</div>
+                  </div>
 
-                {/* 3. Searchable Saved Quotes panel */}
+                  {/* Canlı özet */}
+                  <div className="bg-gradient-to-br from-[#1B3A5C] to-[#15293f] text-white rounded-2xl shadow-lg p-4 space-y-2">
+                    <div className="text-[11px] font-black uppercase tracking-wider text-white/55">Canlı Özet</div>
+                    <div className="flex justify-between text-sm"><span className="text-white/70">Ara Toplam</span><span className="font-bold tabular-nums">₺ {formatPrice(calculateQuoteTotals.totalListPrice)}</span></div>
+                    {calculateQuoteTotals.discountAmount > 0 && (
+                      <div className="flex justify-between text-sm"><span className="text-white/70">İndirim (%{quoteDiscount})</span><span className="font-bold text-rose-300 tabular-nums">- ₺ {formatPrice(calculateQuoteTotals.discountAmount)}</span></div>
+                    )}
+                    {calculateQuoteTotals.laborCost > 0 && (
+                      <div className="flex justify-between text-sm"><span className="text-white/70">İşçilik</span><span className="font-bold tabular-nums">+ ₺ {formatPrice(calculateQuoteTotals.laborCost)}</span></div>
+                    )}
+                    <div className="flex justify-between items-baseline pt-2 border-t border-white/15"><span className="text-sm font-bold">Net Toplam</span><span className="text-xl font-black tabular-nums">₺ {formatPrice(calculateQuoteTotals.totalNetPrice)}</span></div>
+                  </div>
+
+                  {/* Hızlı düzenle */}
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 grid grid-cols-2 gap-3">
+                    <div>
+                      <div className="text-[11px] font-black uppercase tracking-wider text-slate-500 mb-1">İndirim %</div>
+                      <input type="number" min="0" max="100" value={quoteDiscount} onChange={(e) => setQuoteDiscount(parseFloat(e.target.value) || 0)} className="w-full h-9 px-2 rounded-lg border border-slate-200 text-sm text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                    </div>
+                    <div>
+                      <div className="text-[11px] font-black uppercase tracking-wider text-slate-500 mb-1">İşçilik ₺</div>
+                      <input type="number" min="0" value={quoteLaborCost} onChange={(e) => setQuoteLaborCost(parseFloat(e.target.value) || 0)} className="w-full h-9 px-2 rounded-lg border border-slate-200 text-sm text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                    </div>
+                  </div>
+
+                  <div className="text-[11px] text-slate-400 text-center px-2">Ürün eklemek için soldaki tablonun arama satırını kullan.</div>
+                </div>
+
+                {false && (
                 <Card className="border-2 border-slate-200 rounded-3xl shadow-lg bg-gradient-to-b from-slate-50 to-white">
                   <CardHeader className="bg-slate-100/60 border-b border-slate-200 pb-3 rounded-t-3xl">
                     <div className="flex justify-between items-center">
@@ -10242,10 +10428,13 @@ function App() {
                     )}
                   </CardContent>
                 </Card>
+                )}
 
               </div>
-              
+
             </div>
+            </>
+            )}
           </TabsContent>
 
             {/* Para Birimi Değiştirme Dialog */}

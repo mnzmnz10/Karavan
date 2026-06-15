@@ -341,6 +341,7 @@ class Product(BaseModel):
     category_id: Optional[str] = None
     brand: str = ""  # Marka alanı
     description: Optional[str] = None
+    specs: Optional[str] = None  # Teknik özellikler (ölçü/ağırlık/kapasite) — açıklamadan ayrı
     image_url: Optional[str] = None
     list_price: Decimal
     discounted_price: Optional[Decimal] = None
@@ -357,6 +358,7 @@ class ProductCreate(BaseModel):
     category_id: Optional[str] = None
     brand: str = Field("", max_length=200)  # Yeni marka alanı
     description: Optional[str] = Field(None, max_length=5000)
+    specs: Optional[str] = Field(None, max_length=8000)  # Teknik özellikler
     image_url: Optional[str] = None
     list_price: Decimal = Field(..., ge=0)
     discounted_price: Optional[Decimal] = Field(None, ge=0)
@@ -2347,6 +2349,7 @@ class ProductUpdate(BaseModel):
     brand: Optional[str] = None  # Marka alanı
     company_id: Optional[str] = None  # Firma alanı
     description: Optional[str] = None
+    specs: Optional[str] = None  # Teknik özellikler
     image_url: Optional[str] = None
     list_price: Optional[Decimal] = None
     discounted_price: Optional[Decimal] = None
@@ -2372,6 +2375,8 @@ async def update_product(product_id: str, update_data: ProductUpdate):
             update_dict["company_id"] = update_data.company_id
         if update_data.description is not None:
             update_dict["description"] = update_data.description
+        if update_data.specs is not None:
+            update_dict["specs"] = update_data.specs
         if update_data.image_url is not None:
             update_dict["image_url"] = update_data.image_url
         if update_data.list_price is not None:
@@ -2473,7 +2478,7 @@ async def update_product(product_id: str, product_update: Dict[str, Any]):
             update_data["category_id"] = category_id
         
         # Diğer güncellenebilir alanlar
-        allowed_fields = ["name", "brand", "description", "list_price", "discounted_price", "currency", "company_id"]
+        allowed_fields = ["name", "brand", "description", "specs", "list_price", "discounted_price", "currency", "company_id"]
         for field in allowed_fields:
             if field in product_update:
                 update_data[field] = product_update[field]
@@ -5908,6 +5913,7 @@ async def _build_import_session(company: Dict[str, Any], products_data: List[Dic
             "brand": (product_data.get("brand") or "").strip(),
             "category_id": product_data.get("category_id") or (existing.get("category_id") if existing else None),
             "description": product_data.get("description"),
+            "specs": product_data.get("specs"),
             "image_url": product_data.get("image_url"),
             "code": product_data.get("code"),
             "source_url": product_data.get("source_url"),
@@ -6025,6 +6031,8 @@ async def _apply_import_session(session: Dict[str, Any], rows_override: Optional
                 update_data["image_url"] = row.get("image_url")
             if row.get("description"):
                 update_data["description"] = row.get("description")
+            if row.get("specs"):
+                update_data["specs"] = row.get("specs")
             if row.get("code"):
                 update_data["code"] = row.get("code")
             if row.get("source_url"):
@@ -6039,6 +6047,7 @@ async def _apply_import_session(session: Dict[str, Any], rows_override: Optional
                 "brand": row.get("brand") or "",
                 "category_id": category_id,
                 "description": row.get("description"),
+                "specs": row.get("specs"),
                 "image_url": row.get("image_url"),
                 "code": row.get("code"),
                 "source_url": row.get("source_url"),
@@ -7679,9 +7688,11 @@ def _termosa_login():
 
 TERMOSA_KDV = 1.20  # %20 KDV ekle (liste fiyatı T.E.S.F. ve peşin fiyat KDV hariç gelir)
 
-def _termosa_scrape(category_urls: list, max_products: int = 600) -> list:
+def _termosa_scrape(category_urls: list, max_products: int = 600, fetch_descriptions: bool = False) -> list:
     """Listeden hızlı çek: isim + liste fiyatı (€, kart) + data-id; sonra tek /home/checkdiscounts ile peşin fiyat (€).
-    list_price = liste×1.20, discounted_price = peşin×1.20. Para birimi EUR. Ürün sayfası gezilmez (hızlı)."""
+    list_price = liste×1.20, discounted_price = peşin×1.20. Para birimi EUR.
+    fetch_descriptions=True ise her ürünün DETAY sayfasını gezip açıklama (div.product__description)
+    çeker — manuel "Çek" için açık, otomatik fiyat-sync'te KAPALI (hız)."""
     from bs4 import BeautifulSoup
     import json as _json
     s = _termosa_login()
@@ -7700,8 +7711,12 @@ def _termosa_scrape(category_urls: list, max_products: int = 600) -> list:
             ptype = (btn.get('data-type') if btn else 'p') or 'p'
             pel = c.select_one('.product-card__prices')
             list_eur = _termosa_price_to_float(pel.get_text(' ', strip=True)) if pel else None
-            qv = c.select_one('[data-href]')
-            url = qv.get('data-href') if qv else None
+            # Ürün detay URL'i: kart adı/görsel <a href> (eski kod [data-href] arıyordu —
+            # kartlarda data-href YOK, bu yüzden source_url hep base'e düşüyordu).
+            qv = (c.select_one('.product-card__name a[href]')
+                  or c.select_one('a.product-image__body[href]')
+                  or c.select_one('[data-href]'))
+            url = (qv.get('href') or qv.get('data-href')) if qv else None
             code = url.rstrip('/').split('/')[-1] if url else (pid or '')
             img = c.select_one('.product-image__img')
             isrc = img.get('src') if img else None
@@ -7808,6 +7823,30 @@ def _termosa_scrape(category_urls: list, max_products: int = 600) -> list:
             # sayabiliyordu — source_url artık ürüne özgü, güvenilir eşleşme anahtarı)
             'source_url': c.get('product_url') or (TERMOSA_BASE + '/'),
         })
+
+    # Açıklama: her ürünün detay sayfasından div.product__description (manuel "Çek")
+    if fetch_descriptions and out:
+        for prod in out:
+            su = prod.get('source_url')
+            if not su or su.rstrip('/') == TERMOSA_BASE:
+                continue
+            try:
+                rd = s.get(su, timeout=20)
+                ds = BeautifulSoup(rd.content, 'lxml')
+                # 1) Açıklama: özellik paragrafı (div.product__description)
+                d_el = ds.select_one('div.product__description')
+                if d_el:
+                    t = re.sub(r'\n{3,}', '\n\n', d_el.get_text('\n', strip=True)).strip()
+                    if t:
+                        prod['description'] = t[:4000]
+                # 2) Teknik özellikler (ölçü/ağırlık/kapasite) — AYRI alan (ul.product__features)
+                feat = ds.select_one('ul.product__features')
+                if feat:
+                    lines = [li.get_text(' ', strip=True) for li in feat.find_all('li') if li.get_text(strip=True)]
+                    if lines:
+                        prod['specs'] = '\n'.join(lines)[:8000]
+            except Exception as e:
+                logger.warning(f"Termosa açıklama çekilemedi {su}: {e}")
     return out
 
 
@@ -7820,7 +7859,8 @@ async def scrape_termosa(company_id: str, request: ScrapeTermosaRequest):
     if not request.category_urls:
         raise HTTPException(status_code=400, detail="En az bir kategori URL'i girin.")
     loop = asyncio.get_event_loop()
-    products = await loop.run_in_executor(None, _termosa_scrape, request.category_urls, request.max_products)
+    # Manuel çekimde açıklamaları da getir (detay sayfası gezilir)
+    products = await loop.run_in_executor(None, _termosa_scrape, request.category_urls, request.max_products, True)
     if not products:
         raise HTTPException(status_code=422, detail="Ürün çekilemedi (kategori boş, fiyatlar kapalı veya giriş başarısız).")
 
@@ -10018,7 +10058,9 @@ async def list_services(status: Optional[str] = None, search: Optional[str] = No
             {"customer_name": rx}, {"plate": rx},
             {"vehicle_brand": rx}, {"vehicle_model": rx},
         ]
-    services = await db.services.find(query).sort("created_at", -1).to_list(1000)
+    # Liste fotoğrafları (base64) HARİÇ çek — payload küçülür, sayfa hızlı açılır.
+    # Detay/düzenleme açılınca GET /services/{id} tam kaydı (foto dahil) döndürür.
+    services = await db.services.find(query, {"photos": 0}).sort("created_at", -1).to_list(1000)
     for s in services:
         s.pop("_id", None)
     without_order = [s for s in services if s.get("sort_order") is None]
