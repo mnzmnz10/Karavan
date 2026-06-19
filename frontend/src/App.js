@@ -1005,6 +1005,27 @@ function App() {
     }
   }, [activeTab]);
 
+  // Çoklu-PC senkron: başka bir bilgisayardan yapılan kayıtların görünmesi için
+  // aktif liste sekmesini pencere odaklanınca / sekmeye dönülünce + hafif polling ile yenile.
+  // (products hariç: loadProducts(1,true) sayfalamayı sıfırlar.)
+  useEffect(() => {
+    const refetch = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (activeTab === 'contracts') loadContracts();
+      else if (activeTab === 'quotes') fetchQuotes();
+      else if (activeTab === 'service') loadServices();
+    };
+    const onVisible = () => { if (document.visibilityState === 'visible') refetch(); };
+    window.addEventListener('focus', refetch);
+    document.addEventListener('visibilitychange', onVisible);
+    const pollId = setInterval(refetch, 45000); // 45sn hafif polling (liste uçları hafif)
+    return () => {
+      window.removeEventListener('focus', refetch);
+      document.removeEventListener('visibilitychange', onVisible);
+      clearInterval(pollId);
+    };
+  }, [activeTab]);
+
   // Sidebar/döviz barı yalnızca wiring sekmesi AKTİF + tam ekrandayken gizlenir.
   const hideChromeForWiring = activeTab === 'wiring-diagram' && isFullscreen;
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false); // sol menü ikon-modu (dar ekran için)
@@ -1331,7 +1352,7 @@ function App() {
       const response = await fetch(`${API}/quotes`);
       const data = await response.json();
       setQuotes(data);
-      setFilteredQuotes(data); // Başlangıçta tüm teklifler görünsün
+      filterQuotes(quoteSearchTerm, data); // aktif arama varsa koru (polling/refetch için), yoksa tümü
     } catch (error) {
       console.error('Teklifler yüklenirken hata:', error);
       toast.error('Teklifler yüklenemedi');
@@ -1339,13 +1360,13 @@ function App() {
   };
 
   // Teklif arama fonksiyonu
-  const filterQuotes = (searchTerm) => {
+  const filterQuotes = (searchTerm, source = quotes) => {
     if (!searchTerm.trim()) {
-      setFilteredQuotes(quotes);
+      setFilteredQuotes(source);
       return;
     }
 
-    const filtered = quotes.filter(quote => {
+    const filtered = source.filter(quote => {
       const searchLower = searchTerm.toLowerCase();
       
       // Teklif adında ara
