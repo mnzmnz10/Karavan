@@ -693,6 +693,8 @@ class ServiceUpdate(BaseModel):
 class ContractUpdate(BaseModel):
     title: Optional[str] = Field(None, max_length=300)
     customer_name: Optional[str] = Field(None, max_length=200)
+    customer_phone: Optional[str] = Field(None, max_length=40)   # müşteri telefon
+    customer_tc: Optional[str] = Field(None, max_length=20)      # müşteri TC kimlik no
     notes: Optional[str] = Field(None, max_length=10000)
     data: Optional[Dict[str, Any]] = None  # düzenlenmiş yapısal sözleşme verisi (bölüm/kalem)
     stage: Optional[str] = Field(None, max_length=20)  # 'proposal' (teklif aşaması) | 'agreed' (anlaşıldı)
@@ -700,6 +702,8 @@ class ContractUpdate(BaseModel):
 class NewContractPayload(BaseModel):
     title: str = Field(..., max_length=300)
     customer_name: Optional[str] = Field(None, max_length=200)
+    customer_phone: Optional[str] = Field(None, max_length=40)
+    customer_tc: Optional[str] = Field(None, max_length=20)
     notes: Optional[str] = Field(None, max_length=10000)
     kur: Optional[float] = None
 
@@ -10143,7 +10147,8 @@ async def service_history(plate: Optional[str] = None, customer_name: Optional[s
         return []
     if exclude_id:
         query["id"] = {"$ne": exclude_id}
-    records = await db.services.find(query).sort("created_at", -1).to_list(200)
+    # Geçmiş listesi fotoğraf göstermiyor — base64 foto HARİÇ çek (hız)
+    records = await db.services.find(query, {"photos": 0}).sort("created_at", -1).to_list(200)
     for r in records:
         r.pop("_id", None)
     return records
@@ -11329,6 +11334,8 @@ async def create_blank_contract(payload: NewContractPayload):
         "id": str(uuid.uuid4()),
         "title": upper_tr(payload.title)[:300],
         "customer_name": (upper_tr(payload.customer_name) if payload.customer_name else None),
+        "customer_phone": (payload.customer_phone.strip() if payload.customer_phone else None),
+        "customer_tc": (payload.customer_tc.strip() if payload.customer_tc else None),
         "notes": (upper_tr(payload.notes) if payload.notes else None),
         "file_name": "Sıfırdan Oluşturuldu",
         "sheets": [],
@@ -11680,7 +11687,18 @@ class PDFContractGenerator(PDFQuoteGenerator):
         if sub_p:
             left_flowables.append(Spacer(1, 5))
             left_flowables.append(sub_p)
-            
+        # Müşteri telefon + TC (varsa)
+        _cphone = (contract_data.get("customer_phone") or "").strip()
+        _ctc = (contract_data.get("customer_tc") or "").strip()
+        _contact_bits = []
+        if _cphone:
+            _contact_bits.append(f"Tel  ·  <b>{_cphone}</b>")
+        if _ctc:
+            _contact_bits.append(f"TC  ·  <b>{_ctc}</b>")
+        if _contact_bits:
+            left_flowables.append(Spacer(1, 3))
+            left_flowables.append(Paragraph("&nbsp;&nbsp;|&nbsp;&nbsp;".join(_contact_bits), self.contract_subtitle_style))
+
         doc_date_val = contract_data.get("doc_date") or contract_data.get("created_at")
         if isinstance(doc_date_val, str):
             try:
@@ -11911,12 +11929,22 @@ class PDFContractGenerator(PDFQuoteGenerator):
         if priced_addons:
             rows = [[Paragraph("<b>İLAVELER</b>", self.table_header_style), Paragraph("<b>TUTAR</b>", self.table_header_right_style)]]
             for a in priced_addons:
+                try:
+                    q = float(a.get("qty") or 1)
+                except (TypeError, ValueError):
+                    q = 1.0
+                if q <= 0:
+                    q = 1.0
+                qstr = ""
+                if q > 1:
+                    qstr = f" (×{int(q)})" if float(q).is_integer() else f" (×{q})"
                 if a.get("amount") in (None, ""):
                     val = "Fiyat belirlenecek"
                 else:
                     sym = "₺" if a.get("currency") == "TRY" else ("$" if a.get("currency") == "USD" else "€")
-                    val = f"{sym} {round(float(a.get('amount') or 0)):,.0f}".replace(",", ".")
-                rows.append([Paragraph(upper_tr(a.get("name") or ""), self.table_cell_style), Paragraph(val, self.table_cell_right_bold)])
+                    line_amt = (float(a.get('amount') or 0)) * q
+                    val = f"{sym} {round(line_amt):,.0f}".replace(",", ".")
+                rows.append([Paragraph(upper_tr(a.get("name") or "") + qstr, self.table_cell_style), Paragraph(val, self.table_cell_right_bold)])
             t = PDFTable(rows, colWidths=[14.0 * cm, 4.0 * cm])
             t.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1B3A5C')),

@@ -709,11 +709,11 @@ function App() {
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 6 } })
   );
   const [newContractDialogOpen, setNewContractDialogOpen] = useState(false); // sıfırdan sözleşme oluşturma dialogu
-  const [newContractForm, setNewContractForm] = useState({ title: '', customer_name: '', notes: '', kur: '35.00' });
+  const [newContractForm, setNewContractForm] = useState({ title: '', customer_name: '', customer_phone: '', customer_tc: '', notes: '', kur: '35.00' });
   const [newContractCreating, setNewContractCreating] = useState(false);
   const [contractEditOpen, setContractEditOpen] = useState(false);
   const [contractEditId, setContractEditId] = useState(null);
-  const [contractEditForm, setContractEditForm] = useState({ title: '', customer_name: '', notes: '' });
+  const [contractEditForm, setContractEditForm] = useState({ title: '', customer_name: '', customer_phone: '', customer_tc: '', notes: '' });
   const [contractEditSaving, setContractEditSaving] = useState(false);
   const [copyPackageDialog, setCopyPackageDialog] = useState(false); // Paket kopyalama dialog'u
   const [packageToCopy, setPackageToCopy] = useState(null); // Kopyalanacak paket
@@ -1007,6 +1007,9 @@ function App() {
 
   // Sidebar/döviz barı yalnızca wiring sekmesi AKTİF + tam ekrandayken gizlenir.
   const hideChromeForWiring = activeTab === 'wiring-diagram' && isFullscreen;
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false); // sol menü ikon-modu (dar ekran için)
+  const [sidebarHovered, setSidebarHovered] = useState(false); // collapsed iken mouse ile geçici aç
+  const sbCollapsed = sidebarCollapsed && !sidebarHovered; // görsel olarak dar mı (hover'da açılır)
   const [quotes, setQuotes] = useState([]);
   const [selectedQuote, setSelectedQuote] = useState(null);
   const [quoteSearchTerm, setQuoteSearchTerm] = useState('');
@@ -2653,7 +2656,7 @@ function App() {
     };
     const productsEUR = parsed?.eurTotal != null ? (parseFloat(parsed.eurTotal) || 0) : (parsed?.grandTotal && cr ? parsed.grandTotal / cr : 0);
     const addons = parsed?.addons || [];
-    const addonsEUR = addons.reduce((s, a) => s + ((a.amount == null || a.amount === '') ? 0 : toEUR(a.amount, a.currency, a.rate)), 0);
+    const addonsEUR = addons.reduce((s, a) => s + ((a.amount == null || a.amount === '') ? 0 : toEUR(a.amount, a.currency, a.rate) * (parseFloat(a.qty) || 1)), 0);
     const inv = parsed?.invoiceDiff;
     const invEUR = (inv && inv.amount != null && inv.amount !== '') ? toEUR(Math.abs(parseFloat(inv.amount) || 0), inv.currency, inv.rate) : 0;
     const grandEUR = productsEUR + addonsEUR + invEUR;
@@ -2794,7 +2797,7 @@ function App() {
 
   const openEditContract = (c) => {
     setContractEditId(c.id);
-    setContractEditForm({ title: c.title || '', customer_name: c.customer_name || '', notes: c.notes || '' });
+    setContractEditForm({ title: c.title || '', customer_name: c.customer_name || '', customer_phone: c.customer_phone || '', customer_tc: c.customer_tc || '', notes: c.notes || '' });
     setContractEditOpen(true);
   };
 
@@ -2805,17 +2808,21 @@ function App() {
       const titleUp = contractEditForm.title.trim().toLocaleUpperCase('tr-TR');
       const customerUp = contractEditForm.customer_name ? contractEditForm.customer_name.trim().toLocaleUpperCase('tr-TR') : null;
       const notesUp = contractEditForm.notes ? contractEditForm.notes.trim().toLocaleUpperCase('tr-TR') : null;
-      
+      const phoneVal = contractEditForm.customer_phone ? contractEditForm.customer_phone.trim() : null;
+      const tcVal = contractEditForm.customer_tc ? contractEditForm.customer_tc.trim() : null;
+
       await axios.put(`${API}/contracts/${contractEditId}`, {
         title: titleUp,
         customer_name: customerUp,
+        customer_phone: phoneVal,
+        customer_tc: tcVal,
         notes: notesUp,
       });
       toast.success('Sözleşme güncellendi');
       setContractEditOpen(false);
       // Açık önizleme varsa onu da tazele
       if (viewingContract?.id === contractEditId) {
-        setViewingContract({ ...viewingContract, title: titleUp, customer_name: customerUp, notes: notesUp });
+        setViewingContract({ ...viewingContract, title: titleUp, customer_name: customerUp, customer_phone: phoneVal, customer_tc: tcVal, notes: notesUp });
       }
       await loadContracts();
     } catch (error) {
@@ -3012,7 +3019,7 @@ function App() {
         if (currency === 'USD') { const u = parseFloat(exchangeRates?.USD) || 0; const e = parseFloat(exchangeRates?.EUR) || crv || 0; return (u && e) ? a * u / e : 0; }
         return a;
       };
-      (draftToSave.addons || []).forEach((a) => { a.amountEUR = (a.amount == null || a.amount === '') ? null : eurOf(a.amount, a.currency, a.rate); });
+      (draftToSave.addons || []).forEach((a) => { a.amountEUR = (a.amount == null || a.amount === '') ? null : (eurOf(a.amount, a.currency, a.rate) || 0) * (parseFloat(a.qty) || 1); });
       (draftToSave.collections || []).forEach((c) => { c.amountEUR = eurOf(c.amount, c.currency, c.rate); });
       if (draftToSave.invoiceDiff && draftToSave.invoiceDiff.amount != null && draftToSave.invoiceDiff.amount !== '') {
         const amt = parseFloat(draftToSave.invoiceDiff.amount);
@@ -3191,12 +3198,14 @@ function App() {
       const r = await axios.post(`${API}/contracts/new`, {
         title: newContractForm.title.trim().toLocaleUpperCase('tr-TR'),
         customer_name: newContractForm.customer_name ? newContractForm.customer_name.trim().toLocaleUpperCase('tr-TR') : null,
+        customer_phone: newContractForm.customer_phone ? newContractForm.customer_phone.trim() : null,
+        customer_tc: newContractForm.customer_tc ? newContractForm.customer_tc.trim() : null,
         notes: newContractForm.notes ? newContractForm.notes.trim().toLocaleUpperCase('tr-TR') : null,
         kur: rate
       });
       toast.success('Sözleşme sıfırdan başarıyla oluşturuldu');
       setNewContractDialogOpen(false);
-      setNewContractForm({ title: '', customer_name: '', notes: '', kur: '35.00' });
+      setNewContractForm({ title: '', customer_name: '', customer_phone: '', customer_tc: '', notes: '', kur: '35.00' });
       await loadContracts();
       await openContract(r.data.id, true);
     } catch (e) {
@@ -5440,28 +5449,45 @@ function App() {
         <div className="w-full min-h-screen">
           <Tabs value={activeTab} onValueChange={handleTabChange} className="flex min-h-screen bg-transparent">
             {/* 1. Left Sidebar Navigation */}
-            <div className={`w-72 bg-white/80 backdrop-blur-md border-r border-slate-200/80 p-6 flex flex-col justify-between shrink-0 shadow-lg h-screen sticky top-0 z-20 ${hideChromeForWiring ? 'hidden' : ''}`}>
+            <style>{`
+              .kv-sidebar-collapsed [role="tablist"] [role="tab"] > span { display: none; }
+              .kv-sidebar-collapsed [role="tablist"] [role="tab"] { justify-content: center; padding-left: 0; padding-right: 0; gap: 0; }
+              .kv-sidebar-collapsed .kv-hide-collapsed { display: none; }
+            `}</style>
+            <div
+              onMouseEnter={() => { if (sidebarCollapsed) setSidebarHovered(true); }}
+              onMouseLeave={() => setSidebarHovered(false)}
+              className={`${sbCollapsed ? 'w-16 px-2 py-4 kv-sidebar-collapsed' : 'w-72 p-6'} bg-white/80 backdrop-blur-md border-r border-slate-200/80 flex flex-col justify-between shrink-0 shadow-lg h-screen sticky top-0 z-30 transition-[width,padding] duration-200 ${hideChromeForWiring ? 'hidden' : ''}`}>
               <div className="space-y-6 flex flex-col overflow-y-auto no-scrollbar">
-                {/* Logo & Brand Info */}
-                <div className="flex items-center gap-4">
+                {/* Logo & Brand Info + daralt/genişlet */}
+                <div className="flex items-center gap-3">
                   <div className="flex-shrink-0">
-                    <img 
-                      src="/logo.png" 
-                      alt="Çorlu Karavan Logo" 
-                      className="w-14 h-14 object-contain"
+                    <img
+                      src="/logo.png"
+                      alt="Çorlu Karavan Logo"
+                      className={sbCollapsed ? 'w-9 h-9 object-contain' : 'w-14 h-14 object-contain'}
                     />
                   </div>
-                  <div>
+                  <div className="kv-hide-collapsed">
                     <h1 className="font-extrabold text-xl leading-none text-slate-800 tracking-tight">
                       Çorlu Karavan
                     </h1>
                     <p className="text-[10px] text-slate-500 font-semibold mt-1">Fiyat Takip Sistemi</p>
                   </div>
+                  <button type="button" onClick={() => setSidebarCollapsed(v => !v)} title={sidebarCollapsed ? 'Menüyü genişlet' : 'Menüyü daralt'}
+                          className="ml-auto kv-hide-collapsed shrink-0 w-7 h-7 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 flex items-center justify-center">
+                    <ChevronUp className="w-4 h-4 -rotate-90" />
+                  </button>
                 </div>
+                {sbCollapsed && (
+                  <div className="self-center w-8 h-8 rounded-lg text-slate-300 flex items-center justify-center" title="Üzerine gel — menü açılır">
+                    <ChevronDown className="w-4 h-4 -rotate-90" />
+                  </div>
+                )}
 
                 {/* Navigation Tab List (Vertical) */}
                 <div className="space-y-2">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2">Menü</p>
+                  <p className="kv-hide-collapsed text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2">Menü</p>
                   <TabsList className="flex flex-col gap-1.5 w-full h-auto p-0 bg-transparent border-0 shadow-none">
                     <TabsTrigger
                       value="products"
@@ -5543,7 +5569,7 @@ function App() {
 
                     {/* Tanımlar — en altta */}
                     <div className="mt-2 pt-2 border-t border-slate-200">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 mb-1.5">Tanımlar</p>
+                      <p className="kv-hide-collapsed text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 mb-1.5">Tanımlar</p>
                     </div>
 
                     <TabsTrigger
@@ -5573,13 +5599,13 @@ function App() {
                   className="w-full text-slate-600 hover:text-slate-800 hover:bg-slate-100 border-slate-200 h-10 px-4 text-sm font-semibold rounded-xl flex items-center justify-center gap-2 shadow-2xs"
                 >
                   <LogOut className="w-4 h-4" />
-                  Çıkış Yap
+                  <span className="kv-hide-collapsed">Çıkış Yap</span>
                 </Button>
               </div>
             </div>
 
             {/* 2. Right Main Work Area */}
-            <div className="flex-1 overflow-y-auto p-8 bg-slate-50/30">
+            <div className="flex-1 min-w-0 overflow-y-auto p-4 lg:p-6 bg-slate-50/30">
               <div className="w-full space-y-6">
                 {/* Currency Rates Bar */}
                 <div className={`flex justify-end ${hideChromeForWiring ? 'hidden' : ''}`}>
@@ -6071,7 +6097,7 @@ function App() {
                   <>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {/* Sıfırdan Sözleşme — her zaman sabit en başta */}
-                    <button type="button" onClick={() => { const liveKur = exchangeRates?.EUR ? parseFloat(exchangeRates.EUR).toFixed(2) : '35.00'; setNewContractForm({ title: '', customer_name: '', notes: '', kur: liveKur }); setNewContractDialogOpen(true); }} className="group bg-blue-50/40 hover:bg-blue-50 rounded-2xl border-2 border-dashed border-blue-300 hover:border-blue-400 transition-colors p-5 flex flex-col items-center justify-center text-center gap-2 min-h-[170px]">
+                    <button type="button" onClick={() => { const liveKur = exchangeRates?.EUR ? parseFloat(exchangeRates.EUR).toFixed(2) : '35.00'; setNewContractForm({ title: '', customer_name: '', customer_phone: '', customer_tc: '', notes: '', kur: liveKur }); setNewContractDialogOpen(true); }} className="group bg-blue-50/40 hover:bg-blue-50 rounded-2xl border-2 border-dashed border-blue-300 hover:border-blue-400 transition-colors p-5 flex flex-col items-center justify-center text-center gap-2 min-h-[170px]">
                       <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform"><Plus className="w-6 h-6" /></div>
                       <div className="font-bold text-blue-700">Sıfırdan Sözleşme Yap</div>
                       <div className="text-xs text-blue-500/80">Katalogdan yeni sözleşme oluştur</div>
@@ -6126,6 +6152,9 @@ function App() {
                           <Button size="sm" variant="ghost" className="text-slate-500" onClick={() => openContract(c.id, true)} title="Kalemleri Düzenle">
                             <Edit className="w-4 h-4" />
                           </Button>
+                          <Button size="sm" variant="ghost" className="text-slate-500" onClick={() => openEditContract(c)} title="Müşteri bilgisi (telefon / TC) / başlık / not">
+                            <Users className="w-4 h-4" />
+                          </Button>
                           <Button size="sm" variant="ghost" className="text-slate-500" onClick={() => copyContract(c.id)} title="Kopyala">
                             <Copy className="w-4 h-4" />
                           </Button>
@@ -6172,7 +6201,7 @@ function App() {
                   };
                   const productsEUR = parsed?.eurTotal != null ? (parseFloat(parsed.eurTotal) || 0) : (parsed?.grandTotal && cr ? parsed.grandTotal / cr : 0);
                   const addons = parsed?.addons || [];
-                  const addonsEUR = addons.reduce((s, a) => s + ((a.amount == null || a.amount === '') ? 0 : toEUR(a.amount, a.currency, a.rate)), 0);
+                  const addonsEUR = addons.reduce((s, a) => s + ((a.amount == null || a.amount === '') ? 0 : toEUR(a.amount, a.currency, a.rate) * (parseFloat(a.qty) || 1)), 0);
                   const inv = parsed?.invoiceDiff;
                   const invEUR = (inv && inv.amount != null && inv.amount !== '') ? toEUR(Math.abs(parseFloat(inv.amount) || 0), inv.currency, inv.rate) : 0;
                   const grandEUR = productsEUR + addonsEUR + invEUR;
@@ -6239,7 +6268,7 @@ function App() {
                               </Button>
                             )}
                             <Button variant="outline" size="sm" onClick={() => openEditContract(viewingContract)}>
-                              <Edit className="w-4 h-4 mr-2" /> Başlık/Not
+                              <Users className="w-4 h-4 mr-2" /> Müşteri / Başlık
                             </Button>
                             <Button variant="outline" size="sm" onClick={() => copyContract(viewingContract.id)}>
                               <Copy className="w-4 h-4 mr-2" /> Kopyala
@@ -6271,6 +6300,12 @@ function App() {
                                 </div>
                               </div>
                               <h2 style={{ fontFamily: "'Fraunces', Georgia, serif" }} className="text-3xl sm:text-4xl font-semibold leading-tight tracking-tight">{viewingContract.customer_name || viewingContract.title}</h2>
+                              {(viewingContract.customer_phone || viewingContract.customer_tc) && (
+                                <div className="text-white/70 text-sm mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5">
+                                  {viewingContract.customer_phone && <span>Tel: <span className="font-semibold">{viewingContract.customer_phone}</span></span>}
+                                  {viewingContract.customer_tc && <span>TC: <span className="font-semibold">{viewingContract.customer_tc}</span></span>}
+                                </div>
+                              )}
                               <p className="text-white/50 text-[11px] uppercase tracking-[0.2em] mt-2">Müşteri Teklif Formu ve Sözleşme</p>
                             </div>
                             <div className="text-right text-sm shrink-0 space-y-3">
@@ -6564,7 +6599,7 @@ function App() {
                               <div className="flex items-center justify-between mb-3">
                                 <div className="font-bold text-slate-700 text-xs uppercase tracking-wider flex items-center gap-2"><PlusCircle className="w-3.5 h-3.5 text-emerald-600" /> İlaveler</div>
                                 {contractEditMode && (
-                                  <Button type="button" size="sm" variant="outline" onClick={() => mutateContractDraft((d) => { if (!d.addons) d.addons = []; d.addons.push({ id: newId(), name: '', amount: '', currency: 'EUR', rate: d.kur, status: 'priced' }); })} className="h-8 text-xs font-bold border-emerald-200 text-emerald-700 hover:bg-emerald-50"><Plus className="w-3.5 h-3.5 mr-1" /> İlave Ekle</Button>
+                                  <Button type="button" size="sm" variant="outline" onClick={() => mutateContractDraft((d) => { if (!d.addons) d.addons = []; d.addons.push({ id: newId(), name: '', amount: '', qty: 1, currency: 'EUR', rate: d.kur, status: 'priced' }); })} className="h-8 text-xs font-bold border-emerald-200 text-emerald-700 hover:bg-emerald-50"><Plus className="w-3.5 h-3.5 mr-1" /> İlave Ekle</Button>
                                 )}
                               </div>
                               {(parsed.addons || []).length === 0 ? (
@@ -6574,11 +6609,13 @@ function App() {
                                   {(parsed.addons || []).map((a, ai) => {
                                     const curSym = a.currency === 'TRY' ? '₺' : a.currency === 'USD' ? '$' : '€';
                                     const hasAmt = !(a.amount == null || a.amount === '');
+                                    const aQty = parseFloat(a.qty) || 1;
+                                    const lineAmt = hasAmt ? (parseFloat(a.amount) || 0) * aQty : 0;
                                     if (!contractEditMode) {
                                       return (
                                         <div key={a.id || ai} className="flex items-center justify-between gap-2 text-sm border-b border-slate-100 last:border-0 py-1">
-                                          <span className="text-slate-700">{a.name || '—'}{!hasAmt ? <span className="text-amber-600 text-xs italic ml-1">(fiyat belirlenecek)</span> : ''}</span>
-                                          <span className="font-semibold text-slate-800 tabular-nums shrink-0">{hasAmt ? `${curSym} ${formatPrice(a.amount)}` : '—'}</span>
+                                          <span className="text-slate-700">{a.name || '—'}{aQty > 1 ? <span className="text-slate-400 text-xs ml-1">×{aQty}</span> : ''}{!hasAmt ? <span className="text-amber-600 text-xs italic ml-1">(fiyat belirlenecek)</span> : ''}</span>
+                                          <span className="font-semibold text-slate-800 tabular-nums shrink-0">{hasAmt ? `${curSym} ${formatPrice(lineAmt)}` : '—'}</span>
                                         </div>
                                       );
                                     }
@@ -6613,12 +6650,14 @@ function App() {
                                             );
                                           })()}
                                         </div>
-                                        <input type="number" step="0.01" min="0" value={a.amount ?? ''} onChange={(e) => mutateContractDraft((d) => { d.addons[ai].amount = e.target.value; })} placeholder="boş=fiyatsız" className="w-24 h-8 px-1 border border-slate-200 rounded text-sm text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                                        <input type="number" step="1" min="1" value={a.qty ?? 1} onChange={(e) => mutateContractDraft((d) => { d.addons[ai].qty = e.target.value; })} title="Adet" placeholder="adet" className="w-14 h-8 px-1 border border-slate-200 rounded text-sm text-center tabular-nums focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                                        <input type="number" step="0.01" min="0" value={a.amount ?? ''} onChange={(e) => mutateContractDraft((d) => { d.addons[ai].amount = e.target.value; })} placeholder="birim (boş=fiyatsız)" title="Birim fiyat" className="w-24 h-8 px-1 border border-slate-200 rounded text-sm text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-emerald-500" />
                                         <select value={a.currency || 'EUR'} onChange={(e) => mutateContractDraft((d) => { d.addons[ai].currency = e.target.value; })} className="h-8 px-1 border border-slate-200 rounded text-sm bg-white">
                                           <option value="EUR">€</option>
                                           <option value="TRY">₺</option>
                                           <option value="USD">$</option>
                                         </select>
+                                        {aQty > 1 && hasAmt && <span className="text-xs font-semibold text-slate-500 tabular-nums shrink-0">= {curSym} {formatPrice(lineAmt)}</span>}
                                         <button type="button" onClick={() => mutateContractDraft((d) => { d.addons.splice(ai, 1); })} className="text-rose-400 hover:text-rose-600 shrink-0"><Trash2 className="w-4 h-4" /></button>
                                       </div>
                                     );
@@ -6709,7 +6748,7 @@ function App() {
                                           <input type="date" value={c.date || ''} onChange={(e) => mutateContractDraft((d) => { d.collections[ci].date = e.target.value; })} className="h-8 px-1 rounded bg-white/10 border border-white/20 text-white text-xs [color-scheme:dark]" />
                                           <input value={c.description || ''} onChange={(e) => mutateContractDraft((d) => { d.collections[ci].description = e.target.value.toLocaleUpperCase('tr-TR'); })} placeholder="açıklama" className="h-8 px-2 rounded bg-white/10 border border-white/20 text-white placeholder:text-white/40 text-sm min-w-0" />
                                           <input type="number" value={c.amount ?? ''} onChange={(e) => mutateContractDraft((d) => { d.collections[ci].amount = e.target.value; })} placeholder="tutar" className="h-8 px-1 rounded bg-white/10 border border-white/20 text-white placeholder:text-white/40 text-sm text-right tabular-nums" />
-                                          <select value={c.currency || 'EUR'} onChange={(e) => mutateContractDraft((d) => { d.collections[ci].currency = e.target.value; })} className="h-8 px-1 rounded bg-white/10 border border-white/20 text-white text-sm"><option value="EUR" className="bg-[#1B3A5C]">€</option><option value="TRY" className="bg-[#1B3A5C]">₺</option></select>
+                                          <select value={c.currency || 'EUR'} onChange={(e) => mutateContractDraft((d) => { d.collections[ci].currency = e.target.value; })} className="h-8 px-1 rounded bg-white/10 border border-white/20 text-white text-sm"><option value="EUR" className="bg-[#1B3A5C]">€</option><option value="USD" className="bg-[#1B3A5C]">$</option><option value="TRY" className="bg-[#1B3A5C]">₺</option></select>
                                           <input type="number" step="0.01" value={c.currency === 'TRY' ? (c.rate ?? '') : ''} onChange={(e) => mutateContractDraft((d) => { d.collections[ci].rate = e.target.value; })} placeholder="kur" title="Ödeme günü kuru" disabled={c.currency !== 'TRY'} className={`h-8 px-1 rounded bg-white/10 border border-white/20 text-white placeholder:text-white/40 text-sm text-right tabular-nums ${c.currency !== 'TRY' ? 'invisible' : ''}`} />
                                           <button type="button" onClick={() => mutateContractDraft((d) => { d.collections.splice(ci, 1); })} className="text-rose-300 hover:text-rose-100 shrink-0"><Trash2 className="w-4 h-4" /></button>
                                         </div>
@@ -7055,6 +7094,16 @@ function App() {
                   <Label>Müşteri</Label>
                   <Input value={contractEditForm.customer_name} onChange={(e) => setContractEditForm({ ...contractEditForm, customer_name: e.target.value })} placeholder="Müşteri adı" />
                 </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Telefon</Label>
+                    <Input value={contractEditForm.customer_phone} onChange={(e) => setContractEditForm({ ...contractEditForm, customer_phone: e.target.value })} placeholder="05xx xxx xx xx" />
+                  </div>
+                  <div>
+                    <Label>TC Kimlik No</Label>
+                    <Input value={contractEditForm.customer_tc} onChange={(e) => setContractEditForm({ ...contractEditForm, customer_tc: e.target.value })} placeholder="11 haneli" inputMode="numeric" maxLength={11} />
+                  </div>
+                </div>
                 <div>
                   <Label>Not</Label>
                   <textarea
@@ -7092,6 +7141,26 @@ function App() {
                     onChange={(e) => setNewContractForm({ ...newContractForm, customer_name: e.target.value })}
                     placeholder="Müşteri adı ve soyadı"
                   />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Telefon</Label>
+                    <Input
+                      value={newContractForm.customer_phone}
+                      onChange={(e) => setNewContractForm({ ...newContractForm, customer_phone: e.target.value })}
+                      placeholder="05xx xxx xx xx"
+                    />
+                  </div>
+                  <div>
+                    <Label>TC Kimlik No</Label>
+                    <Input
+                      value={newContractForm.customer_tc}
+                      onChange={(e) => setNewContractForm({ ...newContractForm, customer_tc: e.target.value })}
+                      placeholder="11 haneli"
+                      inputMode="numeric"
+                      maxLength={11}
+                    />
+                  </div>
                 </div>
                 <div>
                   <Label>Araç Türü *</Label>
@@ -9041,8 +9110,8 @@ function App() {
                           </div>
 
                           {/* Modern Premium Product List Table */}
-                          <div className="overflow-hidden bg-white border border-slate-100 rounded-2xl shadow-sm">
-                            <Table className="table-fixed w-full">
+                          <div className="overflow-x-auto bg-white border border-slate-100 rounded-2xl shadow-sm">
+                            <Table className="w-full">
                               <TableHeader>
                                 <TableRow>
                                   <TableHead className="w-12">
@@ -9066,16 +9135,16 @@ function App() {
                                       <span className="text-xs">Seç / Adet</span>
                                     </div>
                                   </TableHead>
-                                  <TableHead className="w-72">Ürün</TableHead>
-                                  <TableHead className="w-72">Teknik Özellikler</TableHead>
-                                  <TableHead className="w-32">Firma</TableHead>
-                                  <TableHead className="w-28">Marka</TableHead>
-                                  <TableHead className="w-28">Liste Fiyatı</TableHead>
-                                  {showDiscountedPrices && <TableHead className="w-28">İndirimli Fiyat</TableHead>}
-                                  <TableHead className="w-24">Para Birimi</TableHead>
-                                  <TableHead className="w-28">TL Fiyat</TableHead>
-                                  {showDiscountedPrices && <TableHead className="w-28">TL İndirimli</TableHead>}
-                                  <TableHead className="w-24">İşlemler</TableHead>
+                                  <TableHead className="w-52">Ürün</TableHead>
+                                  <TableHead className="w-56">Teknik Özellikler</TableHead>
+                                  <TableHead className="w-24">Firma</TableHead>
+                                  <TableHead className="w-24">Marka</TableHead>
+                                  <TableHead className="w-24">Liste Fiyatı</TableHead>
+                                  {showDiscountedPrices && <TableHead className="w-24">İndirimli Fiyat</TableHead>}
+                                  <TableHead className="w-20">Para Birimi</TableHead>
+                                  <TableHead className="w-24">TL Fiyat</TableHead>
+                                  {showDiscountedPrices && <TableHead className="w-24">TL İndirimli</TableHead>}
+                                  <TableHead className="w-20">İşlemler</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
@@ -9125,26 +9194,26 @@ function App() {
                                             <Input
                                               value={editForm.name}
                                               onChange={(e) => setEditForm({...editForm, name: e.target.value})}
-                                              className="min-w-[200px]"
+                                              className="min-w-[130px]"
                                               placeholder="Ürün adı"
                                             />
                                             <textarea
                                               value={editForm.description || ''}
                                               onChange={(e) => setEditForm({...editForm, description: e.target.value})}
                                               rows={4}
-                                              className="min-w-[200px] w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 whitespace-pre-wrap"
+                                              className="min-w-[130px] w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 whitespace-pre-wrap"
                                               placeholder="Açıklama"
                                             />
                                             <Input
                                               value={editForm.brand}
                                               onChange={(e) => setEditForm({...editForm, brand: e.target.value})}
-                                              className="min-w-[200px]"
+                                              className="min-w-[130px]"
                                               placeholder="Marka (opsiyonel)"
                                             />
                                             <Input
                                               value={editForm.image_url}
                                               onChange={(e) => setEditForm({...editForm, image_url: e.target.value})}
-                                              className="min-w-[200px]"
+                                              className="min-w-[130px]"
                                               placeholder="Görsel URL (opsiyonel)"
                                               type="url"
                                             />
@@ -9152,7 +9221,7 @@ function App() {
                                               value={editForm.category_id || "none"} 
                                               onValueChange={(value) => setEditForm({...editForm, category_id: value === "none" ? "" : value})}
                                             >
-                                              <SelectTrigger className="min-w-[200px]">
+                                              <SelectTrigger className="min-w-[130px]">
                                                 <SelectValue placeholder="Kategori" />
                                               </SelectTrigger>
                                               <SelectContent>
