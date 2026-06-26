@@ -784,6 +784,7 @@ function App() {
   const [showAddProductDialog, setShowAddProductDialog] = useState(false);
   const [selectedProducts, setSelectedProducts] = useState(new Map()); // Map<productId, quantity>
   const [selectedProductsData, setSelectedProductsData] = useState(new Map()); // Map<productId, productData>
+  const [showSelectedPopup, setShowSelectedPopup] = useState(false); // ürünler sekmesi: seçili ürünler popup
   const [quoteName, setQuoteName] = useState('');
   const [quoteDiscount, setQuoteDiscount] = useState(0);
   const [quoteLaborCost, setQuoteLaborCost] = useState(0); // İşçilik maliyeti state'i
@@ -8567,9 +8568,54 @@ function App() {
                       <h3 className="text-xl font-extrabold tracking-tight text-slate-900">Ürün Listesi</h3>
                     </div>
                     {selectedProducts.size > 0 && (
-                      <div className="flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700 ring-1 ring-emerald-100">
-                        <Check className="w-4 h-4" />
-                        {selectedProducts.size} ürün seçili
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setShowSelectedPopup(v => !v)}
+                          className="flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700 ring-1 ring-emerald-100 transition-colors hover:bg-emerald-100"
+                        >
+                          <Check className="w-4 h-4" />
+                          {selectedProducts.size} ürün seçili
+                          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showSelectedPopup ? 'rotate-180' : ''}`} />
+                        </button>
+                        {showSelectedPopup && (
+                          <>
+                            {/* dışarı tıklayınca kapat */}
+                            <div className="fixed inset-0 z-40" onClick={() => setShowSelectedPopup(false)} />
+                            <div className="absolute left-0 top-full z-50 mt-2 w-80 rounded-xl border border-slate-200 bg-white shadow-xl">
+                              <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
+                                <span className="text-sm font-semibold text-slate-800">Seçili Ürünler ({selectedProducts.size})</span>
+                                <button type="button" onClick={() => setShowSelectedPopup(false)} className="text-slate-400 hover:text-slate-600">
+                                  <X className="w-4 h-4" />
+                                </button>
+                              </div>
+                              <div className="max-h-72 divide-y divide-slate-50 overflow-y-auto">
+                                {getSelectedProductsData().map((product) => (
+                                  <div key={product.id} className="flex items-center gap-2 px-3 py-2">
+                                    <div className="min-w-0 flex-1">
+                                      <div className="truncate text-xs font-medium text-slate-700">{product.name}</div>
+                                      <div className="text-[11px] text-slate-500">
+                                        {product.quantity} × ₺{formatPrice(product.customPrice ?? product.list_price_try ?? 0)}
+                                      </div>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleProductSelection(product.id, 0)}
+                                      className="shrink-0 rounded-full p-1 text-rose-500 hover:bg-rose-50"
+                                      title="Kaldır"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="flex items-center justify-between rounded-b-xl border-t border-slate-100 bg-slate-50 px-3 py-2">
+                                <span className="text-xs font-medium text-slate-600">Toplam</span>
+                                <span className="text-sm font-bold text-slate-800">₺{formatPrice(calculateQuoteTotals.totalListPrice)}</span>
+                              </div>
+                            </div>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
