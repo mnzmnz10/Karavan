@@ -11913,7 +11913,7 @@ class PDFContractGenerator(PDFQuoteGenerator):
                 except (TypeError, ValueError):
                     pass
             return _to_eur(item.get("amount"), item.get("currency"), item.get("rate"))
-        addons_eur = sum(_eur_of(a) for a in addons if a.get("amount") not in (None, ""))
+        addons_eur = sum(_eur_of(a) for a in addons if a.get("amount") not in (None, "") and not a.get("is_gift"))
         inv_eur = abs(_eur_of(inv)) if inv.get("amount") not in (None, "") else 0.0
         grand_eur = products_eur + addons_eur + inv_eur
         collected_eur = sum(_to_eur(c.get("amount"), c.get("currency"), c.get("rate")) for c in collections)
@@ -11944,7 +11944,10 @@ class PDFContractGenerator(PDFQuoteGenerator):
                     sym = "₺" if a.get("currency") == "TRY" else ("$" if a.get("currency") == "USD" else "€")
                     line_amt = (float(a.get('amount') or 0)) * q
                     val = f"{sym} {round(line_amt):,.0f}".replace(",", ".")
-                rows.append([Paragraph(upper_tr(a.get("name") or "") + qstr, self.table_cell_style), Paragraph(val, self.table_cell_right_bold)])
+                name_str = upper_tr(a.get("name") or "") + qstr
+                if a.get("is_gift"):
+                    name_str += " (HEDİYE)"
+                rows.append([Paragraph(name_str, self.table_cell_style), Paragraph(val, self.table_cell_right_bold)])
             t = PDFTable(rows, colWidths=[14.0 * cm, 4.0 * cm])
             t.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1B3A5C')),
