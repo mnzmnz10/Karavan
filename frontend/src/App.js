@@ -9319,28 +9319,26 @@ function App() {
                                         ) : (
                                           <div className="space-y-1">
                                             <div className="flex items-start gap-3 relative z-0 ml-2">
-                                              {product.image_url ? (
+                                              {product.image_url && (
                                                 <img
                                                   src={product.image_url}
                                                   alt={product.name}
-                                                  className={`w-12 h-12 object-cover rounded border cursor-pointer hover:opacity-75 transition-all relative z-0 flex-shrink-0 ${openSpecsIds.has(product.id) ? 'ring-2 ring-emerald-500' : ''}`}
+                                                  className="w-12 h-12 object-cover rounded border cursor-zoom-in hover:opacity-75 transition-opacity relative z-0 flex-shrink-0"
                                                   onError={(e) => {e.target.style.display = 'none'}}
-                                                  onClick={() => toggleSpecs(product.id)}
-                                                  title="Teknik özellikleri göster/gizle"
+                                                  onClick={() => openImagePreview(product.image_url, product.name)}
+                                                  title="Görseli büyük boyutta görüntülemek için tıklayın"
                                                 />
-                                              ) : (
-                                                <button
-                                                  type="button"
-                                                  onClick={() => toggleSpecs(product.id)}
-                                                  className={`w-12 h-12 flex items-center justify-center rounded border border-dashed text-slate-400 hover:text-emerald-600 hover:border-emerald-400 transition-colors flex-shrink-0 ${openSpecsIds.has(product.id) ? 'ring-2 ring-emerald-500 text-emerald-600' : ''}`}
-                                                  title="Teknik özellikleri göster/gizle"
-                                                >
-                                                  <Package className="w-5 h-5" />
-                                                </button>
                                               )}
                                               <div className="flex-1 min-w-0">
                                                 <div className="flex items-center gap-2">
-                                                  <div className="font-medium break-words pr-2" title={product.name}>{product.name}</div>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => toggleSpecs(product.id)}
+                                                    className={`text-left font-medium break-words pr-2 cursor-pointer hover:text-emerald-600 transition-colors ${openSpecsIds.has(product.id) ? 'text-emerald-600' : ''}`}
+                                                    title="Teknik özellikleri göster/gizle"
+                                                  >
+                                                    {product.name}
+                                                  </button>
                                                   <button
                                                     onClick={() => toggleProductFavorite(product.id)}
                                                     className={`flex-shrink-0 p-1 rounded-full hover:bg-gray-100 transition-colors ${
