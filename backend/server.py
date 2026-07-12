@@ -11928,6 +11928,8 @@ class PDFContractGenerator(PDFQuoteGenerator):
         # İlaveler tablosu
         priced_addons = [a for a in addons]
         if priced_addons:
+            gift_icon = (Path(__file__).parent / 'assets' / 'gift.png').as_posix()
+            gift_icon_ok = (Path(__file__).parent / 'assets' / 'gift.png').exists()
             rows = [[Paragraph("<b>İLAVELER</b>", self.table_header_style), Paragraph("<b>TUTAR</b>", self.table_header_right_style)]]
             for a in priced_addons:
                 try:
@@ -11947,8 +11949,13 @@ class PDFContractGenerator(PDFQuoteGenerator):
                     val = f"{sym} {round(line_amt):,.0f}".replace(",", ".")
                 name_str = upper_tr(a.get("name") or "") + qstr
                 if a.get("is_gift"):
-                    name_str += " (HEDİYE)"
-                rows.append([Paragraph(name_str, self.table_cell_style), Paragraph(val, self.table_cell_right_bold)])
+                    icon = f'<img src="{gift_icon}" width="10" height="10" valign="-1"/> ' if gift_icon_ok else ''
+                    name_html = f'{name_str} &nbsp;{icon}<font color="#EC4899"><b>HEDİYE</b></font>'
+                    val_html = f'<font color="#EC4899">{val}</font>'
+                else:
+                    name_html = name_str
+                    val_html = val
+                rows.append([Paragraph(name_html, self.table_cell_style), Paragraph(val_html, self.table_cell_right_bold)])
             t = PDFTable(rows, colWidths=[14.0 * cm, 4.0 * cm])
             t.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1B3A5C')),
@@ -11991,7 +11998,7 @@ class PDFContractGenerator(PDFQuoteGenerator):
             if abs(inv_eur) > 0.001:
                 sum_lines.append(f"Fatura Farkı: <b>{fmt(inv_eur, 'EUR')}</b>")
             if abs(gifts_eur) > 0.001:
-                sum_lines.append(f"Hediyeler (toplama dahil değil): <b>{fmt(gifts_eur, 'EUR')}</b>")
+                sum_lines.append(f'<font color="#EC4899">Hediyeler (toplama dahil değil): <b>{fmt(gifts_eur, "EUR")}</b></font>')
             left_p = Paragraph("<br/>".join(sum_lines), self.gt_sub_style)
             gt_tl = grand_eur * (cr or 0)
             right_flow = [
