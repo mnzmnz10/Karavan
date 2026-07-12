@@ -785,6 +785,8 @@ function App() {
   const [selectedProducts, setSelectedProducts] = useState(new Map()); // Map<productId, quantity>
   const [selectedProductsData, setSelectedProductsData] = useState(new Map()); // Map<productId, productData>
   const [showSelectedPopup, setShowSelectedPopup] = useState(false); // ürünler sekmesi: seçili ürünler popup
+  const [openSpecsIds, setOpenSpecsIds] = useState(new Set()); // ürün tablosu: görsele tıklayınca teknik özellik açık ürünler
+  const toggleSpecs = (id) => setOpenSpecsIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const [quoteName, setQuoteName] = useState('');
   const [quoteDiscount, setQuoteDiscount] = useState(0);
   const [quoteLaborCost, setQuoteLaborCost] = useState(0); // İşçilik maliyeti state'i
@@ -9203,7 +9205,6 @@ function App() {
                                     </div>
                                   </TableHead>
                                   <TableHead className="w-52">Ürün</TableHead>
-                                  <TableHead className="w-56">Teknik Özellikler</TableHead>
                                   <TableHead className="w-24">Firma</TableHead>
                                   <TableHead className="w-24">Marka</TableHead>
                                   <TableHead className="w-24">Liste Fiyatı</TableHead>
@@ -9271,6 +9272,13 @@ function App() {
                                               className="min-w-[130px] w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 whitespace-pre-wrap"
                                               placeholder="Açıklama"
                                             />
+                                            <textarea
+                                              value={editForm.specs || ''}
+                                              onChange={(e) => setEditForm({...editForm, specs: e.target.value})}
+                                              rows={4}
+                                              className="min-w-[130px] w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 whitespace-pre-wrap"
+                                              placeholder="Teknik Özellikler (ölçü / ağırlık / kapasite / voltaj...)"
+                                            />
                                             <Input
                                               value={editForm.brand}
                                               onChange={(e) => setEditForm({...editForm, brand: e.target.value})}
@@ -9311,15 +9319,24 @@ function App() {
                                         ) : (
                                           <div className="space-y-1">
                                             <div className="flex items-start gap-3 relative z-0 ml-2">
-                                              {product.image_url && (
-                                                <img 
-                                                  src={product.image_url} 
+                                              {product.image_url ? (
+                                                <img
+                                                  src={product.image_url}
                                                   alt={product.name}
-                                                  className="w-12 h-12 object-cover rounded border cursor-pointer hover:opacity-75 transition-opacity relative z-0 flex-shrink-0"
+                                                  className={`w-12 h-12 object-cover rounded border cursor-pointer hover:opacity-75 transition-all relative z-0 flex-shrink-0 ${openSpecsIds.has(product.id) ? 'ring-2 ring-emerald-500' : ''}`}
                                                   onError={(e) => {e.target.style.display = 'none'}}
-                                                  onClick={() => openImagePreview(product.image_url, product.name)}
-                                                  title="Görseli büyük boyutta görüntülemek için tıklayın"
+                                                  onClick={() => toggleSpecs(product.id)}
+                                                  title="Teknik özellikleri göster/gizle"
                                                 />
+                                              ) : (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => toggleSpecs(product.id)}
+                                                  className={`w-12 h-12 flex items-center justify-center rounded border border-dashed text-slate-400 hover:text-emerald-600 hover:border-emerald-400 transition-colors flex-shrink-0 ${openSpecsIds.has(product.id) ? 'ring-2 ring-emerald-500 text-emerald-600' : ''}`}
+                                                  title="Teknik özellikleri göster/gizle"
+                                                >
+                                                  <Package className="w-5 h-5" />
+                                                </button>
                                               )}
                                               <div className="flex-1 min-w-0">
                                                 <div className="flex items-center gap-2">
@@ -9339,26 +9356,15 @@ function App() {
                                                 {product.description && (
                                                   <div className="text-sm text-slate-500 mt-1 truncate" title={product.description}>{product.description}</div>
                                                 )}
+                                                {openSpecsIds.has(product.id) && (
+                                                  <div className="mt-2 rounded-md border border-emerald-100 bg-emerald-50/60 px-2 py-1.5 text-xs leading-snug text-slate-700 whitespace-pre-wrap break-words">
+                                                    <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-600">Teknik Özellikler</div>
+                                                    {product.specs ? product.specs : <span className="text-slate-400 italic">Teknik özellik girilmemiş</span>}
+                                                  </div>
+                                                )}
                                               </div>
                                             </div>
                                           </div>
-                                        )}
-                                      </TableCell>
-                                      <TableCell className="w-72 align-top">
-                                        {isEditing ? (
-                                          <textarea
-                                            value={editForm.specs || ''}
-                                            onChange={(e) => setEditForm({...editForm, specs: e.target.value})}
-                                            rows={5}
-                                            placeholder="Ölçü / ağırlık / kapasite / voltaj..."
-                                            className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 whitespace-pre-wrap"
-                                          />
-                                        ) : (
-                                          product.specs ? (
-                                            <div className="text-xs text-slate-600 whitespace-pre-wrap break-words leading-snug pr-1">{product.specs}</div>
-                                          ) : (
-                                            <span className="text-gray-400 text-sm">-</span>
-                                          )
                                         )}
                                       </TableCell>
                                       <TableCell className="w-32">
