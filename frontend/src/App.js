@@ -6226,6 +6226,7 @@ function App() {
                   const productsEUR = parsed?.eurTotal != null ? (parseFloat(parsed.eurTotal) || 0) : (parsed?.grandTotal && cr ? parsed.grandTotal / cr : 0);
                   const addons = parsed?.addons || [];
                   const addonsEUR = addons.reduce((s, a) => s + ((a.amount == null || a.amount === '' || a.is_gift) ? 0 : toEUR(a.amount, a.currency, a.rate) * (parseFloat(a.qty) || 1)), 0);
+                  const giftsEUR = addons.reduce((s, a) => s + ((a.amount == null || a.amount === '' || !a.is_gift) ? 0 : toEUR(a.amount, a.currency, a.rate) * (parseFloat(a.qty) || 1)), 0);
                   const inv = parsed?.invoiceDiff;
                   const invEUR = (inv && inv.amount != null && inv.amount !== '') ? toEUR(Math.abs(parseFloat(inv.amount) || 0), inv.currency, inv.rate) : 0;
                   const grandEUR = productsEUR + addonsEUR + invEUR;
@@ -6233,7 +6234,7 @@ function App() {
                   const collectedEUR = collections.reduce((s, c) => s + toEUR(c.amount, c.currency, c.rate), 0);
                   const remainingEUR = grandEUR - collectedEUR;
                   const pct = grandEUR > 0 ? Math.max(0, Math.min(100, Math.round(collectedEUR / grandEUR * 100))) : 0;
-                  return { cr, toEUR, productsEUR, addonsEUR, invEUR, grandEUR, collectedEUR, remainingEUR, pct };
+                  return { cr, toEUR, productsEUR, addonsEUR, giftsEUR, invEUR, grandEUR, collectedEUR, remainingEUR, pct };
                 })();
                 const origKur = parsed && parsed.kur != null ? parsed.originalKur != null ? parsed.originalKur : parsed.kur : null;
                 const currentKur = parsed && parsed.kur != null ? parsed.kur : null;
@@ -6714,6 +6715,15 @@ function App() {
                                       <span className="text-right whitespace-nowrap">
                                         <span className="text-white font-semibold tabular-nums">₺ {formatPrice(adj(fin.addonsEUR * (currentKur || 1)))}</span>
                                         <span className="text-white/45 text-xs ml-2 tabular-nums">≈ € {formatPrice(fin.addonsEUR)}</span>
+                                      </span>
+                                    </div>
+                                  )}
+                                  {fin.giftsEUR !== 0 && (
+                                    <div className="flex items-baseline justify-between gap-4">
+                                      <span className="text-pink-300/90 text-sm flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-pink-400/80" />🎁 Hediyeler Toplamı <span className="text-white/40 text-xs">(toplama dahil değil)</span></span>
+                                      <span className="text-right whitespace-nowrap">
+                                        <span className="text-pink-300 font-semibold tabular-nums">₺ {formatPrice(adj(fin.giftsEUR * (currentKur || 1)))}</span>
+                                        <span className="text-white/45 text-xs ml-2 tabular-nums">≈ € {formatPrice(fin.giftsEUR)}</span>
                                       </span>
                                     </div>
                                   )}

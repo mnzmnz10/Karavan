@@ -11914,6 +11914,7 @@ class PDFContractGenerator(PDFQuoteGenerator):
                     pass
             return _to_eur(item.get("amount"), item.get("currency"), item.get("rate"))
         addons_eur = sum(_eur_of(a) for a in addons if a.get("amount") not in (None, "") and not a.get("is_gift"))
+        gifts_eur = sum(_eur_of(a) for a in addons if a.get("amount") not in (None, "") and a.get("is_gift"))
         inv_eur = abs(_eur_of(inv)) if inv.get("amount") not in (None, "") else 0.0
         grand_eur = products_eur + addons_eur + inv_eur
         collected_eur = sum(_to_eur(c.get("amount"), c.get("currency"), c.get("rate")) for c in collections)
@@ -11983,12 +11984,14 @@ class PDFContractGenerator(PDFQuoteGenerator):
 
         # NOT: Ödeme durumu (tahsilatlar + kalan + tahsil edilen) PDF'te GÖSTERİLMEZ — sadece sistemde.
         # İlaveler/fatura farkı varsa nihai genel toplamı göster (ödeme durumu olmadan)
-        if (abs(addons_eur) > 0.001) or (abs(inv_eur) > 0.001):
+        if (abs(addons_eur) > 0.001) or (abs(inv_eur) > 0.001) or (abs(gifts_eur) > 0.001):
             sum_lines = [f"Ürünler: <b>{fmt(products_eur, 'EUR')}</b>"]
             if abs(addons_eur) > 0.001:
                 sum_lines.append(f"İlaveler: <b>{fmt(addons_eur, 'EUR')}</b>")
             if abs(inv_eur) > 0.001:
                 sum_lines.append(f"Fatura Farkı: <b>{fmt(inv_eur, 'EUR')}</b>")
+            if abs(gifts_eur) > 0.001:
+                sum_lines.append(f"Hediyeler (toplama dahil değil): <b>{fmt(gifts_eur, 'EUR')}</b>")
             left_p = Paragraph("<br/>".join(sum_lines), self.gt_sub_style)
             gt_tl = grand_eur * (cr or 0)
             right_flow = [
