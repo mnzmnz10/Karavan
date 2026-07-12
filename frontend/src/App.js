@@ -6639,7 +6639,7 @@ function App() {
                                       return (
                                         <div key={a.id || ai} className="flex items-center justify-between gap-2 text-sm border-b border-slate-100 last:border-0 py-1">
                                           <span className="text-slate-700">{a.name || '—'}{aQty > 1 ? <span className="text-slate-400 text-xs ml-1">×{aQty}</span> : ''}{!hasAmt ? <span className="text-amber-600 text-xs italic ml-1">(fiyat belirlenecek)</span> : ''}{a.is_gift ? <span className="text-pink-600 text-xs font-bold ml-1">🎁 HEDİYE</span> : ''}</span>
-                                          <span className={`font-semibold tabular-nums shrink-0 ${a.is_gift ? 'text-pink-500 line-through' : 'text-slate-800'}`}>{hasAmt ? `${curSym} ${formatPrice(lineAmt)}` : '—'}</span>
+                                          <span className={`font-semibold tabular-nums shrink-0 ${a.is_gift ? 'text-pink-500' : 'text-slate-800'}`}>{hasAmt ? `${curSym} ${formatPrice(lineAmt)}` : '—'}</span>
                                         </div>
                                       );
                                     }
