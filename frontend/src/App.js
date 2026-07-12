@@ -6640,7 +6640,7 @@ function App() {
                                       return (
                                         <div key={a.id || ai} className="flex items-center justify-between gap-2 text-sm border-b border-slate-100 last:border-0 py-1">
                                           <span className="text-slate-700">{a.name || '—'}{aQty > 1 ? <span className="text-slate-400 text-xs ml-1">×{aQty}</span> : ''}{!hasAmt ? <span className="text-amber-600 text-xs italic ml-1">(fiyat belirlenecek)</span> : ''}{a.is_gift ? <span className="text-pink-600 text-xs font-bold ml-1">🎁 HEDİYE</span> : ''}</span>
-                                          <span className={`font-semibold tabular-nums shrink-0 ${a.is_gift ? 'text-pink-500' : 'text-slate-800'}`}>{hasAmt ? `${curSym} ${formatPrice(lineAmt)}` : '—'}</span>
+                                          <span className={`font-semibold tabular-nums shrink-0 ${a.is_gift ? 'text-pink-600' : 'text-slate-800'}`}>{hasAmt ? `${curSym} ${formatPrice(lineAmt)}` : '—'}</span>
                                         </div>
                                       );
                                     }
@@ -6682,9 +6682,9 @@ function App() {
                                           <option value="TRY">₺</option>
                                           <option value="USD">$</option>
                                         </select>
-                                        <button type="button" onClick={() => mutateContractDraft((d) => { d.addons[ai].is_gift = !d.addons[ai].is_gift; })} title="Hediye: fiyat gösterilir ama toplama eklenmez" className={`h-8 px-2 rounded text-xs font-bold border shrink-0 transition-colors ${a.is_gift ? 'bg-pink-500 text-white border-pink-500' : 'bg-white text-slate-500 border-slate-200 hover:bg-pink-50 hover:text-pink-600'}`}>🎁 Hediye</button>
+                                        <button type="button" onClick={() => mutateContractDraft((d) => { d.addons[ai].is_gift = !d.addons[ai].is_gift; })} title="Hediye: fiyat gösterilir ama toplama eklenmez" className={`h-8 px-2 rounded text-xs font-bold border shrink-0 transition-colors ${a.is_gift ? 'bg-pink-600 text-white border-pink-600' : 'bg-white text-slate-500 border-slate-200 hover:bg-pink-50 hover:text-pink-600'}`}>🎁 Hediye</button>
                                         {aQty > 1 && hasAmt && !a.is_gift && <span className="text-xs font-semibold text-slate-500 tabular-nums shrink-0">= {curSym} {formatPrice(lineAmt)}</span>}
-                                        {a.is_gift && hasAmt && <span className="text-xs font-semibold text-pink-500 tabular-nums shrink-0">HEDİYE ({curSym} {formatPrice(lineAmt)})</span>}
+                                        {a.is_gift && hasAmt && <span className="text-xs font-semibold text-pink-600 tabular-nums shrink-0">HEDİYE ({curSym} {formatPrice(lineAmt)})</span>}
                                         <button type="button" onClick={() => mutateContractDraft((d) => { d.addons.splice(ai, 1); })} className="text-rose-400 hover:text-rose-600 shrink-0"><Trash2 className="w-4 h-4" /></button>
                                       </div>
                                     );
@@ -6720,9 +6720,9 @@ function App() {
                                   )}
                                   {fin.giftsEUR !== 0 && (
                                     <div className="flex items-baseline justify-between gap-4">
-                                      <span className="text-pink-300/90 text-sm flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-pink-400/80" />🎁 Hediyeler Toplamı <span className="text-white/40 text-xs">(toplama dahil değil)</span></span>
+                                      <span className="text-pink-400/90 text-sm flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-pink-500" />🎁 Hediyeler Toplamı <span className="text-white/40 text-xs">(toplama dahil değil)</span></span>
                                       <span className="text-right whitespace-nowrap">
-                                        <span className="text-pink-300 font-semibold tabular-nums">₺ {formatPrice(adj(fin.giftsEUR * (currentKur || 1)))}</span>
+                                        <span className="text-pink-400 font-semibold tabular-nums">₺ {formatPrice(adj(fin.giftsEUR * (currentKur || 1)))}</span>
                                         <span className="text-white/45 text-xs ml-2 tabular-nums">≈ € {formatPrice(fin.giftsEUR)}</span>
                                       </span>
                                     </div>

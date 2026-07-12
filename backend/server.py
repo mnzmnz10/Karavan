@@ -11950,8 +11950,8 @@ class PDFContractGenerator(PDFQuoteGenerator):
                 name_str = upper_tr(a.get("name") or "") + qstr
                 if a.get("is_gift"):
                     icon = f'<img src="{gift_icon}" width="10" height="10" valign="-1"/> ' if gift_icon_ok else ''
-                    name_html = f'{name_str} &nbsp;{icon}<font color="#EC4899"><b>HEDİYE</b></font>'
-                    val_html = f'<font color="#EC4899">{val}</font>'
+                    name_html = f'{name_str} &nbsp;{icon}<font color="#DB2777"><b>HEDİYE</b></font>'
+                    val_html = f'<font color="#DB2777">{val}</font>'
                 else:
                     name_html = name_str
                     val_html = val
@@ -11998,7 +11998,7 @@ class PDFContractGenerator(PDFQuoteGenerator):
             if abs(inv_eur) > 0.001:
                 sum_lines.append(f"Fatura Farkı: <b>{fmt(inv_eur, 'EUR')}</b>")
             if abs(gifts_eur) > 0.001:
-                sum_lines.append(f'<font color="#EC4899">Hediyeler (toplama dahil değil): <b>{fmt(gifts_eur, "EUR")}</b></font>')
+                sum_lines.append(f'<font color="#DB2777">Hediyeler (toplama dahil değil): <b>{fmt(gifts_eur, "EUR")}</b></font>')
             left_p = Paragraph("<br/>".join(sum_lines), self.gt_sub_style)
             gt_tl = grand_eur * (cr or 0)
             right_flow = [
