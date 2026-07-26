@@ -158,7 +158,6 @@ export function TopBar({ onAi }: { onAi: () => void }) {
   return (
     <header className="flex flex-col gap-2 border-b border-slate-200 bg-white px-3 py-2">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="mr-1 text-sm font-bold text-blue-700">? kablo</span>
         <input
           value={meta.name}
           onChange={(e) => setMeta({ name: e.target.value })}
