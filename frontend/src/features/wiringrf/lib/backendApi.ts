@@ -73,3 +73,24 @@ export function deleteProject(id: string) {
     method: "DELETE",
   });
 }
+
+// ---------- Karavan ürün kataloğu (Ürünler sekmesi) ----------
+export interface KaravanProduct {
+  id: string;
+  name: string;
+  brand?: string;
+  category_id?: string | null;
+  specs?: string | null;
+  description?: string | null;
+  image_url?: string | null;
+  is_favorite?: boolean;
+}
+
+// Karavan ürünlerini getir (şema kütüphanesine eklemek için). search opsiyonel.
+export function listKaravanProducts(search?: string, limit = 60) {
+  const params = new URLSearchParams();
+  if (search) params.set("search", search);
+  params.set("limit", String(limit));
+  params.set("page", "1");
+  return requestJson<KaravanProduct[]>(`/products?${params.toString()}`);
+}

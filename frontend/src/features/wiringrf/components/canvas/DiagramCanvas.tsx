@@ -40,6 +40,7 @@ export function DiagramCanvas() {
   const onEdgesChange = useProjectStore((s) => s.onEdgesChange);
   const onConnect = useProjectStore((s) => s.onConnect);
   const addNodeFromTemplate = useProjectStore((s) => s.addNodeFromTemplate);
+  const addProductNode = useProjectStore((s) => s.addProductNode);
   const selectNode = useProjectStore((s) => s.selectNode);
   const selectEdge = useProjectStore((s) => s.selectEdge);
   const clearSelection = useProjectStore((s) => s.clearSelection);
@@ -122,12 +123,22 @@ export function DiagramCanvas() {
   const onDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
+      const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+      const productRaw = e.dataTransfer.getData("application/karavan-product");
+      if (productRaw) {
+        try {
+          const product = JSON.parse(productRaw);
+          addProductNode(product, pos.x - 70, pos.y - 52);
+        } catch {
+          /* geçersiz veri, yoksay */
+        }
+        return;
+      }
       const templateId = e.dataTransfer.getData("application/kablo-template");
       if (!templateId) return;
-      const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
       addNodeFromTemplate(templateId, pos.x - 75, pos.y - 50);
     },
-    [screenToFlowPosition, addNodeFromTemplate],
+    [screenToFlowPosition, addNodeFromTemplate, addProductNode],
   );
 
   const onSelectionChange = useCallback(

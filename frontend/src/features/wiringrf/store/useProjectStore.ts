@@ -85,6 +85,11 @@ interface ProjectState {
   onEdgesChange: (changes: EdgeChange<AppEdge>[]) => void;
   onConnect: (c: Connection) => void;
   addNodeFromTemplate: (templateId: string, x: number, y: number) => void;
+  addProductNode: (
+    product: { id: string; name: string; brand?: string; specs?: string | null; image_url?: string | null },
+    x: number,
+    y: number,
+  ) => void;
   updateNodeData: (id: string, patch: Partial<ProductNodeData>) => void;
   updateEdgeData: (id: string, patch: Partial<CableEdgeData>) => void;
   addPort: (nodeId: string, port: Port) => void;
@@ -271,6 +276,39 @@ export const useProjectStore = create<ProjectState>((set, get) => {
           width: tpl.width,
           height: tpl.height,
           rotation: 0,
+        },
+      };
+      set((s) => ({ nodes: [...s.nodes, node], selectedNodeId: node.id, selectedEdgeId: null }));
+      persist();
+    },
+
+    // Karavan Ürünler kataloğundan görselli cihaz ekle. Elektrik portu tanımsız →
+    // varsayılan 2 DC port (+/−) verilir; kullanıcı port editöründen düzenler.
+    addProductNode: (product, x, y) => {
+      checkpoint(`addprod_${nanoid(4)}`);
+      const ports: Port[] = [
+        { id: `p_${nanoid(5)}`, name: "+", role: "positive", kind: "DC", direction: "in", side: "left", offset: 0.35 },
+        { id: `p_${nanoid(5)}`, name: "−", role: "negative", kind: "DC", direction: "in", side: "left", offset: 0.65 },
+      ];
+      const node: AppNode = {
+        id: `n_${nanoid(6)}`,
+        type: "product",
+        position: { x, y },
+        data: {
+          templateId: `karavan_${product.id}`,
+          label: product.name,
+          brand: product.brand ?? "",
+          model: "",
+          category: "consumer_12v",
+          acdc: "DC",
+          icon: "Box",
+          accent: "#64748b",
+          ports,
+          width: 140,
+          height: 104,
+          rotation: 0,
+          notes: product.specs ?? "",
+          imageUrl: product.image_url ?? undefined,
         },
       };
       set((s) => ({ nodes: [...s.nodes, node], selectedNodeId: node.id, selectedEdgeId: null }));
