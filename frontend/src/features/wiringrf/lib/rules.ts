@@ -67,12 +67,15 @@ export function canConnect(
     (source.role === "pv_negative" && target.role === "pv_positive");
   if (pvSeries) return { ok: true };
 
-  // Yon kurali: kablo kaynakta cikistan baslar, hedefte giriste biter.
-  if (source.direction !== "out" && source.direction !== "bi") {
-    return { ok: false, reason: `Kaynak port "${source.name}" çıkış yönünde değil.` };
-  }
-  if (target.direction !== "in" && target.direction !== "bi") {
-    return { ok: false, reason: `Hedef port "${target.name}" giriş yönünde değil.` };
+  // Yon kurali (drag yönünden BAĞIMSIZ): bir uç çıkış, diğer uç giriş olabilmeli.
+  // Böylece porttan porta hangi yöne sürüklersen sürükle bağlanır; out→out ve
+  // in→in engellenir. "bi" her iki rolü üstlenir.
+  const sOut = source.direction === "out" || source.direction === "bi";
+  const sIn = source.direction === "in" || source.direction === "bi";
+  const tOut = target.direction === "out" || target.direction === "bi";
+  const tIn = target.direction === "in" || target.direction === "bi";
+  if (!((sOut && tIn) || (sIn && tOut))) {
+    return { ok: false, reason: "Yön uyumsuz: bir uç çıkış, diğer uç giriş olmalı." };
   }
 
   // Tek girisli port doluysa ikinci kabloyu hem UI hem store reddeder.
