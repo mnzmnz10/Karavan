@@ -8,11 +8,13 @@ import { portXY, portPosition, portColor } from "@/features/wiringrf/lib/ports";
 function handleStyle(p: Port, rotation: number): React.CSSProperties {
   const { x, y } = portXY(p, rotation);
   return {
-    width: 11,
-    height: 11,
+    width: 15,
+    height: 15,
     background: p.color || portColor(p.role),
     border: "2px solid #fff",
-    zIndex: 5,
+    boxShadow: "0 0 0 1px rgba(15,23,42,0.25)",
+    zIndex: 10,
+    cursor: "crosshair",
     left: `${x * 100}%`,
     top: `${y * 100}%`,
     transform: "translate(-50%, -50%)",

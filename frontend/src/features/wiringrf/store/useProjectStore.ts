@@ -19,7 +19,7 @@ import type {
   Port,
 } from "@/features/wiringrf/types";
 import { canConnect } from "@/features/wiringrf/lib/rules";
-import { saveProductPorts } from "@/features/wiringrf/lib/backendApi";
+import { saveProductPorts, getAllProductPorts } from "@/features/wiringrf/lib/backendApi";
 
 const KARAVAN_PREFIX = "karavan_";
 import { CATALOG_MAP } from "@/features/wiringrf/data/catalog";
@@ -93,6 +93,8 @@ interface ProjectState {
     x: number,
     y: number,
   ) => void;
+  savedPorts: Record<string, Port[]>; // templateId -> kayıtlı port yerleşimi
+  loadSavedPorts: () => void;
   updateNodeData: (id: string, patch: Partial<ProductNodeData>) => void;
   updateEdgeData: (id: string, patch: Partial<CableEdgeData>) => void;
   addPort: (nodeId: string, port: Port) => void;
@@ -147,23 +149,23 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     }, 600);
   };
 
-  // Karavan ürün node'unda port değişince, o ürüne KALICI kaydet (tüm şemalar için,
-  // debounce'lu). templateId "karavan_<productId>" ise devreye girer.
+  // Bir cihazın (katalog ya da Karavan ürünü) portları değişince, o CİHAZ TÜRÜNE
+  // (templateId anahtarıyla) KALICI kaydet — tüm şemalarda geçerli, debounce'lu.
   const productPortTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const savePortsFor = (nodeId: string) => {
     const n = get().nodes.find((x) => x.id === nodeId);
     if (!n) return;
     const tid = n.data.templateId || "";
-    if (!tid.startsWith(KARAVAN_PREFIX)) return;
-    const productId = tid.slice(KARAVAN_PREFIX.length);
-    if (!productId) return;
+    if (!tid) return;
     const ports = n.data.ports.map((p) => ({ ...p }));
-    const prev = productPortTimers.get(productId);
+    // Anında yerel savedPorts güncelle (aynı oturumda tekrar eklerken görünsün).
+    set((s) => ({ savedPorts: { ...s.savedPorts, [tid]: ports } }));
+    const prev = productPortTimers.get(tid);
     if (prev) clearTimeout(prev);
     productPortTimers.set(
-      productId,
+      tid,
       setTimeout(() => {
-        saveProductPorts(productId, ports).catch(() => {
+        saveProductPorts(tid, ports).catch(() => {
           /* çevrimdışı/hata: sessiz geç, proje snapshot'ında zaten duruyor */
         });
       }, 900),
@@ -205,6 +207,15 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     future: [],
     versions: [],
     _dragging: false,
+    savedPorts: {},
+
+    loadSavedPorts: () => {
+      getAllProductPorts()
+        .then((m) => set({ savedPorts: m || {} }))
+        .catch(() => {
+          /* login yoksa/çevrimdışı: sessiz geç */
+        });
+    },
 
     setMeta: (patch) => {
       set((s) => ({ meta: { ...s.meta, ...patch } }));
@@ -284,6 +295,9 @@ export const useProjectStore = create<ProjectState>((set, get) => {
       const tpl = CATALOG_MAP[templateId];
       if (!tpl) return;
       checkpoint(`add_${nanoid(4)}`);
+      // Bu cihaz türü için kullanıcı port düzeni kaydettiyse onu kullan.
+      const savedTpl = get().savedPorts[templateId];
+      const tplPorts = savedTpl && savedTpl.length ? savedTpl : tpl.ports;
       const node: AppNode = {
         id: `n_${nanoid(6)}`,
         type: "product",
@@ -298,7 +312,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
           acdc: tpl.acdc,
           icon: tpl.icon,
           accent: tpl.accent,
-          ports: tpl.ports.map((p) => ({ ...p })),
+          ports: tplPorts.map((p) => ({ ...p, id: p.id || `p_${nanoid(5)}` })),
           width: tpl.width,
           height: tpl.height,
           rotation: 0,
@@ -312,11 +326,12 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     // varsayılan 2 DC port (+/−) verilir; kullanıcı port editöründen düzenler.
     addProductNode: (product, x, y) => {
       checkpoint(`addprod_${nanoid(4)}`);
-      // Ürünün kayıtlı port şablonu varsa onu kullan (kullanıcı daha önce düzenlemiş);
-      // yoksa varsayılan 2 DC port.
+      const templateId = `${KARAVAN_PREFIX}${product.id}`;
+      // Kayıtlı port düzeni (store veya product.ports) varsa kullan; yoksa varsayılan 2 DC.
+      const saved = get().savedPorts[templateId] || product.ports;
       const ports: Port[] =
-        product.ports && product.ports.length
-          ? product.ports.map((p) => ({ ...p, id: p.id || `p_${nanoid(5)}` }))
+        saved && saved.length
+          ? saved.map((p) => ({ ...p, id: p.id || `p_${nanoid(5)}` }))
           : [
               { id: `p_${nanoid(5)}`, name: "+", role: "positive", kind: "DC", direction: "in", side: "left", offset: 0.35 },
               { id: `p_${nanoid(5)}`, name: "−", role: "negative", kind: "DC", direction: "in", side: "left", offset: 0.65 },
@@ -326,7 +341,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
         type: "product",
         position: { x, y },
         data: {
-          templateId: `karavan_${product.id}`,
+          templateId,
           label: product.name,
           brand: product.brand ?? "",
           model: "",

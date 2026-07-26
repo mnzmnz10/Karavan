@@ -26,6 +26,7 @@ export default function WiringRfSection({ fullscreen }: WiringRfSectionProps) {
   useEffect(() => {
     hydrateFromStorage();
     const state = useProjectStore.getState();
+    state.loadSavedPorts(); // ürün/cihaz port şablonlarını backend'den çek
     if (state.nodes.length === 0) {
       state.loadSnapshot(buildSeedProject(), {
         name: "Örnek Victron Sistemi",
