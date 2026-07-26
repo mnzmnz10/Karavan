@@ -146,6 +146,7 @@ export interface CableEdgeData extends Record<string, unknown> {
   arrow?: boolean;
   notes?: string;
   layer: LayerId;
+  waypoints?: { x: number; y: number }[]; // elle eklenen kıvrım noktaları (flow koord.); varsa oto-yönlendirmeyi ezer
 }
 
 // ---------- Layers ----------
