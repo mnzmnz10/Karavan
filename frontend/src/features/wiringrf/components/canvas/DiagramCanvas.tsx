@@ -3,6 +3,7 @@ import {
   ReactFlow,
   Background,
   BackgroundVariant,
+  ConnectionMode,
   Controls,
   MiniMap,
   useReactFlow,
@@ -193,6 +194,7 @@ export function DiagramCanvas() {
         deleteKeyCode={null}
         snapToGrid={snapToGrid}
         snapGrid={[GRID, GRID]}
+        connectionMode={ConnectionMode.Loose}
         connectionRadius={28}
         minZoom={0.15}
         maxZoom={3}
