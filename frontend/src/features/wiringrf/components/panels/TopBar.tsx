@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
   Undo2, Redo2, Grid3x3, FileText, FilePlus2, Sparkles,
-  ShieldCheck, Download, FolderOpen, History, Save, Trash2, Lock, Unlock,
+  ShieldCheck, Download, FolderOpen, History, Save, Trash2, Lock, Unlock, Waypoints,
 } from "lucide-react";
 import { useProjectStore } from "@/features/wiringrf/store/useProjectStore";
 import { buildSeedProject } from "@/features/wiringrf/data/seed";
@@ -38,6 +38,8 @@ export function TopBar({ onAi }: { onAi: () => void }) {
   const redo = useProjectStore((s) => s.redo);
   const snap = useProjectStore((s) => s.snapToGrid);
   const setSnap = useProjectStore((s) => s.setSnapToGrid);
+  const autoRoute = useProjectStore((s) => s.autoRoute);
+  const setAutoRoute = useProjectStore((s) => s.setAutoRoute);
   const layers = useProjectStore((s) => s.layers);
   const layerLocks = useProjectStore((s) => s.layerLocks);
   const toggleLayer = useProjectStore((s) => s.toggleLayer);
@@ -175,6 +177,12 @@ export function TopBar({ onAi }: { onAi: () => void }) {
         <Btn onClick={redo} title="İleri al"><Redo2 size={14} /></Btn>
         <Btn onClick={() => setSnap(!snap)} title="Snap-to-grid">
           <Grid3x3 size={14} className={snap ? "text-blue-600" : ""} /> Snap
+        </Btn>
+        <Btn
+          onClick={() => setAutoRoute(!autoRoute)}
+          title="Kablo yönlendirme: Otomatik (yoğun/karmaşık şema, engel-kaçınan) ↔ Basit (düz kablo)"
+        >
+          <Waypoints size={14} className={autoRoute ? "text-blue-600" : ""} /> {autoRoute ? "Oto Kablo" : "Basit Kablo"}
         </Btn>
 
         <div className="mx-1 h-6 w-px bg-slate-200" />

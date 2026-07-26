@@ -37,6 +37,7 @@ export function DiagramCanvas() {
   const layers = useProjectStore((s) => s.layers);
   const layerLocks = useProjectStore((s) => s.layerLocks);
   const snapToGrid = useProjectStore((s) => s.snapToGrid);
+  const autoRoute = useProjectStore((s) => s.autoRoute);
   const onNodesChange = useProjectStore((s) => s.onNodesChange);
   const onEdgesChange = useProjectStore((s) => s.onEdgesChange);
   const onConnect = useProjectStore((s) => s.onConnect);
@@ -72,6 +73,7 @@ export function DiagramCanvas() {
     .join("|") + "#" + edges.map((e) => `${e.id}:${e.source}.${e.sourceHandle}>${e.target}.${e.targetHandle}`).join("|");
   const routes = useMemo(
     () => {
+      if (!autoRoute) return {}; // basit mod: düz (smoothstep) kablo
       try {
         return computeRoutes(nodes, edges);
       } catch {
@@ -79,7 +81,7 @@ export function DiagramCanvas() {
       }
     },
     // routeSig is a derived digest of the exact node/edge geometry used by computeRoutes.
-    [routeSig], // eslint-disable-line
+    [routeSig, autoRoute], // eslint-disable-line
   );
   useEffect(() => {
     (window as unknown as { __kabloRoutes?: unknown }).__kabloRoutes = routes;

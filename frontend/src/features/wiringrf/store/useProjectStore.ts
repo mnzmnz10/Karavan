@@ -77,6 +77,7 @@ interface ProjectState {
   layers: Record<LayerId, boolean>;
   layerLocks: Record<LayerId, boolean>;
   snapToGrid: boolean;
+  autoRoute: boolean; // true: engel-kaçınan otomatik yönlendirme (yoğun şema), false: basit düz kablo
   past: HistoryEntry[];
   future: HistoryEntry[];
   versions: ProjectVersion[];
@@ -113,6 +114,7 @@ interface ProjectState {
   toggleLayer: (id: LayerId) => void;
   toggleLayerLock: (id: LayerId) => void;
   setSnapToGrid: (v: boolean) => void;
+  setAutoRoute: (v: boolean) => void;
   undo: () => void;
   redo: () => void;
   loadSnapshot: (snapshot: ProjectSnapshot, meta?: Partial<ProjectMeta>, opts?: { undoable?: boolean }) => void;
@@ -203,6 +205,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     layers: { ...LAYER_DEFAULT },
     layerLocks: { ...LAYER_LOCK_DEFAULT },
     snapToGrid: true,
+    autoRoute: true,
     past: [],
     future: [],
     versions: [],
@@ -550,6 +553,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
       set((s) => ({ layerLocks: { ...s.layerLocks, [id]: !s.layerLocks[id] } })),
 
     setSnapToGrid: (v) => set({ snapToGrid: v }),
+    setAutoRoute: (v) => set({ autoRoute: v }),
 
     undo: () => {
       resetCoalesce();
