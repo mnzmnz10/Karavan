@@ -86,11 +86,16 @@ function ProductNodeInner({ data, selected }: NodeProps<AppNode>) {
         <PortLabel key={`lbl_${p.id}`} p={p} rotation={d.rotation} />
       ))}
 
-      {/* Port başına TEK handle (source). connectionMode=Loose ile her iki yönde
-          bağlanır; üst üste binen iki handle'ın birbirini bloke etme sorunu biter. */}
+      {/* Port başına source + target handle (aynı id/konum). connectionMode=Loose ile
+          her iki yönde bağlanır; iki handle sayesinde hem başlatma hem hedef garanti. */}
       {d.ports.map((p) => {
         const pos = portPosition(p, d.rotation);
-        return <Handle key={`h_${p.id}`} id={p.id} type="source" position={pos} style={handleStyle(p, d.rotation)} />;
+        return (
+          <span key={`h_${p.id}`}>
+            <Handle id={p.id} type="target" position={pos} style={handleStyle(p, d.rotation)} />
+            <Handle id={p.id} type="source" position={pos} style={handleStyle(p, d.rotation)} />
+          </span>
+        );
       })}
     </div>
   );
