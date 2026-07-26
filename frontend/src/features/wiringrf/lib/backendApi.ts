@@ -2,6 +2,7 @@ import type {
   ProjectMeta,
   ProjectSnapshot,
   ProjectVersion,
+  Port,
 } from "@/features/wiringrf/types";
 
 const API_BASE = `${process.env.REACT_APP_BACKEND_URL || ""}/api`;
@@ -93,4 +94,17 @@ export function listKaravanProducts(search?: string, limit = 60) {
   params.set("limit", String(limit));
   params.set("page", "1");
   return requestJson<KaravanProduct[]>(`/products?${params.toString()}`);
+}
+
+// Ürün-bazlı kayıtlı port şablonları: {product_id: ports[]} haritası.
+export function getAllProductPorts() {
+  return requestJson<Record<string, Port[]>>("/wiring-product-ports");
+}
+
+// Bir ürünün port yerleşimini kaydet (tüm şemalarda geçerli).
+export function saveProductPorts(productId: string, ports: Port[]) {
+  return requestJson<{ ok: boolean }>(`/wiring-product-ports/${encodeURIComponent(productId)}`, {
+    method: "PUT",
+    body: JSON.stringify({ ports }),
+  });
 }

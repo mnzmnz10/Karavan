@@ -9746,6 +9746,36 @@ async def wiring_delete_project(project_id: str):
         raise HTTPException(404, "Proje bulunamadı.")
     return {"ok": True}
 
+# ---- Ürün-bazlı port şablonları (Karavan ürünü şemaya eklenince özelleştirilmiş
+#      portları hatırlanır; tüm şemalarda geçerli) ----
+class WiringProductPortsPayload(BaseModel):
+    ports: List[Dict[str, Any]] = Field(default_factory=list)
+
+@api_router.get("/wiring-product-ports")
+async def wiring_list_product_ports():
+    """Tüm ürünlerin kayıtlı port şablonları — {product_id: ports[]} haritası."""
+    items = await db.wiring_product_ports.find({}, {"_id": 0}).to_list(5000)
+    return {i["product_id"]: i.get("ports", []) for i in items if i.get("product_id")}
+
+@api_router.put("/wiring-product-ports/{product_id}")
+async def wiring_save_product_ports(product_id: str, payload: WiringProductPortsPayload):
+    """Bir ürünün port yerleşimini kaydet (upsert). Sonraki eklemeler bunu kullanır."""
+    await db.wiring_product_ports.update_one(
+        {"product_id": product_id},
+        {"$set": {
+            "product_id": product_id,
+            "ports": payload.ports,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }},
+        upsert=True,
+    )
+    return {"ok": True, "product_id": product_id, "count": len(payload.ports)}
+
+@api_router.delete("/wiring-product-ports/{product_id}")
+async def wiring_delete_product_ports(product_id: str):
+    await db.wiring_product_ports.delete_one({"product_id": product_id})
+    return {"ok": True}
+
 class WiringVisionImage(BaseModel):
     media_type: str
     data: str

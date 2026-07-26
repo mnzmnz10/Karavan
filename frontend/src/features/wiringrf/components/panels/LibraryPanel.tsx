@@ -3,7 +3,8 @@ import * as Icons from "lucide-react";
 import { CATALOG } from "@/features/wiringrf/data/catalog";
 import { CATEGORY_MAP } from "@/features/wiringrf/data/categories";
 import { useProjectStore } from "@/features/wiringrf/store/useProjectStore";
-import { listKaravanProducts, type KaravanProduct } from "@/features/wiringrf/lib/backendApi";
+import { listKaravanProducts, getAllProductPorts, type KaravanProduct } from "@/features/wiringrf/lib/backendApi";
+import type { Port } from "@/features/wiringrf/types";
 
 function Icon({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   const C = (Icons as unknown as Record<string, React.ComponentType<{ size?: number; color?: string }>>)[name] ?? Icons.Box;
@@ -40,6 +41,7 @@ export function LibraryPanel() {
   const [prodLoading, setProdLoading] = useState(false);
   const [prodError, setProdError] = useState<string | null>(null);
   const [prodQuery, setProdQuery] = useState("");
+  const [portsMap, setPortsMap] = useState<Record<string, Port[]>>({});
   const loadedOnce = useRef(false);
 
   const fetchProducts = useCallback((search: string) => {
@@ -56,6 +58,9 @@ export function LibraryPanel() {
     if (tab === "products" && !loadedOnce.current) {
       loadedOnce.current = true;
       fetchProducts("");
+      getAllProductPorts()
+        .then((m) => setPortsMap(m || {}))
+        .catch(() => setPortsMap({}));
     }
   }, [tab, fetchProducts]);
 
@@ -148,11 +153,11 @@ export function LibraryPanel() {
                   onDragStart={(e) => {
                     e.dataTransfer.setData(
                       "application/karavan-product",
-                      JSON.stringify({ id: p.id, name: p.name, brand: p.brand, specs: p.specs, image_url: p.image_url }),
+                      JSON.stringify({ id: p.id, name: p.name, brand: p.brand, specs: p.specs, image_url: p.image_url, ports: portsMap[p.id] }),
                     );
                     e.dataTransfer.effectAllowed = "move";
                   }}
-                  onDoubleClick={() => addProductNode(p, 200, 200)}
+                  onDoubleClick={() => addProductNode({ ...p, ports: portsMap[p.id] }, 200, 200)}
                   className="flex w-full cursor-grab items-center gap-2 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-left text-xs hover:border-blue-300 hover:bg-blue-50 active:cursor-grabbing"
                   title={`${p.brand ?? ""} ${p.name} — sürükle veya çift tıkla`}
                 >
