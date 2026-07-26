@@ -23,7 +23,7 @@ export function ToastHost() {
       const h = (e: Event) => {
         const msg = (e as CustomEvent).detail;
         const id = ++counter;
-        setToasts((t) => [...t, { id, message: String(msg ?? "Ä°ÅŸlem reddedildi"), kind }]);
+        setToasts((t) => [...t, { id, message: String(msg ?? "İşlem reddedildi"), kind }]);
         setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4000);
       };
       window.addEventListener(name, h);

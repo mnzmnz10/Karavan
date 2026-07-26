@@ -159,7 +159,7 @@ export function CableEdge(props: EdgeProps) {
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
               pointerEvents: locked ? "none" : "all",
             }}
-            title="SÃ¼rÃ¼kleyerek kablo Ã¼zerinde kaydÄ±r"
+            title="Sürükleyerek kablo üzerinde kaydır"
             onPointerDown={onLabelPointerDown}
             onPointerMove={onLabelPointerMove}
             onPointerUp={onLabelPointerUp}

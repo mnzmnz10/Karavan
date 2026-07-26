@@ -33,7 +33,7 @@ export function LibraryPanel() {
   return (
     <aside className="flex h-full w-64 shrink-0 flex-col border-r border-slate-200 bg-slate-50">
       <div className="border-b border-slate-200 p-3">
-        <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">ÃœrÃ¼n KÃ¼tÃ¼phanesi</h2>
+        <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Ürün Kütüphanesi</h2>
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
@@ -56,7 +56,7 @@ export function LibraryPanel() {
                   }}
                   onDoubleClick={() => addNodeFromTemplate(p.id, 200, 200)}
                   className="flex w-full cursor-grab items-center gap-2 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-left text-xs hover:border-blue-300 hover:bg-blue-50 active:cursor-grabbing"
-                  title={`${p.brand} ${p.model} â€” sÃ¼rÃ¼kle veya Ã§ift tÄ±kla`}
+                  title={`${p.brand} ${p.model} — sürükle veya çift tıkla`}
                 >
                   <span className="grid h-7 w-7 shrink-0 place-items-center rounded" style={{ background: `${p.accent}1a` }}>
                     <Icon name={p.icon} color={p.accent} />
@@ -72,7 +72,7 @@ export function LibraryPanel() {
         ))}
       </div>
       <div className="border-t border-slate-200 p-2 text-[10px] leading-snug text-slate-400">
-        SÃ¼rÃ¼kle-bÄ±rak veya Ã§ift tÄ±kla ile ÅŸemaya ekle. Portlardan porta kablo Ã§ek.
+        Sürükle-bırak veya çift tıkla ile şemaya ekle. Portlardan porta kablo çek.
       </div>
     </aside>
   );

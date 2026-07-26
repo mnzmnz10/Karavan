@@ -12,7 +12,7 @@ function portOf(node: AppNode | undefined, handle?: string | null): Port | undef
   return node?.data.ports.find((p) => p.id === handle);
 }
 
-// Ampacity table (copper) mmÂ² -> A. Tuned for DC short-run battery cabling
+// Ampacity table (copper) mm² -> A. Tuned for DC short-run battery cabling
 // as used in caravan/Victron systems (higher than building-wiring tables).
 const AMPACITY: Record<number, number> = {
   0.5: 9, 0.75: 12, 1: 20, 1.5: 25, 2.5: 35, 4: 50, 6: 70, 10: 100, 16: 135,
@@ -35,7 +35,7 @@ function fuseAmp(fuse?: string): number | undefined {
 }
 
 /**
- * Technical-check suggestions â€” NOT a regulatory guarantee.
+ * Technical-check suggestions — NOT a regulatory guarantee.
  * Final sign-off must come from a qualified electrician.
  */
 export function validate(nodes: AppNode[], edges: AppEdge[]): ValidationWarning[] {
@@ -54,13 +54,13 @@ export function validate(nodes: AppNode[], edges: AppEdge[]): ValidationWarning[
 
     // Dangling reference: edge points at a missing node or port (silent mis-wire risk).
     if (!sn || !tn || (e.sourceHandle && !sp) || (e.targetHandle && !tp)) {
-      w("error", `GeÃ§ersiz kablo: kaynak/hedef port bulunamadÄ± (${e.id}).`, { edgeId: e.id });
+      w("error", `Geçersiz kablo: kaynak/hedef port bulunamadı (${e.id}).`, { edgeId: e.id });
       continue;
     }
 
-    // Explicit AC/DC kind mismatch (e.g. AC ground â†” DC ground), also for imported snapshots.
+    // Explicit AC/DC kind mismatch (e.g. AC ground ↔ DC ground), also for imported snapshots.
     if (sp && tp && sp.kind !== tp.kind) {
-      w("error", `AkÄ±m tÃ¼rÃ¼ uyumsuz (${sp.kind} â†” ${tp.kind}): ${sn?.data.label} ${sp.name} â†’ ${tn?.data.label} ${tp.name}`, { edgeId: e.id });
+      w("error", `Akım türü uyumsuz (${sp.kind} ↔ ${tp.kind}): ${sn?.data.label} ${sp.name} → ${tn?.data.label} ${tp.name}`, { edgeId: e.id });
     }
 
     // Role mismatch checks
@@ -72,15 +72,15 @@ export function validate(nodes: AppNode[], edges: AppEdge[]): ValidationWarning[
       const sDc = dcRoles.includes(sp.role);
       const tAc = acRoles.includes(tp.role);
       if ((sAc && tDc) || (sDc && tAc)) {
-        w("error", `AC/DC karÄ±ÅŸÄ±k baÄŸlantÄ±: ${sn?.data.label} ${sp.name} â†’ ${tn?.data.label} ${tp.name}`, { edgeId: e.id });
+        w("error", `AC/DC karışık bağlantı: ${sn?.data.label} ${sp.name} → ${tn?.data.label} ${tp.name}`, { edgeId: e.id });
       }
       // phase to DC positive specifically
       if ((sp.role === "phase" && tp.role === "positive") || (sp.role === "positive" && tp.role === "phase")) {
-        w("error", `DC + porta AC faz baÄŸlanmÄ±ÅŸ: ${sn?.data.label} â†’ ${tn?.data.label}`, { edgeId: e.id });
+        w("error", `DC + porta AC faz bağlanmış: ${sn?.data.label} → ${tn?.data.label}`, { edgeId: e.id });
       }
       // neutral vs negative mix
       if ((sp.role === "neutral" && tp.role === "negative") || (sp.role === "negative" && tp.role === "neutral")) {
-        w("warning", `AC nÃ¶tr ile DC negatif karÄ±ÅŸmÄ±ÅŸ olabilir: ${sn?.data.label} â†’ ${tn?.data.label}`, { edgeId: e.id });
+        w("warning", `AC nötr ile DC negatif karışmış olabilir: ${sn?.data.label} → ${tn?.data.label}`, { edgeId: e.id });
       }
 
       // Polarity / role-group mismatch (catches snapshots that bypass the connect guard).
@@ -90,13 +90,13 @@ export function validate(nodes: AppNode[], edges: AppEdge[]): ValidationWarning[
         (sp.role === "pv_positive" && tp.role === "pv_negative") ||
         (sp.role === "pv_negative" && tp.role === "pv_positive");
       if (!groupsCompatible(gs, gt) && !pvSeries) {
-        w("error", `Polarite/rol uyumsuz baÄŸlantÄ±: ${sn?.data.label} ${sp.name} (${gs}) â†’ ${tn?.data.label} ${tp.name} (${gt})`, { edgeId: e.id });
+        w("error", `Polarite/rol uyumsuz bağlantı: ${sn?.data.label} ${sp.name} (${gs}) → ${tn?.data.label} ${tp.name} (${gt})`, { edgeId: e.id });
       }
 
       // Cable type vs the roles it actually connects.
       const allowed = CABLE_ALLOWED_GROUPS[d.cableType];
       if (allowed && !pvSeries && (!allowed.includes(gs) || !allowed.includes(gt))) {
-        w("warning", `Kablo tipi (${d.cableType}) baÄŸlandÄ±ÄŸÄ± portlarla uyumsuz: ${sn?.data.label} ${sp.name} â†’ ${tn?.data.label} ${tp.name}`, { edgeId: e.id });
+        w("warning", `Kablo tipi (${d.cableType}) bağlandığı portlarla uyumsuz: ${sn?.data.label} ${sp.name} → ${tn?.data.label} ${tp.name}`, { edgeId: e.id });
       }
     }
 
@@ -104,7 +104,7 @@ export function validate(nodes: AppNode[], edges: AppEdge[]): ValidationWarning[
     const cap = ampacity(d.size);
     const fa = fuseAmp(d.fuse);
     if (cap && fa && fa > cap) {
-      w("error", `Sigorta (${d.fuse}) kablo kapasitesinden (${d.size} â‰ˆ ${cap}A) yÃ¼ksek: ${e.id}`, { edgeId: e.id });
+      w("error", `Sigorta (${d.fuse}) kablo kapasitesinden (${d.size} ≈ ${cap}A) yüksek: ${e.id}`, { edgeId: e.id });
     }
     // Inverter battery feed sizing
     if ((sn?.data.category === "inverter" || sn?.data.category === "inverter_charger" ||
@@ -113,7 +113,7 @@ export function validate(nodes: AppNode[], edges: AppEdge[]): ValidationWarning[
       const inv = sn?.data.category.startsWith("inverter") ? sn : tn;
       const reqA = inv?.data.voltage && inv.data.acdc ? estimateInverterCurrent(inv) : undefined;
       if (reqA && cap && cap < reqA) {
-        w("warning", `Ä°nverter besleme kablosu ince olabilir: ${d.size} â‰ˆ ${cap}A < ~${Math.round(reqA)}A`, { edgeId: e.id });
+        w("warning", `İnverter besleme kablosu ince olabilir: ${d.size} ≈ ${cap}A < ~${Math.round(reqA)}A`, { edgeId: e.id });
       }
     }
   }
@@ -132,10 +132,10 @@ export function validate(nodes: AppNode[], edges: AppEdge[]): ValidationWarning[
           return other?.data.category === "fuse" || other?.data.category === "lynx_distributor";
         });
       if (posEdges.length > 0 && !hasFuse) {
-        w("warning", `AkÃ¼ "${n.data.label}" pozitif hattÄ±nda ana sigorta gÃ¶rÃ¼nmÃ¼yor.`, { nodeId: n.id });
+        w("warning", `Akü "${n.data.label}" pozitif hattında ana sigorta görünmüyor.`, { nodeId: n.id });
       }
       if (posEdges.length === 0) {
-        w("info", `AkÃ¼ "${n.data.label}" henÃ¼z baÄŸlanmamÄ±ÅŸ.`, { nodeId: n.id });
+        w("info", `Akü "${n.data.label}" henüz bağlanmamış.`, { nodeId: n.id });
       }
     }
 
@@ -148,7 +148,7 @@ export function validate(nodes: AppNode[], edges: AppEdge[]): ValidationWarning[
                  (e.target === n.id && pePorts.includes(e.targetHandle ?? "")),
         );
         if (!peConnected) {
-          w("warning", `AC cihaz "${n.data.label}" PE/toprak baÄŸlantÄ±sÄ± eksik.`, { nodeId: n.id });
+          w("warning", `AC cihaz "${n.data.label}" PE/toprak bağlantısı eksik.`, { nodeId: n.id });
         }
       }
     }
@@ -158,13 +158,13 @@ export function validate(nodes: AppNode[], edges: AppEdge[]): ValidationWarning[
     if (n.data.category === "consumer_230v") {
       const protectedLine = phaseReachesProtection(n.id, nodes, edges);
       if (!protectedLine) {
-        w("warning", `230V tÃ¼ketici "${n.data.label}" faz hattÄ±nda RCD/MCB gÃ¶rÃ¼nmÃ¼yor.`, { nodeId: n.id });
+        w("warning", `230V tüketici "${n.data.label}" faz hattında RCD/MCB görünmüyor.`, { nodeId: n.id });
       }
     }
   }
 
   if (out.length === 0) {
-    out.push({ id: "ok", severity: "info", message: "Belirgin sorun bulunamadÄ±. Yetkili elektrikÃ§i onayÄ± yine de gereklidir." });
+    out.push({ id: "ok", severity: "info", message: "Belirgin sorun bulunamadı. Yetkili elektrikçi onayı yine de gereklidir." });
   }
   return out;
 }

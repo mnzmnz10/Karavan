@@ -176,9 +176,9 @@ export function DiagramCanvas() {
         isValidConnection={isValidConnection}
         onSelectionChange={onSelectionChange}
         onPaneClick={() => { clearSelection(); }}
-        // Silmeyi tek noktadan yÃ¶net: page.tsx keydown â†’ deleteSelection (undo'lu,
-        // panel seÃ§imini de kapsar). React Flow'un dahili Backspace silmesi (undo'suz,
-        // sadece .selected) Ã§ift-silme/tutarsÄ±z undo yapÄ±yordu â†’ kapat.
+        // Silmeyi tek noktadan yönet: page.tsx keydown → deleteSelection (undo'lu,
+        // panel seçimini de kapsar). React Flow'un dahili Backspace silmesi (undo'suz,
+        // sadece .selected) çift-silme/tutarsız undo yapıyordu → kapat.
         deleteKeyCode={null}
         snapToGrid={snapToGrid}
         snapGrid={[GRID, GRID]}

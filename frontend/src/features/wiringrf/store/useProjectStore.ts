@@ -225,7 +225,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
       const cableType = defaultCableTypeForRole(role);
       const def = CABLE_TYPES[cableType];
       const size =
-        sp?.recommendedCableSize ?? tp?.recommendedCableSize ?? "6mmÂ²";
+        sp?.recommendedCableSize ?? tp?.recommendedCableSize ?? "6mm²";
       const fuse = sp?.recommendedFuse ?? tp?.recommendedFuse;
       checkpoint(`connect_${nanoid(4)}`);
       const edge: AppEdge = {

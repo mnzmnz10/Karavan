@@ -15,7 +15,7 @@ export function portXY(p: Port, rotation = 0): { x: number; y: number } {
       case "bottom": xy = { x: p.offset, y: 1 }; break;
     }
   }
-  // DÃ¶nmÃ¼ÅŸ node'da router ve handle aynÄ± gÃ¶rsel port noktasÄ±nÄ± kullansÄ±n.
+  // Dönmüş node'da router ve handle aynı görsel port noktasını kullansın.
   return rotateNormPoint(xy, rotation);
 }
 
@@ -66,14 +66,14 @@ export function portColor(role: PortRole): string {
 
 export const PORT_ROLES: { value: PortRole; label: string }[] = [
   { value: "positive", label: "Pozitif (+)" },
-  { value: "negative", label: "Negatif (âˆ’)" },
+  { value: "negative", label: "Negatif (−)" },
   { value: "ground", label: "Toprak / PE" },
   { value: "phase", label: "Faz (L)" },
-  { value: "neutral", label: "NÃ¶tr (N)" },
+  { value: "neutral", label: "Nötr (N)" },
   { value: "pv_positive", label: "PV +" },
-  { value: "pv_negative", label: "PV âˆ’" },
+  { value: "pv_negative", label: "PV −" },
   { value: "data", label: "Data (VE.Bus/Direct)" },
-  { value: "signal", label: "Sinyal / RÃ¶le" },
+  { value: "signal", label: "Sinyal / Röle" },
 ];
 
 export function defaultKindForRole(role: PortRole): Port["kind"] {

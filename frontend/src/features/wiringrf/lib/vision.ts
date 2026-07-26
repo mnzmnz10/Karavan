@@ -1,4 +1,4 @@
-// Client-side helpers for the photo/video â†’ device-inventory flow.
+// Client-side helpers for the photo/video → device-inventory flow.
 // Images are downscaled in the browser before upload; the API key never leaves the server.
 
 export interface VisionDevice {
@@ -30,7 +30,7 @@ function drawToBase64(source: CanvasImageSource, w: number, h: number): string {
   canvas.width = Math.round(w * scale);
   canvas.height = Math.round(h * scale);
   const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Canvas oluÅŸturulamadÄ±.");
+  if (!ctx) throw new Error("Canvas oluşturulamadı.");
   ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
   return canvas.toDataURL("image/jpeg", 0.85).split(",")[1];
 }
@@ -56,18 +56,18 @@ export async function videoFileToPayloads(file: File, count = 6): Promise<ImageP
   try {
     await new Promise<void>((resolve, reject) => {
       video.onloadedmetadata = () => resolve();
-      video.onerror = () => reject(new Error("Video okunamadÄ±."));
+      video.onerror = () => reject(new Error("Video okunamadı."));
     });
 
     const duration = video.duration;
-    if (!isFinite(duration) || duration <= 0) throw new Error("Video sÃ¼resi okunamadÄ±.");
+    if (!isFinite(duration) || duration <= 0) throw new Error("Video süresi okunamadı.");
 
     const out: ImagePayload[] = [];
     for (let i = 0; i < count; i++) {
       const t = (duration * (i + 0.5)) / count;
       await new Promise<void>((resolve, reject) => {
         video.onseeked = () => resolve();
-        video.onerror = () => reject(new Error("Video karesi alÄ±namadÄ±."));
+        video.onerror = () => reject(new Error("Video karesi alınamadı."));
         video.currentTime = t;
       });
       out.push({

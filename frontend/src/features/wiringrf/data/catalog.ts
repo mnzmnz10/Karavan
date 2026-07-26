@@ -11,16 +11,16 @@ export const CATALOG: ProductTemplate[] = [
   // ---------- Custom / blank ----------
   {
     id: "custom_blank",
-    name: "Ã–zel ÃœrÃ¼n",
+    name: "Özel Ürün",
     brand: "Custom",
-    model: "â€”",
+    model: "—",
     category: "connector",
     acdc: "DC",
     icon: "Box",
     width: 150,
     height: 110,
     accent: "#0ea5e9",
-    description: "BoÅŸ Ã¼rÃ¼n â€” gÃ¶rsel yÃ¼kle, portlarÄ± kendin tanÄ±mla.",
+    description: "Boş ürün — görsel yükle, portları kendin tanımla.",
     ports: [],
   },
 
@@ -40,8 +40,8 @@ export const CATALOG: ProductTemplate[] = [
     height: 90,
     accent: "#f59e0b",
     ports: [
-      P({ id: "pv_pos", name: "PV+", role: "pv_positive", kind: "DC", direction: "out", side: "bottom", offset: 0.35, maxVoltage: 50, maxCurrent: 11, recommendedCableSize: "6mmÂ²" }),
-      P({ id: "pv_neg", name: "PVâˆ’", role: "pv_negative", kind: "DC", direction: "out", side: "bottom", offset: 0.65, maxVoltage: 50, maxCurrent: 11, recommendedCableSize: "6mmÂ²" }),
+      P({ id: "pv_pos", name: "PV+", role: "pv_positive", kind: "DC", direction: "out", side: "bottom", offset: 0.35, maxVoltage: 50, maxCurrent: 11, recommendedCableSize: "6mm²" }),
+      P({ id: "pv_neg", name: "PV−", role: "pv_negative", kind: "DC", direction: "out", side: "bottom", offset: 0.65, maxVoltage: 50, maxCurrent: 11, recommendedCableSize: "6mm²" }),
     ],
   },
   {
@@ -58,10 +58,10 @@ export const CATALOG: ProductTemplate[] = [
     height: 120,
     accent: "#2563eb",
     ports: [
-      P({ id: "pv_pos", name: "PV+", role: "pv_positive", kind: "DC", direction: "in", side: "top", offset: 0.35, maxVoltage: 250, recommendedCableSize: "6mmÂ²" }),
-      P({ id: "pv_neg", name: "PVâˆ’", role: "pv_negative", kind: "DC", direction: "in", side: "top", offset: 0.65, maxVoltage: 250, recommendedCableSize: "6mmÂ²" }),
-      P({ id: "bat_pos", name: "BAT+", role: "positive", kind: "DC", direction: "out", side: "bottom", offset: 0.35, maxCurrent: 100, recommendedCableSize: "25mmÂ²", recommendedFuse: "125A" }),
-      P({ id: "bat_neg", name: "BATâˆ’", role: "negative", kind: "DC", direction: "out", side: "bottom", offset: 0.65, maxCurrent: 100, recommendedCableSize: "25mmÂ²" }),
+      P({ id: "pv_pos", name: "PV+", role: "pv_positive", kind: "DC", direction: "in", side: "top", offset: 0.35, maxVoltage: 250, recommendedCableSize: "6mm²" }),
+      P({ id: "pv_neg", name: "PV−", role: "pv_negative", kind: "DC", direction: "in", side: "top", offset: 0.65, maxVoltage: 250, recommendedCableSize: "6mm²" }),
+      P({ id: "bat_pos", name: "BAT+", role: "positive", kind: "DC", direction: "out", side: "bottom", offset: 0.35, maxCurrent: 100, recommendedCableSize: "25mm²", recommendedFuse: "125A" }),
+      P({ id: "bat_neg", name: "BAT−", role: "negative", kind: "DC", direction: "out", side: "bottom", offset: 0.65, maxCurrent: 100, recommendedCableSize: "25mm²" }),
       P({ id: "vedirect", name: "VE.Direct", role: "data", kind: "DATA", direction: "bi", side: "right", offset: 0.5 }),
     ],
   },
@@ -81,10 +81,10 @@ export const CATALOG: ProductTemplate[] = [
     height: 110,
     accent: "#2563eb",
     ports: [
-      P({ id: "in_pos", name: "IN+", role: "positive", kind: "DC", direction: "in", side: "left", offset: 0.35, maxCurrent: 30, recommendedCableSize: "10mmÂ²", recommendedFuse: "40A" }),
-      P({ id: "in_neg", name: "INâˆ’", role: "negative", kind: "DC", direction: "in", side: "left", offset: 0.65 }),
-      P({ id: "out_pos", name: "OUT+", role: "positive", kind: "DC", direction: "out", side: "right", offset: 0.35, maxCurrent: 30, recommendedCableSize: "10mmÂ²", recommendedFuse: "40A" }),
-      P({ id: "out_neg", name: "OUTâˆ’", role: "negative", kind: "DC", direction: "out", side: "right", offset: 0.65 }),
+      P({ id: "in_pos", name: "IN+", role: "positive", kind: "DC", direction: "in", side: "left", offset: 0.35, maxCurrent: 30, recommendedCableSize: "10mm²", recommendedFuse: "40A" }),
+      P({ id: "in_neg", name: "IN−", role: "negative", kind: "DC", direction: "in", side: "left", offset: 0.65 }),
+      P({ id: "out_pos", name: "OUT+", role: "positive", kind: "DC", direction: "out", side: "right", offset: 0.35, maxCurrent: 30, recommendedCableSize: "10mm²", recommendedFuse: "40A" }),
+      P({ id: "out_neg", name: "OUT−", role: "negative", kind: "DC", direction: "out", side: "right", offset: 0.65 }),
     ],
   },
 
@@ -104,20 +104,20 @@ export const CATALOG: ProductTemplate[] = [
     height: 170,
     accent: "#1e40af",
     ports: [
-      P({ id: "bat_pos", name: "Battery+", role: "positive", kind: "DC", direction: "in", side: "left", offset: 0.3, maxCurrent: 300, recommendedCableSize: "70mmÂ²", recommendedFuse: "400A" }),
-      P({ id: "bat_neg", name: "Batteryâˆ’", role: "negative", kind: "DC", direction: "in", side: "left", offset: 0.5, recommendedCableSize: "70mmÂ²" }),
+      P({ id: "bat_pos", name: "Battery+", role: "positive", kind: "DC", direction: "in", side: "left", offset: 0.3, maxCurrent: 300, recommendedCableSize: "70mm²", recommendedFuse: "400A" }),
+      P({ id: "bat_neg", name: "Battery−", role: "negative", kind: "DC", direction: "in", side: "left", offset: 0.5, recommendedCableSize: "70mm²" }),
       P({ id: "vebus", name: "VE.Bus", role: "data", kind: "DATA", direction: "bi", side: "left", offset: 0.72 }),
-      P({ id: "ac_in_l", name: "AC In L", role: "phase", kind: "AC", direction: "in", side: "top", offset: 0.2, recommendedCableSize: "2.5mmÂ²" }),
+      P({ id: "ac_in_l", name: "AC In L", role: "phase", kind: "AC", direction: "in", side: "top", offset: 0.2, recommendedCableSize: "2.5mm²" }),
       P({ id: "ac_in_n", name: "AC In N", role: "neutral", kind: "AC", direction: "in", side: "top", offset: 0.35 }),
       P({ id: "ac_in_pe", name: "AC In PE", role: "ground", kind: "AC", direction: "in", side: "top", offset: 0.5 }),
-      P({ id: "ac_out_l", name: "AC Out L", role: "phase", kind: "AC", direction: "out", side: "bottom", offset: 0.2, recommendedCableSize: "2.5mmÂ²" }),
+      P({ id: "ac_out_l", name: "AC Out L", role: "phase", kind: "AC", direction: "out", side: "bottom", offset: 0.2, recommendedCableSize: "2.5mm²" }),
       P({ id: "ac_out_n", name: "AC Out N", role: "neutral", kind: "AC", direction: "out", side: "bottom", offset: 0.35 }),
       P({ id: "ac_out_pe", name: "AC Out PE", role: "ground", kind: "AC", direction: "out", side: "bottom", offset: 0.5 }),
     ],
   },
   {
     id: "phoenix_inverter_12_1200",
-    name: "Phoenix Ä°nverter 12/1200",
+    name: "Phoenix İnverter 12/1200",
     brand: "Victron",
     model: "Phoenix 12/1200",
     category: "inverter",
@@ -129,8 +129,8 @@ export const CATALOG: ProductTemplate[] = [
     height: 130,
     accent: "#1e40af",
     ports: [
-      P({ id: "bat_pos", name: "Battery+", role: "positive", kind: "DC", direction: "in", side: "left", offset: 0.35, recommendedCableSize: "35mmÂ²", recommendedFuse: "150A" }),
-      P({ id: "bat_neg", name: "Batteryâˆ’", role: "negative", kind: "DC", direction: "in", side: "left", offset: 0.65 }),
+      P({ id: "bat_pos", name: "Battery+", role: "positive", kind: "DC", direction: "in", side: "left", offset: 0.35, recommendedCableSize: "35mm²", recommendedFuse: "150A" }),
+      P({ id: "bat_neg", name: "Battery−", role: "negative", kind: "DC", direction: "in", side: "left", offset: 0.65 }),
       P({ id: "ac_out_l", name: "AC Out L", role: "phase", kind: "AC", direction: "out", side: "right", offset: 0.3 }),
       P({ id: "ac_out_n", name: "AC Out N", role: "neutral", kind: "AC", direction: "out", side: "right", offset: 0.5 }),
       P({ id: "ac_out_pe", name: "AC Out PE", role: "ground", kind: "AC", direction: "out", side: "right", offset: 0.7 }),
@@ -152,8 +152,8 @@ export const CATALOG: ProductTemplate[] = [
     height: 110,
     accent: "#334155",
     ports: [
-      P({ id: "pos", name: "+", role: "positive", kind: "DC", direction: "bi", side: "top", offset: 0.3, recommendedCableSize: "70mmÂ²", recommendedFuse: "300A" }),
-      P({ id: "neg", name: "âˆ’", role: "negative", kind: "DC", direction: "bi", side: "top", offset: 0.7, recommendedCableSize: "70mmÂ²" }),
+      P({ id: "pos", name: "+", role: "positive", kind: "DC", direction: "bi", side: "top", offset: 0.3, recommendedCableSize: "70mm²", recommendedFuse: "300A" }),
+      P({ id: "neg", name: "−", role: "negative", kind: "DC", direction: "bi", side: "top", offset: 0.7, recommendedCableSize: "70mm²" }),
       P({ id: "bms", name: "BMS", role: "data", kind: "DATA", direction: "bi", side: "right", offset: 0.5 }),
     ],
   },
@@ -171,8 +171,8 @@ export const CATALOG: ProductTemplate[] = [
     height: 80,
     accent: "#0ea5e9",
     ports: [
-      P({ id: "bat_side", name: "Battery âˆ’", role: "negative", kind: "DC", direction: "in", side: "left", offset: 0.5, recommendedCableSize: "70mmÂ²" }),
-      P({ id: "sys_side", name: "System âˆ’", role: "negative", kind: "DC", direction: "out", side: "right", offset: 0.5, recommendedCableSize: "70mmÂ²" }),
+      P({ id: "bat_side", name: "Battery −", role: "negative", kind: "DC", direction: "in", side: "left", offset: 0.5, recommendedCableSize: "70mm²" }),
+      P({ id: "sys_side", name: "System −", role: "negative", kind: "DC", direction: "out", side: "right", offset: 0.5, recommendedCableSize: "70mm²" }),
       P({ id: "vedirect", name: "VE.Direct", role: "data", kind: "DATA", direction: "bi", side: "bottom", offset: 0.5 }),
     ],
   },
@@ -192,14 +192,14 @@ export const CATALOG: ProductTemplate[] = [
     height: 120,
     accent: "#475569",
     ports: [
-      P({ id: "pos_in", name: "+ IN", role: "positive", kind: "DC", direction: "in", side: "left", offset: 0.3, recommendedCableSize: "70mmÂ²" }),
-      P({ id: "neg_in", name: "âˆ’ IN", role: "negative", kind: "DC", direction: "in", side: "left", offset: 0.7, recommendedCableSize: "70mmÂ²" }),
+      P({ id: "pos_in", name: "+ IN", role: "positive", kind: "DC", direction: "in", side: "left", offset: 0.3, recommendedCableSize: "70mm²" }),
+      P({ id: "neg_in", name: "− IN", role: "negative", kind: "DC", direction: "in", side: "left", offset: 0.7, recommendedCableSize: "70mm²" }),
       P({ id: "pos_1", name: "+ 1", role: "positive", kind: "DC", direction: "out", side: "right", offset: 0.2 }),
-      P({ id: "neg_1", name: "âˆ’ 1", role: "negative", kind: "DC", direction: "out", side: "right", offset: 0.35 }),
+      P({ id: "neg_1", name: "− 1", role: "negative", kind: "DC", direction: "out", side: "right", offset: 0.35 }),
       P({ id: "pos_2", name: "+ 2", role: "positive", kind: "DC", direction: "out", side: "right", offset: 0.55 }),
-      P({ id: "neg_2", name: "âˆ’ 2", role: "negative", kind: "DC", direction: "out", side: "right", offset: 0.7 }),
+      P({ id: "neg_2", name: "− 2", role: "negative", kind: "DC", direction: "out", side: "right", offset: 0.7 }),
       P({ id: "pos_3", name: "+ 3", role: "positive", kind: "DC", direction: "out", side: "bottom", offset: 0.4 }),
-      P({ id: "neg_3", name: "âˆ’ 3", role: "negative", kind: "DC", direction: "out", side: "bottom", offset: 0.6 }),
+      P({ id: "neg_3", name: "− 3", role: "negative", kind: "DC", direction: "out", side: "bottom", offset: 0.6 }),
     ],
   },
   {
@@ -224,7 +224,7 @@ export const CATALOG: ProductTemplate[] = [
   },
   {
     id: "busbar_neg",
-    name: "Busbar âˆ’",
+    name: "Busbar −",
     brand: "Generic",
     model: "Negative Busbar",
     category: "busbar",
@@ -234,12 +234,12 @@ export const CATALOG: ProductTemplate[] = [
     height: 50,
     accent: "#111827",
     ports: [
-      P({ id: "t1", name: "âˆ’1", role: "negative", kind: "DC", direction: "bi", side: "top", offset: 0.2 }),
-      P({ id: "t2", name: "âˆ’2", role: "negative", kind: "DC", direction: "bi", side: "top", offset: 0.5 }),
-      P({ id: "t3", name: "âˆ’3", role: "negative", kind: "DC", direction: "bi", side: "top", offset: 0.8 }),
-      P({ id: "b1", name: "âˆ’4", role: "negative", kind: "DC", direction: "bi", side: "bottom", offset: 0.2 }),
-      P({ id: "b2", name: "âˆ’5", role: "negative", kind: "DC", direction: "bi", side: "bottom", offset: 0.5 }),
-      P({ id: "b3", name: "âˆ’6", role: "negative", kind: "DC", direction: "bi", side: "bottom", offset: 0.8 }),
+      P({ id: "t1", name: "−1", role: "negative", kind: "DC", direction: "bi", side: "top", offset: 0.2 }),
+      P({ id: "t2", name: "−2", role: "negative", kind: "DC", direction: "bi", side: "top", offset: 0.5 }),
+      P({ id: "t3", name: "−3", role: "negative", kind: "DC", direction: "bi", side: "top", offset: 0.8 }),
+      P({ id: "b1", name: "−4", role: "negative", kind: "DC", direction: "bi", side: "bottom", offset: 0.2 }),
+      P({ id: "b2", name: "−5", role: "negative", kind: "DC", direction: "bi", side: "bottom", offset: 0.5 }),
+      P({ id: "b3", name: "−6", role: "negative", kind: "DC", direction: "bi", side: "bottom", offset: 0.8 }),
     ],
   },
 
@@ -262,7 +262,7 @@ export const CATALOG: ProductTemplate[] = [
   },
   {
     id: "dc_breaker",
-    name: "Åalter (DC Ana Kesici)",
+    name: "Şalter (DC Ana Kesici)",
     brand: "Generic",
     model: "DC Main Switch",
     category: "breaker",
@@ -272,8 +272,8 @@ export const CATALOG: ProductTemplate[] = [
     height: 70,
     accent: "#dc2626",
     ports: [
-      P({ id: "in", name: "IN", role: "positive", kind: "DC", direction: "in", side: "left", offset: 0.5, recommendedCableSize: "70mmÂ²" }),
-      P({ id: "out", name: "OUT", role: "positive", kind: "DC", direction: "out", side: "right", offset: 0.5, recommendedCableSize: "70mmÂ²" }),
+      P({ id: "in", name: "IN", role: "positive", kind: "DC", direction: "in", side: "left", offset: 0.5, recommendedCableSize: "70mm²" }),
+      P({ id: "out", name: "OUT", role: "positive", kind: "DC", direction: "out", side: "right", offset: 0.5, recommendedCableSize: "70mm²" }),
     ],
   },
   {
@@ -305,7 +305,7 @@ export const CATALOG: ProductTemplate[] = [
     accent: "#dc2626",
     ports: [
       P({ id: "pos_in", name: "+ IN", role: "positive", kind: "DC", direction: "in", side: "left", offset: 0.3, recommendedFuse: "60A" }),
-      P({ id: "neg_in", name: "âˆ’ IN", role: "negative", kind: "DC", direction: "in", side: "left", offset: 0.7 }),
+      P({ id: "neg_in", name: "− IN", role: "negative", kind: "DC", direction: "in", side: "left", offset: 0.7 }),
       P({ id: "out1", name: "F1", role: "positive", kind: "DC", direction: "out", side: "right", offset: 0.09 }),
       P({ id: "out2", name: "F2", role: "positive", kind: "DC", direction: "out", side: "right", offset: 0.22 }),
       P({ id: "out3", name: "F3", role: "positive", kind: "DC", direction: "out", side: "right", offset: 0.35 }),
@@ -318,7 +318,7 @@ export const CATALOG: ProductTemplate[] = [
   },
   {
     id: "rcd_2p",
-    name: "RCD KaÃ§ak AkÄ±m",
+    name: "RCD Kaçak Akım",
     brand: "Generic",
     model: "2P 40A 30mA",
     category: "rcd",
@@ -357,7 +357,7 @@ export const CATALOG: ProductTemplate[] = [
   // ---------- AC source ----------
   {
     id: "shore_power",
-    name: "Shore Power GiriÅŸi",
+    name: "Shore Power Girişi",
     brand: "Generic",
     model: "CEE 230V Inlet",
     category: "shore_power",
@@ -368,7 +368,7 @@ export const CATALOG: ProductTemplate[] = [
     height: 90,
     accent: "#0f766e",
     ports: [
-      P({ id: "l", name: "L", role: "phase", kind: "AC", direction: "out", side: "right", offset: 0.3, recommendedCableSize: "2.5mmÂ²" }),
+      P({ id: "l", name: "L", role: "phase", kind: "AC", direction: "out", side: "right", offset: 0.3, recommendedCableSize: "2.5mm²" }),
       P({ id: "n", name: "N", role: "neutral", kind: "AC", direction: "out", side: "right", offset: 0.5 }),
       P({ id: "pe", name: "PE", role: "ground", kind: "AC", direction: "out", side: "right", offset: 0.7 }),
     ],
@@ -377,7 +377,7 @@ export const CATALOG: ProductTemplate[] = [
   // ---------- Consumers ----------
   {
     id: "consumer_12v",
-    name: "12V TÃ¼ketici",
+    name: "12V Tüketici",
     brand: "Generic",
     model: "12V Load",
     category: "consumer_12v",
@@ -389,12 +389,12 @@ export const CATALOG: ProductTemplate[] = [
     accent: "#ca8a04",
     ports: [
       P({ id: "pos", name: "+", role: "positive", kind: "DC", direction: "in", side: "left", offset: 0.35 }),
-      P({ id: "neg", name: "âˆ’", role: "negative", kind: "DC", direction: "in", side: "left", offset: 0.65 }),
+      P({ id: "neg", name: "−", role: "negative", kind: "DC", direction: "in", side: "left", offset: 0.65 }),
     ],
   },
   {
     id: "consumer_230v",
-    name: "230V TÃ¼ketici",
+    name: "230V Tüketici",
     brand: "Generic",
     model: "230V Load / Priz",
     category: "consumer_230v",
@@ -432,7 +432,7 @@ export const CATALOG: ProductTemplate[] = [
   },
   {
     id: "ground_point",
-    name: "Åase Topraklama",
+    name: "Şase Topraklama",
     brand: "Generic",
     model: "Chassis Ground",
     category: "ground_point",

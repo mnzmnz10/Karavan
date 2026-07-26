@@ -31,7 +31,7 @@ export interface Port {
   ny?: number;
   maxCurrent?: number; // A
   maxVoltage?: number; // V
-  recommendedCableSize?: string; // e.g. "70mmÂ²"
+  recommendedCableSize?: string; // e.g. "70mm²"
   recommendedFuse?: string; // e.g. "300A"
   color?: string; // override handle color
   connectionConstraints?: string; // e.g. "Only connects to inverter"
@@ -134,7 +134,7 @@ export interface CableEdgeData extends Record<string, unknown> {
   name?: string;
   cableType: CableType;
   color: string;
-  size: string; // cross-section label, e.g. "70mmÂ²"
+  size: string; // cross-section label, e.g. "70mm²"
   length?: number; // meters
   material?: "copper" | "aluminium" | "tinned_copper";
   insulation?: string;

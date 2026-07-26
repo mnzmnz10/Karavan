@@ -27,7 +27,7 @@ export function BottomPanel() {
     <div className="flex h-48 shrink-0 flex-col border-t border-slate-200 bg-white">
       <div className="flex items-center gap-1 border-b border-slate-100 px-2">
         <button className={tabCls("warnings")} onClick={() => setTab("warnings")}>
-          <AlertTriangle size={13} /> UyarÄ±lar
+          <AlertTriangle size={13} /> Uyarılar
           {errs > 0 && <span className="rounded-full bg-red-100 px-1.5 text-[10px] text-red-700">{errs}</span>}
           {warns > 0 && <span className="rounded-full bg-amber-100 px-1.5 text-[10px] text-amber-700">{warns}</span>}
         </button>
@@ -72,7 +72,7 @@ export function BottomPanel() {
         {tab === "bom" && (
           <table className="w-full text-left">
             <thead className="text-[10px] uppercase text-slate-400">
-              <tr><th className="px-2 py-1">ÃœrÃ¼n</th><th>Marka</th><th>Model</th><th>Adet</th></tr>
+              <tr><th className="px-2 py-1">Ürün</th><th>Marka</th><th>Model</th><th>Adet</th></tr>
             </thead>
             <tbody>
               {bom.map((b, i) => (

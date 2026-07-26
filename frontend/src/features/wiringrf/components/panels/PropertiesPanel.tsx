@@ -47,16 +47,16 @@ export function PropertiesPanel() {
   return (
     <aside className="flex h-full w-72 shrink-0 flex-col border-l border-slate-200 bg-white">
       <div className="border-b border-slate-200 p-3">
-        <h2 className="text-xs font-bold uppercase tracking-wide text-slate-500">Ã–zellikler</h2>
+        <h2 className="text-xs font-bold uppercase tracking-wide text-slate-500">Özellikler</h2>
       </div>
       <div className="flex-1 space-y-3 overflow-y-auto p-3">
         {!node && !edge && (
-          <p className="text-sm text-slate-400">Bir Ã¼rÃ¼n veya kablo seÃ§.</p>
+          <p className="text-sm text-slate-400">Bir ürün veya kablo seç.</p>
         )}
 
         {node && (
           <>
-            <Field label="ÃœrÃ¼n AdÄ±">
+            <Field label="Ürün Adı">
               <input className={inputCls} value={node.data.label}
                 onChange={(e) => updateNodeData(node.id, { label: e.target.value })} />
             </Field>
@@ -79,7 +79,7 @@ export function PropertiesPanel() {
                 onChange={(e) => updateNodeData(node.id, { notes: e.target.value })} />
             </Field>
             <div>
-              <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">GÃ¶rsel</span>
+              <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">Görsel</span>
               <div className="flex items-center gap-2">
                 {node.data.imageUrl ? (
                   <img src={node.data.imageUrl} alt="" className="h-12 w-12 rounded border border-slate-200 object-contain" />
@@ -87,8 +87,8 @@ export function PropertiesPanel() {
                   <div className="grid h-12 w-12 place-items-center rounded border border-dashed border-slate-300 text-slate-300"><ImagePlus size={16} /></div>
                 )}
                 <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden" onChange={onQuickUpload} />
-                <button onClick={() => fileRef.current?.click()} className="rounded-md border border-slate-300 px-2 py-1.5 text-xs hover:bg-slate-50">YÃ¼kle</button>
-                {node.data.imageUrl && <button onClick={() => setNodeImage(node.id, undefined)} className="rounded-md border border-slate-300 px-2 py-1.5 text-xs hover:bg-slate-50">KaldÄ±r</button>}
+                <button onClick={() => fileRef.current?.click()} className="rounded-md border border-slate-300 px-2 py-1.5 text-xs hover:bg-slate-50">Yükle</button>
+                {node.data.imageUrl && <button onClick={() => setNodeImage(node.id, undefined)} className="rounded-md border border-slate-300 px-2 py-1.5 text-xs hover:bg-slate-50">Kaldır</button>}
               </div>
             </div>
 
@@ -96,7 +96,7 @@ export function PropertiesPanel() {
               <div className="mb-1 flex items-center justify-between">
                 <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Portlar ({node.data.ports.length})</span>
                 <button onClick={() => setEditorOpen(true)} className="inline-flex items-center gap-1 rounded-md border border-blue-300 px-2 py-1 text-[11px] text-blue-700 hover:bg-blue-50">
-                  <Settings2 size={12} /> Port EditÃ¶rÃ¼
+                  <Settings2 size={12} /> Port Editörü
                 </button>
               </div>
               <div className="space-y-1">
@@ -111,11 +111,11 @@ export function PropertiesPanel() {
                     <span className="shrink-0 text-[10px] text-slate-400">{p.role}</span>
                   </div>
                 ))}
-                {node.data.ports.length === 0 && <p className="text-[11px] text-slate-400">Port yok â€” editÃ¶rden ekle.</p>}
+                {node.data.ports.length === 0 && <p className="text-[11px] text-slate-400">Port yok — editörden ekle.</p>}
               </div>
             </div>
             <div className="flex gap-2 pt-1">
-              <button onClick={() => rotateNode(node.id)} className="flex-1 rounded-md border border-slate-300 px-2 py-1.5 text-xs hover:bg-slate-50">DÃ¶ndÃ¼r 90Â°</button>
+              <button onClick={() => rotateNode(node.id)} className="flex-1 rounded-md border border-slate-300 px-2 py-1.5 text-xs hover:bg-slate-50">Döndür 90°</button>
               <button onClick={deleteSelection} className="flex-1 rounded-md border border-red-300 px-2 py-1.5 text-xs text-red-600 hover:bg-red-50">Sil</button>
             </div>
 
@@ -151,7 +151,7 @@ export function PropertiesPanel() {
             </div>
             <div className="grid grid-cols-2 gap-2">
               <Field label="Sigorta">
-                <input className={inputCls} value={edge.data!.fuse ?? ""} placeholder="Ã¶rn. 300A"
+                <input className={inputCls} value={edge.data!.fuse ?? ""} placeholder="örn. 300A"
                   onChange={(e) => {
                     const fuse = e.target.value;
                     updateEdgeData(edge.id, { fuse, label: fuse ? `${edge.data!.size} / ${fuse}` : edge.data!.size });
@@ -173,7 +173,7 @@ export function PropertiesPanel() {
             <label className="flex items-center gap-2 text-xs text-slate-600">
               <input type="checkbox" checked={!!edge.data!.arrow}
                 onChange={(e) => updateEdgeData(edge.id, { arrow: e.target.checked })} />
-              YÃ¶n oku gÃ¶ster
+              Yön oku göster
             </label>
             <button onClick={deleteSelection} className="w-full rounded-md border border-red-300 px-2 py-1.5 text-xs text-red-600 hover:bg-red-50">Kabloyu Sil</button>
           </>

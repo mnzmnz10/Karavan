@@ -39,7 +39,7 @@ export interface ConnectContext {
   existingEdges?: ExistingConnection[];
 }
 
-// Two role groups may join if identical, or DC-negative â†” chassis ground (bonding).
+// Two role groups may join if identical, or DC-negative ↔ chassis ground (bonding).
 export function groupsCompatible(a: RoleGroup, b: RoleGroup): boolean {
   if (a === b) return true;
   const pair = new Set([a, b]);
@@ -56,12 +56,12 @@ export function canConnect(
   sameNode: boolean,
   context: ConnectContext = {},
 ): ConnectCheck {
-  if (sameNode) return { ok: false, reason: "AynÄ± cihaza baÄŸlantÄ± yapÄ±lamaz." };
+  if (sameNode) return { ok: false, reason: "Aynı cihaza bağlantı yapılamaz." };
   if (!source || !target) return { ok: true }; // unknown port -> let it pass
 
-  // PV seri stringing: panel âˆ’ â†” sonraki panel + (ikisi de "out" portu) â€” direction
-  // kuralÄ±ndan MUAF olmalÄ±; yoksa seri panel baÄŸlantÄ±sÄ± reddedilir. Bu yÃ¼zden yÃ¶n
-  // kontrolÃ¼nden Ã–NCE ele alÄ±nÄ±r.
+  // PV seri stringing: panel − ↔ sonraki panel + (ikisi de "out" portu) — direction
+  // kuralından MUAF olmalı; yoksa seri panel bağlantısı reddedilir. Bu yüzden yön
+  // kontrolünden ÖNCE ele alınır.
   const pvSeries =
     (source.role === "pv_positive" && target.role === "pv_negative") ||
     (source.role === "pv_negative" && target.role === "pv_positive");
@@ -69,10 +69,10 @@ export function canConnect(
 
   // Yon kurali: kablo kaynakta cikistan baslar, hedefte giriste biter.
   if (source.direction !== "out" && source.direction !== "bi") {
-    return { ok: false, reason: `Kaynak port "${source.name}" Ã§Ä±kÄ±ÅŸ yÃ¶nÃ¼nde deÄŸil.` };
+    return { ok: false, reason: `Kaynak port "${source.name}" çıkış yönünde değil.` };
   }
   if (target.direction !== "in" && target.direction !== "bi") {
-    return { ok: false, reason: `Hedef port "${target.name}" giriÅŸ yÃ¶nÃ¼nde deÄŸil.` };
+    return { ok: false, reason: `Hedef port "${target.name}" giriş yönünde değil.` };
   }
 
   // Tek girisli port doluysa ikinci kabloyu hem UI hem store reddeder.
@@ -81,20 +81,20 @@ export function canConnect(
       (e) => e.target === context.targetNodeId && e.targetHandle === context.targetHandle,
     );
     if (occupied) {
-      return { ok: false, reason: `Hedef port "${target.name}" zaten baÄŸlÄ±.` };
+      return { ok: false, reason: `Hedef port "${target.name}" zaten bağlı.` };
     }
   }
 
   // Kind: DC/AC/DATA must match.
   if (source.kind !== target.kind) {
-    return { ok: false, reason: `${kindLabel(source.kind)} ile ${kindLabel(target.kind)} baÄŸlanamaz.` };
+    return { ok: false, reason: `${kindLabel(source.kind)} ile ${kindLabel(target.kind)} bağlanamaz.` };
   }
 
   // Role group must match (no +/- mix, no L/N mix, no power/data mix).
   const gs = roleGroup(source.role);
   const gt = roleGroup(target.role);
   if (!groupsCompatible(gs, gt)) {
-    return { ok: false, reason: `${groupLabel(gs)} ile ${groupLabel(gt)} portu baÄŸlanamaz.` };
+    return { ok: false, reason: `${groupLabel(gs)} ile ${groupLabel(gt)} portu bağlanamaz.` };
   }
 
   return { ok: true };
@@ -105,7 +105,7 @@ function kindLabel(k: CurrentKind): string {
 }
 
 function groupLabel(g: RoleGroup): string {
-  return { POS: "Pozitif", NEG: "Negatif", PHASE: "Faz (L)", NEUTRAL: "NÃ¶tr (N)", GND: "Toprak", DATA: "Data" }[g];
+  return { POS: "Pozitif", NEG: "Negatif", PHASE: "Faz (L)", NEUTRAL: "Nötr (N)", GND: "Toprak", DATA: "Data" }[g];
 }
 
 // Which port role groups a given cable type is allowed to carry.

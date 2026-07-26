@@ -33,7 +33,7 @@ export function buildBom(nodes: AppNode[]): BomRow[] {
     const key = `${n.data.brand}|${n.data.model}`;
     const ex = map.get(key);
     if (ex) ex.qty += 1;
-    else map.set(key, { name: n.data.label.replace(/\sÂ·.*$/, ""), brand: n.data.brand, model: n.data.model, qty: 1 });
+    else map.set(key, { name: n.data.label.replace(/\s·.*$/, ""), brand: n.data.brand, model: n.data.model, qty: 1 });
   }
   return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, "tr"));
 }

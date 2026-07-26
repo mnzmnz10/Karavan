@@ -76,14 +76,14 @@ export function PortEditorModal({ nodeId, onClose }: { nodeId: string; onClose: 
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-          <h2 className="text-sm font-bold text-slate-800">Port Konum EditÃ¶rÃ¼ â€” {node.data.label}</h2>
+          <h2 className="text-sm font-bold text-slate-800">Port Konum Editörü — {node.data.label}</h2>
           <button onClick={onClose}><X size={18} className="text-slate-400 hover:text-slate-700" /></button>
         </div>
 
         <div className="flex flex-1 gap-4 overflow-y-auto p-4">
           {/* Visual editor */}
           <div className="flex flex-col items-center gap-2">
-            <p className="text-[11px] text-slate-500">BoÅŸ alana tÄ±kla â†’ port ekle Â· portu sÃ¼rÃ¼kle â†’ taÅŸÄ±</p>
+            <p className="text-[11px] text-slate-500">Boş alana tıkla → port ekle · portu sürükle → taşı</p>
             <div
               ref={boxRef}
               onClick={onBoxClick}
@@ -127,11 +127,11 @@ export function PortEditorModal({ nodeId, onClose }: { nodeId: string; onClose: 
             <div className="flex gap-2">
               <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden" onChange={onUpload} />
               <button onClick={() => fileRef.current?.click()} className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 px-2.5 py-1.5 text-xs hover:bg-slate-50">
-                <ImagePlus size={14} /> GÃ¶rsel YÃ¼kle
+                <ImagePlus size={14} /> Görsel Yükle
               </button>
               {node.data.imageUrl && (
                 <button onClick={() => setNodeImage(nodeId, undefined)} className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 px-2.5 py-1.5 text-xs hover:bg-slate-50">
-                  <ImageOff size={14} /> GÃ¶rseli KaldÄ±r
+                  <ImageOff size={14} /> Görseli Kaldır
                 </button>
               )}
             </div>
@@ -157,13 +157,13 @@ export function PortEditorModal({ nodeId, onClose }: { nodeId: string; onClose: 
                   <span className="text-[10px] text-slate-400">{p.role}</span>
                 </button>
               ))}
-              {ports.length === 0 && <p className="text-xs text-slate-400">HenÃ¼z port yok. GÃ¶rsele tÄ±kla veya â€œPort Ekleâ€.</p>}
+              {ports.length === 0 && <p className="text-xs text-slate-400">Henüz port yok. Görsele tıkla veya “Port Ekle”.</p>}
             </div>
 
             {sel ? (
               <PortFields key={sel.id} port={sel} onChange={(patch) => updatePort(nodeId, sel.id, patch)} onDelete={() => { deletePort(nodeId, sel.id); setSelPort(null); }} />
             ) : (
-              <p className="text-xs text-slate-400">DÃ¼zenlemek iÃ§in bir port seÃ§.</p>
+              <p className="text-xs text-slate-400">Düzenlemek için bir port seç.</p>
             )}
           </div>
         </div>
@@ -180,7 +180,7 @@ function PortFields({ port, onChange, onDelete }: { port: Port; onChange: (p: Pa
   return (
     <div className="space-y-2.5 rounded-md border border-slate-200 p-3">
       <label className="block">
-        <span className="mb-1 block text-[10px] font-semibold uppercase text-slate-400">Port AdÄ±</span>
+        <span className="mb-1 block text-[10px] font-semibold uppercase text-slate-400">Port Adı</span>
         <input className={inputCls} value={port.name} onChange={(e) => onChange({ name: e.target.value })} />
       </label>
       
@@ -193,10 +193,10 @@ function PortFields({ port, onChange, onDelete }: { port: Port; onChange: (p: Pa
           </select>
         </label>
         <label className="block">
-          <span className="mb-1 block text-[10px] font-semibold uppercase text-slate-400">AkÄ±m Tipi</span>
+          <span className="mb-1 block text-[10px] font-semibold uppercase text-slate-400">Akım Tipi</span>
           <select className={inputCls} value={port.kind} onChange={(e) => onChange({ kind: e.target.value as CurrentKind })}>
-            <option value="DC">DC (DoÄŸru AkÄ±m)</option>
-            <option value="AC">AC (Alternatif AkÄ±m)</option>
+            <option value="DC">DC (Doğru Akım)</option>
+            <option value="AC">AC (Alternatif Akım)</option>
             <option value="DATA">DATA (Veri / Sinyal)</option>
           </select>
         </label>
@@ -204,15 +204,15 @@ function PortFields({ port, onChange, onDelete }: { port: Port; onChange: (p: Pa
 
       <div className="grid grid-cols-2 gap-2">
         <label className="block">
-          <span className="mb-1 block text-[10px] font-semibold uppercase text-slate-400">YÃ¶n</span>
+          <span className="mb-1 block text-[10px] font-semibold uppercase text-slate-400">Yön</span>
           <select className={inputCls} value={port.direction} onChange={(e) => onChange({ direction: e.target.value as PortDirection })}>
-            <option value="in">GiriÅŸ</option>
-            <option value="out">Ã‡Ä±kÄ±ÅŸ</option>
-            <option value="bi">Ã‡ift yÃ¶nlÃ¼</option>
+            <option value="in">Giriş</option>
+            <option value="out">Çıkış</option>
+            <option value="bi">Çift yönlü</option>
           </select>
         </label>
         <label className="block">
-          <span className="mb-1 block text-[10px] font-semibold uppercase text-slate-400">Ã–zel Renk (Hex)</span>
+          <span className="mb-1 block text-[10px] font-semibold uppercase text-slate-400">Özel Renk (Hex)</span>
           <div className="flex gap-1.5">
             <input
               type="color"
@@ -223,7 +223,7 @@ function PortFields({ port, onChange, onDelete }: { port: Port; onChange: (p: Pa
             <input
               className={`${inputCls} flex-grow text-xs`}
               value={port.color ?? ""}
-              placeholder="VarsayÄ±lan"
+              placeholder="Varsayılan"
               onChange={(e) => onChange({ color: e.target.value || undefined })}
             />
           </div>
@@ -233,28 +233,28 @@ function PortFields({ port, onChange, onDelete }: { port: Port; onChange: (p: Pa
       <div className="grid grid-cols-2 gap-2">
         <label className="block">
           <span className="mb-1 block text-[10px] font-semibold uppercase text-slate-400">Tavsiye Kesit</span>
-          <input className={inputCls} value={port.recommendedCableSize ?? ""} placeholder="Ã¶rn. 16mmÂ²" onChange={(e) => onChange({ recommendedCableSize: e.target.value })} />
+          <input className={inputCls} value={port.recommendedCableSize ?? ""} placeholder="örn. 16mm²" onChange={(e) => onChange({ recommendedCableSize: e.target.value })} />
         </label>
         <label className="block">
           <span className="mb-1 block text-[10px] font-semibold uppercase text-slate-400">Tavsiye Sigorta</span>
-          <input className={inputCls} value={port.recommendedFuse ?? ""} placeholder="Ã¶rn. 60A" onChange={(e) => onChange({ recommendedFuse: e.target.value })} />
+          <input className={inputCls} value={port.recommendedFuse ?? ""} placeholder="örn. 60A" onChange={(e) => onChange({ recommendedFuse: e.target.value })} />
         </label>
       </div>
 
       <div className="grid grid-cols-2 gap-2">
         <label className="block">
-          <span className="mb-1 block text-[10px] font-semibold uppercase text-slate-400">Maks AkÄ±m (A)</span>
-          <input type="number" className={inputCls} value={port.maxCurrent ?? ""} placeholder="Ã¶rn. 45" onChange={(e) => onChange({ maxCurrent: e.target.value ? parseFloat(e.target.value) : undefined })} />
+          <span className="mb-1 block text-[10px] font-semibold uppercase text-slate-400">Maks Akım (A)</span>
+          <input type="number" className={inputCls} value={port.maxCurrent ?? ""} placeholder="örn. 45" onChange={(e) => onChange({ maxCurrent: e.target.value ? parseFloat(e.target.value) : undefined })} />
         </label>
         <label className="block">
           <span className="mb-1 block text-[10px] font-semibold uppercase text-slate-400">Maks Voltaj (V)</span>
-          <input type="number" className={inputCls} value={port.maxVoltage ?? ""} placeholder="Ã¶rn. 250" onChange={(e) => onChange({ maxVoltage: e.target.value ? parseFloat(e.target.value) : undefined })} />
+          <input type="number" className={inputCls} value={port.maxVoltage ?? ""} placeholder="örn. 250" onChange={(e) => onChange({ maxVoltage: e.target.value ? parseFloat(e.target.value) : undefined })} />
         </label>
       </div>
 
       <label className="block">
-        <span className="mb-1 block text-[10px] font-semibold uppercase text-slate-400">BaÄŸlantÄ± KÄ±sÄ±tlarÄ±</span>
-        <input className={inputCls} value={port.connectionConstraints ?? ""} placeholder="Ã¶rn. Sadece Victron MPPT iÃ§in" onChange={(e) => onChange({ connectionConstraints: e.target.value || undefined })} />
+        <span className="mb-1 block text-[10px] font-semibold uppercase text-slate-400">Bağlantı Kısıtları</span>
+        <input className={inputCls} value={port.connectionConstraints ?? ""} placeholder="örn. Sadece Victron MPPT için" onChange={(e) => onChange({ connectionConstraints: e.target.value || undefined })} />
       </label>
 
       <div className="pt-2">

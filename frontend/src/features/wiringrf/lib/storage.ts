@@ -34,7 +34,7 @@ export function saveProject(p: Project) {
   } catch (e) {
     // Quota exceeded or serialization error -> tell the user, don't fail silently.
     console.warn("saveProject failed", e);
-    emit("kablo:save-error", e instanceof Error ? e.message : "KayÄ±t baÅŸarÄ±sÄ±z");
+    emit("kablo:save-error", e instanceof Error ? e.message : "Kayıt başarısız");
   }
 }
 
@@ -45,12 +45,12 @@ export function loadProject(id: string): Project | null {
   try {
     const parsed = JSON.parse(raw);
     if (!isValidProject(parsed)) {
-      emit("kablo:load-error", "KayÄ±tlÄ± proje bozuk veya eski formatta; yÃ¼klenmedi.");
+      emit("kablo:load-error", "Kayıtlı proje bozuk veya eski formatta; yüklenmedi.");
       return null;
     }
     return parsed as Project;
   } catch {
-    emit("kablo:load-error", "KayÄ±tlÄ± proje okunamadÄ± (bozuk JSON).");
+    emit("kablo:load-error", "Kayıtlı proje okunamadı (bozuk JSON).");
     return null;
   }
 }

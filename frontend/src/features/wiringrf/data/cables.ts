@@ -3,28 +3,28 @@ import type { CableType, CableTypeDef, PortRole } from "@/features/wiringrf/type
 // Standard cable colors per type (caravan / Victron convention).
 export const CABLE_TYPES: Record<CableType, CableTypeDef> = {
   DC_POSITIVE: { type: "DC_POSITIVE", label: "DC +", color: "#e11d48", kind: "DC" },
-  DC_NEGATIVE: { type: "DC_NEGATIVE", label: "DC âˆ’", color: "#111827", kind: "DC" },
+  DC_NEGATIVE: { type: "DC_NEGATIVE", label: "DC −", color: "#111827", kind: "DC" },
   AC_PHASE: { type: "AC_PHASE", label: "AC Faz (L)", color: "#92400e", kind: "AC" },
-  AC_NEUTRAL: { type: "AC_NEUTRAL", label: "AC NÃ¶tr (N)", color: "#2563eb", kind: "AC" },
+  AC_NEUTRAL: { type: "AC_NEUTRAL", label: "AC Nötr (N)", color: "#2563eb", kind: "AC" },
   AC_GROUND: { type: "AC_GROUND", label: "AC Toprak (PE)", color: "#16a34a", kind: "AC" },
   PV_POSITIVE: { type: "PV_POSITIVE", label: "PV +", color: "#f59e0b", kind: "DC" },
-  PV_NEGATIVE: { type: "PV_NEGATIVE", label: "PV âˆ’", color: "#1f2937", kind: "DC" },
+  PV_NEGATIVE: { type: "PV_NEGATIVE", label: "PV −", color: "#1f2937", kind: "DC" },
   VE_BUS: { type: "VE_BUS", label: "VE.Bus", color: "#7c3aed", kind: "DATA" },
   VE_DIRECT: { type: "VE_DIRECT", label: "VE.Direct", color: "#9333ea", kind: "DATA" },
   ETHERNET: { type: "ETHERNET", label: "Ethernet", color: "#0891b2", kind: "DATA" },
   CAN: { type: "CAN", label: "CAN bus", color: "#0d9488", kind: "DATA" },
-  SENSOR: { type: "SENSOR", label: "SensÃ¶r", color: "#64748b", kind: "DATA" },
-  SIGNAL: { type: "SIGNAL", label: "Sinyal/RÃ¶le", color: "#a16207", kind: "DATA" },
-  CHASSIS_GROUND: { type: "CHASSIS_GROUND", label: "Åase/Topraklama", color: "#15803d", kind: "DC" },
-  CUSTOM: { type: "CUSTOM", label: "Ã–zel", color: "#6b7280", kind: "DC" },
+  SENSOR: { type: "SENSOR", label: "Sensör", color: "#64748b", kind: "DATA" },
+  SIGNAL: { type: "SIGNAL", label: "Sinyal/Röle", color: "#a16207", kind: "DATA" },
+  CHASSIS_GROUND: { type: "CHASSIS_GROUND", label: "Şase/Topraklama", color: "#15803d", kind: "DC" },
+  CUSTOM: { type: "CUSTOM", label: "Özel", color: "#6b7280", kind: "DC" },
 };
 
 export const CABLE_TYPE_LIST = Object.values(CABLE_TYPES);
 
 // Cross-section options shown in the UI.
 export const CABLE_SIZES = [
-  "0.75mmÂ²", "1mmÂ²", "1.5mmÂ²", "2.5mmÂ²", "4mmÂ²", "6mmÂ²",
-  "10mmÂ²", "16mmÂ²", "25mmÂ²", "35mmÂ²", "50mmÂ²", "70mmÂ²", "95mmÂ²", "120mmÂ²",
+  "0.75mm²", "1mm²", "1.5mm²", "2.5mm²", "4mm²", "6mm²",
+  "10mm²", "16mm²", "25mm²", "35mm²", "50mm²", "70mm²", "95mm²", "120mm²",
 ];
 
 // Visual stroke width by cross-section (px).

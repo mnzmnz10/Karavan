@@ -28,7 +28,7 @@ export default function WiringRfSection({ fullscreen }: WiringRfSectionProps) {
     const state = useProjectStore.getState();
     if (state.nodes.length === 0) {
       state.loadSnapshot(buildSeedProject(), {
-        name: "Ornek Victron Sistemi",
+        name: "Örnek Victron Sistemi",
         customer: "Demo",
         systemVoltage: "12V",
         vanType: "Panel Van",

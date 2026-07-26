@@ -19,7 +19,7 @@ function sanitizeSvg(svg: string): string {
 
 export async function readImageFile(file: File): Promise<ImageResult> {
   if (!ALLOWED.includes(file.type)) {
-    return { ok: false, error: "Desteklenmeyen tÃ¼r. PNG/JPEG/WebP/SVG kullanÄ±n." };
+    return { ok: false, error: "Desteklenmeyen tür. PNG/JPEG/WebP/SVG kullanın." };
   }
 
   if (file.type === "image/svg+xml") {
@@ -32,7 +32,7 @@ export async function readImageFile(file: File): Promise<ImageResult> {
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = () => resolve({ ok: true, dataUrl: String(reader.result) });
-    reader.onerror = () => resolve({ ok: false, error: "Dosya okunamadÄ±." });
+    reader.onerror = () => resolve({ ok: false, error: "Dosya okunamadı." });
     reader.readAsDataURL(file);
   });
 }
