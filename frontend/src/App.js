@@ -5454,7 +5454,7 @@ function App() {
                     onChange={(e) => setLoginForm({ ...loginForm, remember_me: e.target.checked })}
                     className="accent-emerald-600 w-4 h-4"
                   />
-                  Beni hatırla (30 gün oturum açık kalır)
+                  Beni hatırla (oturum sürekli açık kalır)
                 </label>
                 {loginError && (
                   <div className="p-3 bg-red-50 border border-red-200 rounded-lg">

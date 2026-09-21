@@ -296,6 +296,23 @@ PUBLIC_API_PATHS = {
     "/api/auth/check",
 }
 
+# 'Beni hatırla' oturum penceresi: ~10 yıl. Aktif kullanıcı pratikte hiç çıkış
+# yapmaz; ayrıca her istekte cookie yeniden set edilir (aşağıda) -> tarayıcının
+# ~400 günlük cookie ömrü sınırı her ziyarette sıfırlanır.
+SESSION_WINDOW_HOURS = 24 * 3650
+
+def _set_session_cookie(response, token: str, hours: int = SESSION_WINDOW_HOURS):
+    """session_token cookie'sini standart özniteliklerle ayarla (login + sliding renewal)."""
+    response.set_cookie(
+        key="session_token",
+        value=token,
+        max_age=hours * 3600,
+        httponly=True,
+        # Prod (HTTPS): COOKIE_SECURE=true -> cookie sadece HTTPS'te gider.
+        secure=os.environ.get("COOKIE_SECURE", "false").lower() == "true",
+        samesite="lax",
+    )
+
 @app.middleware("http")
 async def api_auth_middleware(request: Request, call_next):
     path = request.url.path
@@ -308,6 +325,15 @@ async def api_auth_middleware(request: Request, call_next):
                 content={"detail": "Authentication required"},
             )
         request.state.username = username
+        response = await call_next(request)
+        # Sliding renewal: her istekte cookie'yi yeniden set et ki tarayıcının
+        # ~400 günlük cookie ömrü sıfırlansın; oturum DB'de zaten uzun (login penceresi).
+        try:
+            if token:
+                _set_session_cookie(response, token)
+        except Exception:
+            pass
+        return response
     return await call_next(request)
 
 # Cache invalidation utility
@@ -7576,9 +7602,9 @@ async def login(login_request: LoginRequest, request: Request, response: JSONRes
             )
             logger.info(f"Upgraded legacy password hash to bcrypt for user {user.get('username')}")
 
-        # Create session ('beni hatırla' -> 30 gün, değilse 24 saat)
+        # Create session ('beni hatırla' -> ~10 yıl kalıcı, değilse 24 saat)
         _login_fail_log.pop(client_ip, None)  # başarılı giriş -> sayaç sıfır
-        session_hours = 24 * 30 if login_request.remember_me else 24
+        session_hours = SESSION_WINDOW_HOURS if login_request.remember_me else 24
         session_token = await auth_service.create_session(login_request.username, hours=session_hours)
         
         # Set session cookie
@@ -7590,17 +7616,8 @@ async def login(login_request: LoginRequest, request: Request, response: JSONRes
                 "message": "Başarıyla giriş yapıldı"
             }
         )
-        response.set_cookie(
-            key="session_token",
-            value=session_token,
-            max_age=session_hours * 3600,  # oturum süresiyle aynı
-            httponly=True,
-            # Prod (HTTPS, Pi): COOKIE_SECURE=true -> cookie sadece HTTPS'te gider.
-            # Lokal HTTP gelistirmede default false.
-            secure=os.environ.get("COOKIE_SECURE", "false").lower() == "true",
-            samesite="lax"
-        )
-        
+        _set_session_cookie(response, session_token, hours=session_hours)
+
         return response
         
     except HTTPException:
