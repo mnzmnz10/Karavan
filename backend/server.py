@@ -3209,15 +3209,21 @@ class PDFQuoteGenerator:
         P = self.PROP_PRIMARY
 
         # --- Sol: logo + marka ---
-        brand_style = ParagraphStyle('PHBrand', parent=self.styles['Normal'],
-            fontName=self.get_font_name(is_bold=True), fontSize=17, textColor=colors.HexColor(P),
-            alignment=TA_CENTER, leading=19)
-        brand_par = [Paragraph("MSZ KARAVAN", brand_style)]
+        # Logo zaten 'MSZ KARAVAN' yazdığı için yanına ad+alt başlık+adres+iletişim (sözleşme header ile tutarlı)
+        info_style = ParagraphStyle('PHBrand', parent=self.styles['Normal'],
+            fontName=self.get_font_name(), fontSize=7.5, textColor=colors.HexColor('#4A5568'), leading=10.5)
+        brand_lines = [
+            "<font size='12' color='%s'><b>MSZ KARAVAN</b></font>" % P,
+            "<font size='7' color='#1ba3cc'><b>KARAVAN ELEKTRİK EKİPMANLARI</b></font>",
+            "<font size='7.5' color='#4A5568'>Hatip, Sarı Salkım 3. Sk. Mobilyacılar Sitesi No: B1, 59000 Çorlu/Tekirdağ</font>",
+            "<font size='7.5' color='#4A5568'>Tel: 0505 813 77 65 &nbsp;·&nbsp; info@corlukaravan.com</font>",
+        ]
+        brand_par = [Paragraph("<br/>".join(brand_lines), info_style)]
         logo_path = Path(__file__).parent / 'images' / 'corlu_karavan_logo_new.png'
         if logo_path.exists():
             try:
                 logo_img = Image(str(logo_path), width=85, height=64)
-                left_cell = PDFTable([[logo_img, brand_par]], colWidths=[92, 160])
+                left_cell = PDFTable([[logo_img, brand_par]], colWidths=[88, 275])
                 left_cell.setStyle(TableStyle([
                     ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
                     ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (0,0), 8),
