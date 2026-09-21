@@ -11150,50 +11150,6 @@ function App() {
                         <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-wider text-emerald-700">
                           <Package className="w-3.5 h-3.5" /> Yapılan İşlemler / Parçalar
                         </div>
-                        <Button type="button" size="sm" variant="outline" onClick={addServiceItem} className="h-8 text-xs font-bold border-emerald-200 text-emerald-700 hover:bg-emerald-50">
-                          <Plus className="w-3.5 h-3.5 mr-1" /> Boş Kalem
-                        </Button>
-                      </div>
-
-                      {/* Üründen kalem ekle — ürün listesinden ara, seç, eklensin */}
-                      <div className="relative mb-2">
-                        <div className="flex items-center gap-2 h-9 px-3 rounded-lg border border-slate-200 bg-slate-50 focus-within:ring-1 focus-within:ring-emerald-500">
-                          <Search className="w-4 h-4 text-emerald-500 shrink-0" />
-                          <input
-                            type="text"
-                            placeholder="Üründen kalem ekle — ürün adı veya marka yazın..."
-                            value={serviceItemSearch}
-                            onChange={(e) => setServiceItemSearch(e.target.value)}
-                            className="w-full bg-transparent border-none text-sm focus:outline-none placeholder-slate-400"
-                          />
-                        </div>
-                        {serviceItemSearch.trim() && (
-                          <div className="absolute z-30 mt-1 left-0 right-0 bg-white border border-slate-200 rounded-xl shadow-2xl max-h-64 overflow-y-auto">
-                            {(products || [])
-                              .filter((p) => p.name.toLowerCase().includes(serviceItemSearch.toLowerCase()) || (p.brand && p.brand.toLowerCase().includes(serviceItemSearch.toLowerCase())))
-                              .slice(0, 8)
-                              .map((p) => (
-                                <div key={p.id} onClick={() => addServiceItemFromProduct(p)}
-                                     className="p-2.5 hover:bg-emerald-50 cursor-pointer flex items-center justify-between text-xs border-b border-slate-50">
-                                  <div className="flex items-center gap-2 min-w-0">
-                                    {p.image_url ? (
-                                      <img src={p.image_url} alt="" className="w-8 h-8 object-cover rounded shrink-0" />
-                                    ) : (
-                                      <div className="w-8 h-8 bg-slate-100 rounded flex items-center justify-center text-slate-300 shrink-0"><Package className="w-4 h-4" /></div>
-                                    )}
-                                    <div className="min-w-0">
-                                      <div className="font-bold text-slate-800 truncate">{p.name}</div>
-                                      {p.brand && <div className="text-[10px] text-slate-400 uppercase font-black">{p.brand}</div>}
-                                    </div>
-                                  </div>
-                                  <span className="font-extrabold text-emerald-700 shrink-0 ml-2">₺ {formatPrice(p.list_price_try || 0)}</span>
-                                </div>
-                              ))}
-                            {(products || []).filter((p) => p.name.toLowerCase().includes(serviceItemSearch.toLowerCase()) || (p.brand && p.brand.toLowerCase().includes(serviceItemSearch.toLowerCase()))).length === 0 && (
-                              <div className="p-3 text-slate-400 italic text-center text-xs">Eşleşen ürün yok</div>
-                            )}
-                          </div>
-                        )}
                       </div>
 
                       {(serviceForm.items || []).length === 0 ? (
@@ -11242,6 +11198,52 @@ function App() {
                           </table>
                         </div>
                       )}
+
+                      {/* Kalem ekleme kontrolleri — tablo altında */}
+                      <div className="mt-3 flex items-start gap-2">
+                        <div className="relative flex-1">
+                          <div className="flex items-center gap-2 h-9 px-3 rounded-lg border border-slate-200 bg-slate-50 focus-within:ring-1 focus-within:ring-emerald-500">
+                            <Search className="w-4 h-4 text-emerald-500 shrink-0" />
+                            <input
+                              type="text"
+                              placeholder="Üründen kalem ekle — ürün adı veya marka yazın..."
+                              value={serviceItemSearch}
+                              onChange={(e) => setServiceItemSearch(e.target.value)}
+                              className="w-full bg-transparent border-none text-sm focus:outline-none placeholder-slate-400"
+                            />
+                          </div>
+                          {serviceItemSearch.trim() && (
+                            <div className="absolute z-30 mt-1 left-0 right-0 bg-white border border-slate-200 rounded-xl shadow-2xl max-h-64 overflow-y-auto">
+                              {(products || [])
+                                .filter((p) => p.name.toLowerCase().includes(serviceItemSearch.toLowerCase()) || (p.brand && p.brand.toLowerCase().includes(serviceItemSearch.toLowerCase())))
+                                .slice(0, 8)
+                                .map((p) => (
+                                  <div key={p.id} onClick={() => addServiceItemFromProduct(p)}
+                                       className="p-2.5 hover:bg-emerald-50 cursor-pointer flex items-center justify-between text-xs border-b border-slate-50">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      {p.image_url ? (
+                                        <img src={p.image_url} alt="" className="w-8 h-8 object-cover rounded shrink-0" />
+                                      ) : (
+                                        <div className="w-8 h-8 bg-slate-100 rounded flex items-center justify-center text-slate-300 shrink-0"><Package className="w-4 h-4" /></div>
+                                      )}
+                                      <div className="min-w-0">
+                                        <div className="font-bold text-slate-800 truncate">{p.name}</div>
+                                        {p.brand && <div className="text-[10px] text-slate-400 uppercase font-black">{p.brand}</div>}
+                                      </div>
+                                    </div>
+                                    <span className="font-extrabold text-emerald-700 shrink-0 ml-2">₺ {formatPrice(p.list_price_try || 0)}</span>
+                                  </div>
+                                ))}
+                              {(products || []).filter((p) => p.name.toLowerCase().includes(serviceItemSearch.toLowerCase()) || (p.brand && p.brand.toLowerCase().includes(serviceItemSearch.toLowerCase()))).length === 0 && (
+                                <div className="p-3 text-slate-400 italic text-center text-xs">Eşleşen ürün yok</div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        <Button type="button" size="sm" variant="outline" onClick={addServiceItem} className="h-9 text-xs font-bold border-emerald-200 text-emerald-700 hover:bg-emerald-50 shrink-0">
+                          <Plus className="w-3.5 h-3.5 mr-1" /> Boş Kalem
+                        </Button>
+                      </div>
                     </div>
 
                     {/* Fotoğraflar */}
