@@ -1,0 +1,69 @@
+# Codemagic CI — MSZ Karavan iOS (Capacitor 8, SPM) → TestFlight
+# Mac sahibi olmadan bulutta iOS derler. Web kodu %100 reuse; backend corlukaravan.shop.
+#
+# ÖN KOŞULLAR (Codemagic UI'da bir kez):
+#  1) Apple Developer hesabı ($99/yıl) + App Store Connect'te uygulama kaydı
+#     (bundle id: shop.corlukaravan.app).
+#  2) App Store Connect API key üret (Users and Access > Integrations > App Store Connect API,
+#     Admin/App Manager rol) → Codemagic > Teams/User settings > Integrations >
+#     App Store Connect > "Add key". Bu integration'a AŞAĞIDAKİ ile aynı adı ver: msz_asc
+#  3) Codemagic'e bu GitHub reposunu bağla, karavan-v2 branch'ini seç.
+#  4) İlk build'de Codemagic otomatik imzalama profillerini oluşturur (use-profiles).
+
+workflows:
+  ios-testflight:
+    name: MSZ Karavan iOS → TestFlight
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    working_directory: frontend
+    integrations:
+      app_store_connect: msz_asc        # (2)'deki integration adı ile AYNI olmalı
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: shop.corlukaravan.app
+      vars:
+        XCODE_PROJECT: "ios/App/App.xcodeproj"
+        XCODE_SCHEME: "App"
+        BUNDLE_ID: "shop.corlukaravan.app"
+      node: 20
+      xcode: latest
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: karavan-v2
+          include: true
+    scripts:
+      - name: Bağımlılıklar (yarn)
+        script: |
+          corepack enable || npm i -g yarn
+          yarn install --frozen-lockfile
+      - name: Web build (mobile env)
+        script: yarn build:mobile
+      - name: Capacitor sync iOS
+        script: npx cap sync ios
+      - name: İmza profillerini kur
+        script: |
+          xcode-project use-profiles
+      - name: IPA derle
+        script: |
+          xcode-project build-ipa \
+            --project "$XCODE_PROJECT" \
+            --scheme "$XCODE_SCHEME"
+    artifacts:
+      - frontend/build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        # TestFlight iç test grubuna otomatik ekle (grubu ASC'de oluşturduysan):
+        # beta_groups:
+        #   - "Ekip"
+      email:
+        recipients:
+          - mnzmnz10@gmail.com
+        notify:
+          success: true
+          failure: true

@@ -10,6 +10,28 @@ body {
     -moz-osx-font-smoothing: grayscale;
 }
 
+/* --- Native (Capacitor) mobil kabuk uyumu --- */
+/* Çentik/status-bar/home-indicator güvenli alan padding'i. .native-app
+   sınıfı sadece Capacitor içinde <html>'e eklenir (src/lib/native.js). */
+html.native-app body {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    box-sizing: border-box;
+}
+/* Native app'te metin seçimi/uzun-basma callout'unu kapat (input/textarea hariç) */
+html.native-app *:not(input):not(textarea):not([contenteditable="true"]) {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+}
+/* Aşırı kaydırma parıltısını (overscroll) engelle */
+html.native-app,
+html.native-app body {
+    overscroll-behavior: none;
+}
+
 /* Distinctive display face for headings / brand */
 .font-display {
     font-family: "Plus Jakarta Sans", "Public Sans", sans-serif;
