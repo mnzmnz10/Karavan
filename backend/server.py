@@ -3214,7 +3214,6 @@ class PDFQuoteGenerator:
             fontName=self.get_font_name(), fontSize=7.5, textColor=colors.HexColor('#4A5568'), leading=10.5)
         brand_lines = [
             "<font size='12' color='%s'><b>MSZ KARAVAN</b></font>" % P,
-            "<font size='7' color='#1ba3cc'><b>KARAVAN ELEKTRİK EKİPMANLARI</b></font>",
             "<font size='7.5' color='#4A5568'>Hatip, Sarı Salkım 3. Sk. Mobilyacılar Sitesi No: B1, 59000 Çorlu/Tekirdağ</font>",
             "<font size='7.5' color='#4A5568'>Tel: 0505 813 77 65 &nbsp;·&nbsp; info@corlukaravan.com</font>",
         ]
