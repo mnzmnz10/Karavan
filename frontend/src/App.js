@@ -3331,7 +3331,7 @@ function App() {
         if (!name && !totalStr && !eur) continue;
         if (u.includes('GENEL TOPLAM')) { grandTotal = numOf(totalStr); afterTotal = true; continue; }
         if (afterTotal) {
-          if (u.includes('ÇORLU KARAVAN') || u === 'MÜŞTERİ' || u.includes('ZAMKI') || u.includes('İMZA')) continue;
+          if (u.includes('ÇORLU KARAVAN') || u.includes('MSZ KARAVAN') || u === 'MÜŞTERİ' || u.includes('ZAMKI') || u.includes('İMZA')) continue;
           if (u.includes('EURO KUR') || u.includes('KAÇ EURO') || u.includes('KARŞILIĞI')) continue; // başlıkta gösteriliyor
           if (name) notes.push(up(name));
           continue;
@@ -5391,7 +5391,7 @@ function App() {
                 className="w-12 h-12 object-contain absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2"
               />
             </div>
-            <h2 className="text-2xl font-bold text-slate-800 mb-2">Çorlu Karavan</h2>
+            <h2 className="text-2xl font-bold text-slate-800 mb-2">MSZ Karavan</h2>
             <p className="text-slate-600">Sistem yükleniyor...</p>
           </div>
         </div>
@@ -5403,12 +5403,12 @@ function App() {
               <div className="flex items-center justify-center gap-3 mb-4">
                 <img 
                   src="/logo.png" 
-                  alt="Çorlu Karavan Logo" 
+                  alt="MSZ Karavan Logo" 
                   className="w-12 h-12 object-contain"
                 />
                 <div>
                   <CardTitle className="text-xl font-bold text-slate-800">
-                    Çorlu Karavan
+                    MSZ Karavan
                   </CardTitle>
                   <p className="text-sm text-slate-600">Fiyat Takip Sistemi</p>
                 </div>
@@ -5488,13 +5488,13 @@ function App() {
                   <div className="flex-shrink-0">
                     <img
                       src="/logo.png"
-                      alt="Çorlu Karavan Logo"
+                      alt="MSZ Karavan Logo"
                       className={sbCollapsed ? 'w-9 h-9 object-contain' : 'w-14 h-14 object-contain'}
                     />
                   </div>
                   <div className="kv-hide-collapsed">
                     <h1 className="font-extrabold text-xl leading-none text-slate-800 tracking-tight">
-                      Çorlu Karavan
+                      MSZ Karavan
                     </h1>
                     <p className="text-[10px] text-slate-500 font-semibold mt-1">Fiyat Takip Sistemi</p>
                   </div>
@@ -5511,7 +5511,7 @@ function App() {
 
                 {/* Navigation Tab List (Vertical) */}
                 <div className="space-y-2">
-                  <p className="kv-hide-collapsed text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2">Menü</p>
+                  <p className="kv-hide-collapsed text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2">İşlemler</p>
                   <TabsList className="flex flex-col gap-1.5 w-full h-auto p-0 bg-transparent border-0 shadow-none">
                     <TabsTrigger
                       value="products"
@@ -5535,6 +5535,14 @@ function App() {
                     </TabsTrigger>
 
                     <TabsTrigger
+                      value="service"
+                      className="group flex items-center justify-start gap-3 w-full h-11 px-4 text-sm font-semibold text-slate-700 transition-all duration-200 hover:bg-orange-50 rounded-xl data-[state=active]:bg-orange-500 data-[state=active]:text-white data-[state=active]:shadow-sm"
+                    >
+                      <Wrench className="w-4 h-4 text-orange-500 group-data-[state=active]:text-white" />
+                      <span>Servis</span>
+                    </TabsTrigger>
+
+                    <TabsTrigger
                       value="contracts"
                       onClick={async (e) => {
                         if (viewingContract) {
@@ -5550,6 +5558,11 @@ function App() {
                       <FileText className="w-4 h-4 text-blue-500 group-data-[state=active]:text-white" />
                       <span>Sözleşmeler</span>
                     </TabsTrigger>
+
+                    {/* Araçlar */}
+                    <div className="mt-2 pt-2 border-t border-slate-200">
+                      <p className="kv-hide-collapsed text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 mb-1.5">Araçlar</p>
+                    </div>
 
                     <TabsTrigger
                       value="upload"
@@ -5575,20 +5588,15 @@ function App() {
                       <span>MPPT Hesapla</span>
                     </TabsTrigger>
 
+                    {/* Kablo Şeması — en altta */}
+                    <div className="mt-2 pt-2 border-t border-slate-200 kv-hide-collapsed" />
+
                     <TabsTrigger
                       value="wiring-diagram"
                       className="group flex items-center justify-start gap-3 w-full h-11 px-4 text-sm font-semibold text-slate-700 transition-all duration-200 hover:bg-cyan-50 rounded-xl data-[state=active]:bg-cyan-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
                     >
                       <Cable className="w-4 h-4 text-cyan-500 group-data-[state=active]:text-white" />
                       <span>Kablo Şeması</span>
-                    </TabsTrigger>
-
-                    <TabsTrigger
-                      value="service"
-                      className="group flex items-center justify-start gap-3 w-full h-11 px-4 text-sm font-semibold text-slate-700 transition-all duration-200 hover:bg-orange-50 rounded-xl data-[state=active]:bg-orange-500 data-[state=active]:text-white data-[state=active]:shadow-sm"
-                    >
-                      <Wrench className="w-4 h-4 text-orange-500 group-data-[state=active]:text-white" />
-                      <span>Servis</span>
                     </TabsTrigger>
 
                     {/* Tanımlar — en altta */}
@@ -6321,7 +6329,7 @@ function App() {
                               <div className="flex items-center gap-3 mb-3">
                                 <img src="/logo.png" alt="Logo" className="h-8 w-auto object-contain bg-white/10 rounded px-1.5 py-0.5" />
                                 <div className="flex items-center gap-2 text-emerald-300/90 text-[11px] font-semibold uppercase tracking-[0.25em]">
-                                  <span className="inline-block w-6 h-px bg-emerald-400/60" /> Çorlu Karavan
+                                  <span className="inline-block w-6 h-px bg-emerald-400/60" /> MSZ Karavan
                                 </div>
                               </div>
                               <h2 style={{ fontFamily: "'Fraunces', Georgia, serif" }} className="text-3xl sm:text-4xl font-semibold leading-tight tracking-tight">{viewingContract.customer_name || viewingContract.title}</h2>
@@ -9659,7 +9667,7 @@ function App() {
                             <FileText className="h-6 w-6 text-emerald-100" />
                           </div>
                           <div>
-                            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-emerald-100/75">Çorlu Karavan</p>
+                            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-emerald-100/75">MSZ Karavan</p>
                             <h2 className="m-0 text-2xl font-black uppercase tracking-tight text-white">Fiyat Teklif Formu</h2>
                           </div>
                         </div>

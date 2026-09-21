@@ -3126,7 +3126,7 @@ class PDFQuoteGenerator:
             topMargin=1.4*cm,
             bottomMargin=2.4*cm,  # alt iletişim şeridi için yer
             title=f"Teklif - {quote_data.get('name', 'Adsız')}",
-            author="Çorlu Karavan"
+            author="MSZ Karavan"
         )
 
         story = []
@@ -3212,12 +3212,12 @@ class PDFQuoteGenerator:
         brand_style = ParagraphStyle('PHBrand', parent=self.styles['Normal'],
             fontName=self.get_font_name(is_bold=True), fontSize=17, textColor=colors.HexColor(P),
             alignment=TA_CENTER, leading=19)
-        brand_par = [Paragraph("ÇORLU KARAVAN", brand_style)]
+        brand_par = [Paragraph("MSZ KARAVAN", brand_style)]
         logo_path = Path(__file__).parent / 'images' / 'corlu_karavan_logo_new.png'
         if logo_path.exists():
             try:
-                logo_img = Image(str(logo_path), width=64, height=64)
-                left_cell = PDFTable([[logo_img, brand_par]], colWidths=[72, 160])
+                logo_img = Image(str(logo_path), width=85, height=64)
+                left_cell = PDFTable([[logo_img, brand_par]], colWidths=[92, 160])
                 left_cell.setStyle(TableStyle([
                     ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
                     ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (0,0), 8),
@@ -3486,7 +3486,7 @@ class PDFQuoteGenerator:
         sig_block = PDFTable([
             [Spacer(1, 14)],
             [Paragraph("Mehmet Necdet Zamkı", sig_name)],
-            [Paragraph("Çorlu Karavan", sig_sub)],
+            [Paragraph("MSZ Karavan", sig_sub)],
         ], colWidths=[5.0*cm], hAlign='RIGHT')
         sig_block.setStyle(TableStyle([
             ('LINEBELOW', (0,1), (0,1), 0.8, colors.HexColor('#9AA8B6')),  # isim ALTINA imza çizgisi
@@ -3526,7 +3526,7 @@ class PDFQuoteGenerator:
 
         # Firma iletişim metni
         company_info = [
-            "<font size='15' color='#2F4B68'><b>ÇORLU KARAVAN</b></font>",
+            "<font size='15' color='#2F4B68'><b>MSZ KARAVAN</b></font>",
         ]
         if show_subtitle:
             company_info.append("<font size='8' color='#1ba3cc'><b>KARAVAN ELEKTRİK EKİPMANLARI</b></font>")
@@ -3541,8 +3541,8 @@ class PDFQuoteGenerator:
         left_cell = company_paragraph
         if logo_path.exists():
             try:
-                logo_img = Image(str(logo_path), width=70, height=70)
-                left_inner = PDFTable([[logo_img, company_paragraph]], colWidths=[80, 250])
+                logo_img = Image(str(logo_path), width=93, height=70)
+                left_inner = PDFTable([[logo_img, company_paragraph]], colWidths=[100, 250])
                 left_inner.setStyle(TableStyle([
                     ('ALIGN', (0, 0), (0, 0), 'CENTER'),
                     ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
@@ -9041,7 +9041,7 @@ def _build_battery_report_pdf(payload: BatteryReportPDFRequest) -> BytesIO:
         topMargin=1.8*cm,
         bottomMargin=1.8*cm,
         title="Akü Test Raporu",
-        author="Çorlu Karavan"
+        author="MSZ Karavan"
     )
 
     story = []
@@ -9298,7 +9298,7 @@ def _build_battery_report_pdf(payload: BatteryReportPDFRequest) -> BytesIO:
         leading=16,
         spaceAfter=2
     )
-    story.append(Paragraph("Çorlu Karavan Teknik Servis - Mehmet Necdet Zamkı", footer_title_style))
+    story.append(Paragraph("MSZ Karavan Teknik Servis - Mehmet Necdet Zamkı", footer_title_style))
     story.append(Paragraph(f"Tarih: {report_date_str}", footer_line_style))
     story.append(Paragraph("Kullanılan Test Cihazı: UNI-T UT673A", footer_line_style))
 
@@ -10901,7 +10901,7 @@ def parse_contract_data(sheets):
             row_u = upper_tr(" ".join(str(c) for c in (r or []) if c is not None))
             if not row_u:
                 continue
-            if "ÇORLU KARAVAN" in row_u or row_u == "MÜŞTERİ" or "ZAMKI" in row_u or "İMZA" in row_u:
+            if "ÇORLU KARAVAN" in row_u or "MSZ KARAVAN" in row_u or row_u == "MÜŞTERİ" or "ZAMKI" in row_u or "İMZA" in row_u:
                 continue
             after_rows.append(r)
             continue
@@ -11815,7 +11815,7 @@ class PDFContractGenerator(PDFQuoteGenerator):
             topMargin=1.5*cm,
             bottomMargin=1.5*cm,
             title=f"Sözleşme - {contract_data.get('title', 'Sözleşme')}",
-            author="Çorlu Karavan"
+            author="MSZ Karavan"
         )
         story = []
         
@@ -12306,7 +12306,7 @@ class PDFServiceGenerator(PDFContractGenerator):
         doc = SimpleDocTemplate(
             buffer, pagesize=A4,
             rightMargin=1.5*cm, leftMargin=1.5*cm, topMargin=1.3*cm, bottomMargin=1.1*cm,
-            title=f"Servis Formu - {svc.get('order_no', '')}", author="Çorlu Karavan",
+            title=f"Servis Formu - {svc.get('order_no', '')}", author="MSZ Karavan",
         )
         story = []
 
