@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Package, Boxes, Plus, User, LogOut } from "lucide-react";
+import { Package, Boxes, Plus, User, LogOut, Loader2 } from "lucide-react";
 import { products as productsApi, categories as categoriesApi } from "../api";
 import { Header, SearchBar, Card, EmptyState, SkeletonList, Sheet, money, Pill } from "../ui";
 import { useCart } from "../Cart";
@@ -140,19 +140,27 @@ export default function Products() {
   const [cat, setCat] = useState("");
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(true);
+  const [more, setMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
   const [sel, setSel] = useState(null);
   const debRef = useRef();
   const cart = useCart();
+  const LIMIT = 40;
 
-  const load = useCallback(async (search, category_id) => {
-    setLoading(true);
+  const fetchPage = useCallback(async (search, category_id, pg, append) => {
+    append ? setMore(true) : setLoading(true);
     try {
-      const data = await productsApi.list({ search, category_id: category_id || undefined, page: 1, limit: 60 });
-      setItems(Array.isArray(data) ? data : data?.products || []);
+      const data = await productsApi.list({ search, category_id: category_id || undefined, page: pg, limit: LIMIT });
+      const arr = Array.isArray(data) ? data : data?.products || [];
+      setItems((prev) => (append ? [...prev, ...arr] : arr));
+      setHasMore(arr.length === LIMIT);
+      setPage(pg);
     } catch (e) {
-      setItems([]);
+      if (!append) setItems([]);
+      setHasMore(false);
     } finally {
-      setLoading(false);
+      append ? setMore(false) : setLoading(false);
     }
   }, []);
 
@@ -160,24 +168,34 @@ export default function Products() {
 
   useEffect(() => {
     clearTimeout(debRef.current);
-    debRef.current = setTimeout(() => load(q.trim(), cat), 300);
+    debRef.current = setTimeout(() => fetchPage(q.trim(), cat, 1, false), 300);
     return () => clearTimeout(debRef.current);
-  }, [q, cat, load]);
+  }, [q, cat, fetchPage]);
+
+  const onScroll = (e) => {
+    const el = e.currentTarget;
+    if (hasMore && !more && !loading && el.scrollHeight - el.scrollTop - el.clientHeight < 320) {
+      fetchPage(q.trim(), cat, page + 1, true);
+    }
+  };
 
   return (
     <div className="flex h-full flex-col">
       <Header title="Ürünler" subtitle={loading ? "Yükleniyor…" : `${items.length} ürün`} right={<AccountButton />} />
       <SearchBar value={q} onChange={setQ} placeholder="Ürün adı veya marka" />
       <CategoryBar cats={cats} sel={cat} onSel={setCat} />
-      <div className="m-scroll flex-1 pb-[calc(var(--m-tabbar-h)+env(safe-area-inset-bottom)+8px)]">
+      <div className="m-scroll flex-1 pb-[calc(var(--m-tabbar-h)+env(safe-area-inset-bottom)+8px)]" onScroll={onScroll}>
         {loading ? (
           <SkeletonList />
         ) : items.length === 0 ? (
           <EmptyState icon={Boxes} title="Ürün bulunamadı" hint={q ? "Aramayı değiştir" : "Henüz ürün yok"} />
         ) : (
-          <div className="space-y-2 px-4 pt-1">
-            {items.map((p) => <Row key={p.id} p={p} onOpen={setSel} onAdd={cart.add} />)}
-          </div>
+          <>
+            <div className="space-y-2 px-4 pt-1">
+              {items.map((p) => <Row key={p.id} p={p} onOpen={setSel} onAdd={cart.add} />)}
+            </div>
+            {more && <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>}
+          </>
         )}
       </div>
       <Detail p={sel} onClose={() => setSel(null)} onAdd={cart.add} />
