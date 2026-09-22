@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Package, Boxes } from "lucide-react";
+import { Package, Boxes, Plus } from "lucide-react";
 import { products as productsApi, categories as categoriesApi } from "../api";
 import { Header, SearchBar, Card, EmptyState, SkeletonList, Sheet, money, Pill } from "../ui";
+import { useCart } from "../Cart";
 
 function CategoryBar({ cats, sel, onSel }) {
   if (!cats.length) return null;
@@ -34,7 +35,7 @@ function priceTRY(p) {
   return { main: list || 0, old: null };
 }
 
-function Row({ p, onOpen }) {
+function Row({ p, onOpen, onAdd }) {
   const pr = priceTRY(p);
   return (
     <Card onClick={() => onOpen(p)} className="p-3">
@@ -54,12 +55,20 @@ function Row({ p, onOpen }) {
             {pr.old && <span className="m-tnum text-[12px] text-slate-400 line-through">₺{money(pr.old)}</span>}
           </div>
         </div>
+        <button
+          onClick={(e) => { e.stopPropagation(); onAdd(p); }}
+          className="m-press flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+          style={{ background: "#e7f3ee", color: "var(--m-primary-2)" }}
+          title="Teklife ekle"
+        >
+          <Plus className="h-5 w-5" strokeWidth={2.6} />
+        </button>
       </div>
     </Card>
   );
 }
 
-function Detail({ p, onClose }) {
+function Detail({ p, onClose, onAdd }) {
   if (!p) return null;
   const pr = priceTRY(p);
   return (
@@ -76,6 +85,9 @@ function Detail({ p, onClose }) {
           <span className="m-tnum text-[24px] font-extrabold" style={{ color: "var(--m-primary-2)" }}>₺{money(pr.main)}</span>
           {pr.old && <span className="m-tnum text-[14px] text-slate-400 line-through">₺{money(pr.old)}</span>}
         </div>
+        <button onClick={() => { onAdd(p); onClose(); }} className="m-press mt-3 flex w-full items-center justify-center gap-2 rounded-2xl py-3 text-[15px] font-bold text-white" style={{ background: "var(--m-primary-2)" }}>
+          <Plus className="h-5 w-5" strokeWidth={2.6} /> Teklife Ekle
+        </button>
       </div>
       {p.description && (
         <div className="mt-3 rounded-2xl bg-white p-4">
@@ -101,6 +113,7 @@ export default function Products() {
   const [loading, setLoading] = useState(true);
   const [sel, setSel] = useState(null);
   const debRef = useRef();
+  const cart = useCart();
 
   const load = useCallback(async (search, category_id) => {
     setLoading(true);
@@ -134,11 +147,11 @@ export default function Products() {
           <EmptyState icon={Boxes} title="Ürün bulunamadı" hint={q ? "Aramayı değiştir" : "Henüz ürün yok"} />
         ) : (
           <div className="space-y-2 px-4 pt-1">
-            {items.map((p) => <Row key={p.id} p={p} onOpen={setSel} />)}
+            {items.map((p) => <Row key={p.id} p={p} onOpen={setSel} onAdd={cart.add} />)}
           </div>
         )}
       </div>
-      <Detail p={sel} onClose={() => setSel(null)} />
+      <Detail p={sel} onClose={() => setSel(null)} onAdd={cart.add} />
     </div>
   );
 }

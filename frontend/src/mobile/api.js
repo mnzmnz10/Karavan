@@ -32,6 +32,7 @@ export const categories = {
 export const quotes = {
   list: () => http.get("/quotes").then((r) => r.data),
   get: (id) => http.get(`/quotes/${id}`).then((r) => r.data),
+  create: (payload) => http.post("/quotes", payload).then((r) => r.data),
 };
 
 export const services = {

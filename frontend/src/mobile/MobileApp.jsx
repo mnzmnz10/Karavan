@@ -8,6 +8,7 @@ import Services from "./screens/Services";
 import Products from "./screens/Products";
 import Quotes from "./screens/Quotes";
 import Contracts from "./screens/Contracts";
+import { CartProvider, CartBar } from "./Cart";
 
 const TABS = [
   { key: "products", label: "Ürünler", icon: Package, Comp: Products },
@@ -71,11 +72,14 @@ export default function MobileApp() {
 
   return (
     <div id="mobile-root" className="fixed inset-0 flex flex-col">
-      <div className="flex-1 overflow-hidden">
-        <Active />
-      </div>
-      <TabBar active={tab} onChange={setTab} />
-      <Toaster position="top-center" richColors />
+      <CartProvider>
+        <div className="flex-1 overflow-hidden">
+          <Active />
+        </div>
+        <CartBar />
+        <TabBar active={tab} onChange={setTab} />
+        <Toaster position="top-center" richColors />
+      </CartProvider>
     </div>
   );
 }
