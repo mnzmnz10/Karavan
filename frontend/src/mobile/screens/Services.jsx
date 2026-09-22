@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Wrench, Car, Phone, Image as ImageIcon, Loader2, Plus, Pencil, Share2 } from "lucide-react";
 import { services as servicesApi, docUrl, openDoc } from "../api";
-import { Header, SearchBar, Card, EmptyState, SkeletonList, Sheet, money, Pill } from "../ui";
+import { Header, SearchBar, Card, EmptyState, SkeletonList, Sheet, money, Pill, Lightbox } from "../ui";
 import ServiceForm from "./ServiceForm";
 
 const STATUS = {
@@ -46,6 +46,7 @@ function Row({ s, onOpen }) {
 function Detail({ id, onClose, onEdit }) {
   const [s, setS] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [lb, setLb] = useState(null);
   useEffect(() => {
     if (!id) return;
     setLoading(true);
@@ -129,7 +130,7 @@ function Detail({ id, onClose, onEdit }) {
               </div>
               <div className="grid grid-cols-3 gap-2">
                 {s.photos.map((src, i) => (
-                  <div key={i} className="aspect-square overflow-hidden rounded-xl bg-slate-100">
+                  <div key={i} className="m-press aspect-square overflow-hidden rounded-xl bg-slate-100" onClick={() => setLb(src)}>
                     <img src={src} alt="" className="h-full w-full object-cover" />
                   </div>
                 ))}
@@ -143,6 +144,7 @@ function Detail({ id, onClose, onEdit }) {
               <div className="whitespace-pre-wrap text-[14px] leading-relaxed">{s.notes}</div>
             </div>
           )}
+          <Lightbox src={lb} onClose={() => setLb(null)} />
         </>
       )}
     </Sheet>

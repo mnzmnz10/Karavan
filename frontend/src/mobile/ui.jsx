@@ -132,6 +132,19 @@ export function Sheet({ open, onClose, title, children, full = false }) {
   );
 }
 
+// Tam ekran görsel (tıkla-kapat)
+export function Lightbox({ src, onClose }) {
+  if (!src) return null;
+  return (
+    <div className="m-backdrop-enter fixed inset-0 z-[60] flex items-center justify-center bg-black" onClick={onClose}>
+      <img src={src} alt="" className="max-h-[92dvh] max-w-full object-contain" />
+      <button onClick={onClose} className="absolute right-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white" style={{ top: "calc(env(safe-area-inset-top) + 12px)" }}>
+        <X className="h-5 w-5" />
+      </button>
+    </div>
+  );
+}
+
 // Küçük etiket/rozet
 export function Pill({ children, color = "slate" }) {
   const map = {

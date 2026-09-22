@@ -48,6 +48,22 @@ export default function MobileApp() {
   const [authed, setAuthed] = useState(null); // null = kontrol ediliyor
   const [username, setUsername] = useState("");
   const [tab, setTab] = useState("products");
+  const [reloadKey, setReloadKey] = useState(0); // artınca aktif ekran remount olur (yenile)
+
+  // Aktif sekmeye tekrar dokununca yenile; farklı sekmeye geçince değiştir.
+  const onTab = (key) => (key === tab ? setReloadKey((k) => k + 1) : setTab(key));
+
+  // Native: uygulama öne gelince listeyi tazele.
+  useEffect(() => {
+    let sub;
+    (async () => {
+      try {
+        const { App } = await import("@capacitor/app");
+        sub = await App.addListener("appStateChange", ({ isActive }) => { if (isActive) setReloadKey((k) => k + 1); });
+      } catch {}
+    })();
+    return () => { try { sub?.remove?.(); } catch {} };
+  }, []);
 
   const refreshAuth = () =>
     auth.check().then((d) => { setAuthed(!!d?.authenticated); setUsername(d?.username || ""); }).catch(() => setAuthed(false));
@@ -84,12 +100,12 @@ export default function MobileApp() {
       <div id="mobile-root" className="fixed inset-0 flex flex-col">
         <CartProvider>
           <div className="flex-1 overflow-hidden">
-            <ErrorBoundary key={tab}>
+            <ErrorBoundary key={`${tab}:${reloadKey}`}>
               <Active />
             </ErrorBoundary>
           </div>
           <CartBar />
-          <TabBar active={tab} onChange={setTab} />
+          <TabBar active={tab} onChange={onTab} />
           <Toaster position="top-center" richColors />
         </CartProvider>
       </div>
