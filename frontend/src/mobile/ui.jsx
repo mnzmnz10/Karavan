@@ -1,6 +1,6 @@
 // Mobil UI primitifleri — iOS-native his (büyük başlık, kart, sheet, arama, tab bar).
-import React, { useEffect, useState } from "react";
-import { ChevronLeft, Search, X } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import { ChevronLeft, Search, X, Loader2, WifiOff, RotateCw } from "lucide-react";
 
 export const money = (n) =>
   (Number(n) || 0).toLocaleString("tr-TR", { maximumFractionDigits: 0 });
@@ -32,7 +32,7 @@ export function Header({ title, subtitle, onBack, right, large = true }) {
 export function SearchBar({ value, onChange, placeholder = "Ara" }) {
   return (
     <div className="px-4 pb-2 pt-1">
-      <div className="flex items-center gap-2 rounded-xl px-3" style={{ background: "#e9e9ee", height: 36 }}>
+      <div className="m-fill flex items-center gap-2 rounded-xl px-3" style={{ background: "#e9e9ee", height: 36 }}>
         <Search className="h-4 w-4 shrink-0" style={{ color: "var(--m-ink-2)" }} />
         <input
           value={value}
@@ -80,6 +80,32 @@ export function EmptyState({ icon: Icon, title, hint }) {
       {Icon && <Icon className="mb-3 h-12 w-12" style={{ color: "#c4ccd6" }} strokeWidth={1.5} />}
       <div className="text-[16px] font-semibold" style={{ color: "var(--m-ink)" }}>{title}</div>
       {hint && <div className="mt-1 text-[13px]" style={{ color: "var(--m-ink-2)" }}>{hint}</div>}
+    </div>
+  );
+}
+
+// Hata durumu + tekrar dene (ağ/sunucu hatası — boş listeden ayrı)
+export function ErrorState({ onRetry, title = "Bağlantı hatası", hint = "Veriler yüklenemedi" }) {
+  return (
+    <div className="flex flex-col items-center justify-center px-8 py-20 text-center">
+      <WifiOff className="mb-3 h-12 w-12" style={{ color: "#c4ccd6" }} strokeWidth={1.5} />
+      <div className="text-[16px] font-semibold" style={{ color: "var(--m-ink)" }}>{title}</div>
+      <div className="mt-1 text-[13px]" style={{ color: "var(--m-ink-2)" }}>{hint}</div>
+      {onRetry && (
+        <button onClick={onRetry} className="m-press mt-4 flex items-center gap-1.5 rounded-full px-4 py-2 text-[14px] font-bold text-white" style={{ background: "var(--m-primary)" }}>
+          <RotateCw className="h-4 w-4" /> Tekrar dene
+        </button>
+      )}
+    </div>
+  );
+}
+
+// Çevrimdışı bandı (önbellekten gösterim)
+export function OfflineBar({ show }) {
+  if (!show) return null;
+  return (
+    <div className="mx-4 mb-2 rounded-xl bg-amber-50 px-3 py-1.5 text-center text-[12px] font-semibold text-amber-700">
+      Çevrimdışı — önbellekten gösteriliyor
     </div>
   );
 }
@@ -141,6 +167,58 @@ export function Lightbox({ src, onClose }) {
       <button onClick={onClose} className="absolute right-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white" style={{ top: "calc(env(safe-area-inset-top) + 12px)" }}>
         <X className="h-5 w-5" />
       </button>
+    </div>
+  );
+}
+
+// Aşağı-çek yenile kaydırma kabı. Scroll top=0 iken parmak aşağı çekilince onRefresh().
+export function RefreshScroll({ onRefresh, onScroll, className = "", style, children }) {
+  const ref = useRef(null);
+  const start = useRef(null);        // dokunuş başlangıç Y (sadece scrollTop<=0 iken)
+  const [pull, setPull] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const THRESH = 70, MAX = 110;
+
+  const onTouchStart = (e) => {
+    if (busy) return;
+    const el = ref.current;
+    start.current = el && el.scrollTop <= 0 ? e.touches[0].clientY : null;
+  };
+  const onTouchMove = (e) => {
+    if (start.current == null || busy) return;
+    const el = ref.current;
+    if (el.scrollTop > 0) { start.current = null; setPull(0); return; }
+    const dy = e.touches[0].clientY - start.current;
+    if (dy <= 0) { setPull(0); return; }
+    setPull(Math.min(MAX, dy * 0.5)); // direnç
+  };
+  const finish = async () => {
+    if (start.current == null || busy) { setPull(0); start.current = null; return; }
+    const trigger = pull >= THRESH;
+    start.current = null;
+    if (!trigger) { setPull(0); return; }
+    setBusy(true); setPull(THRESH);
+    try { await onRefresh?.(); } catch {}
+    setBusy(false); setPull(0);
+  };
+
+  return (
+    <div
+      ref={ref}
+      className={`m-scroll ${className}`}
+      style={style}
+      onScroll={onScroll}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={finish}
+      onTouchCancel={finish}
+    >
+      <div className="relative flex items-center justify-center overflow-hidden" style={{ height: pull, transition: start.current == null ? "height .2s ease" : "none" }}>
+        {(pull > 4 || busy) && (
+          <Loader2 className={`h-5 w-5 ${busy || pull >= THRESH ? "animate-spin" : ""}`} style={{ color: "var(--m-ink-2)", opacity: Math.min(1, pull / THRESH) }} />
+        )}
+      </div>
+      {children}
     </div>
   );
 }

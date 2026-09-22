@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { Toaster } from "sonner";
-import { Wrench, Package, FileText, ScrollText, Loader2 } from "lucide-react";
+import { Wrench, Package, FileText, ScrollText, Home, Loader2 } from "lucide-react";
 import "./mobile.css";
 import { auth } from "./api";
 import Login from "./screens/Login";
+import Dashboard from "./screens/Dashboard";
 import Services from "./screens/Services";
 import Products from "./screens/Products";
 import Quotes from "./screens/Quotes";
@@ -11,8 +12,11 @@ import Contracts from "./screens/Contracts";
 import { CartProvider, CartBar } from "./Cart";
 import ErrorBoundary from "./ErrorBoundary";
 import { SessionCtx } from "./session";
+import { cache } from "./cache";
+import { getThemePref, applyTheme, THEME_KEY } from "./theme";
 
 const TABS = [
+  { key: "dashboard", label: "Özet", icon: Home, Comp: Dashboard },
   { key: "products", label: "Ürünler", icon: Package, Comp: Products },
   { key: "quotes", label: "Teklifler", icon: FileText, Comp: Quotes },
   { key: "service", label: "Servis", icon: Wrench, Comp: Services },
@@ -47,8 +51,22 @@ function TabBar({ active, onChange }) {
 export default function MobileApp() {
   const [authed, setAuthed] = useState(null); // null = kontrol ediliyor
   const [username, setUsername] = useState("");
-  const [tab, setTab] = useState("products");
+  const [tab, setTab] = useState("dashboard");
   const [reloadKey, setReloadKey] = useState(0); // artınca aktif ekran remount olur (yenile)
+  const [theme, setThemeState] = useState(getThemePref());
+
+  // Tema uygula + kalıcı yap; 'system' iken OS değişimini dinle.
+  useEffect(() => { applyTheme(theme); cache.set(THEME_KEY, theme); }, [theme, authed]);
+  useEffect(() => {
+    let mq;
+    try {
+      mq = window.matchMedia("(prefers-color-scheme: dark)");
+      const on = () => { if (getThemePref() === "system") applyTheme("system"); };
+      mq.addEventListener ? mq.addEventListener("change", on) : mq.addListener(on);
+      return () => { mq.removeEventListener ? mq.removeEventListener("change", on) : mq.removeListener(on); };
+    } catch {}
+  }, []);
+  const setTheme = (t) => setThemeState(t);
 
   // Aktif sekmeye tekrar dokununca yenile; farklı sekmeye geçince değiştir.
   const onTab = (key) => (key === tab ? setReloadKey((k) => k + 1) : setTab(key));
@@ -73,7 +91,7 @@ export default function MobileApp() {
   const logout = async () => {
     try { await auth.logout(); } catch {}
     setAuthed(false);
-    setTab("products");
+    setTab("dashboard");
   };
 
   if (authed === null) {
@@ -96,12 +114,12 @@ export default function MobileApp() {
   const Active = TABS.find((t) => t.key === tab)?.Comp || Services;
 
   return (
-    <SessionCtx.Provider value={{ username, logout }}>
+    <SessionCtx.Provider value={{ username, logout, theme, setTheme }}>
       <div id="mobile-root" className="fixed inset-0 flex flex-col">
         <CartProvider>
           <div className="flex-1 overflow-hidden">
             <ErrorBoundary key={`${tab}:${reloadKey}`}>
-              <Active />
+              <Active go={onTab} />
             </ErrorBoundary>
           </div>
           <CartBar />

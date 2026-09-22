@@ -1,11 +1,12 @@
 import React, { useState } from "react";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { Loader2, Eye, EyeOff } from "lucide-react";
 import { auth } from "../api";
 
 export default function Login({ onDone }) {
   const [u, setU] = useState("");
   const [p, setP] = useState("");
+  const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const submit = async (e) => {
@@ -44,13 +45,18 @@ export default function Login({ onDone }) {
           autoCorrect="off"
           className="w-full rounded-2xl bg-white/95 px-4 py-3.5 text-[16px] text-slate-800 placeholder:text-slate-400"
         />
-        <input
-          value={p}
-          onChange={(e) => setP(e.target.value)}
-          type="password"
-          placeholder="Şifre"
-          className="w-full rounded-2xl bg-white/95 px-4 py-3.5 text-[16px] text-slate-800 placeholder:text-slate-400"
-        />
+        <div className="relative">
+          <input
+            value={p}
+            onChange={(e) => setP(e.target.value)}
+            type={show ? "text" : "password"}
+            placeholder="Şifre"
+            className="w-full rounded-2xl bg-white/95 px-4 py-3.5 pr-12 text-[16px] text-slate-800 placeholder:text-slate-400"
+          />
+          <button type="button" onClick={() => setShow((v) => !v)} className="m-press absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" aria-label={show ? "Şifreyi gizle" : "Şifreyi göster"}>
+            {show ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+          </button>
+        </div>
         <button
           type="submit"
           disabled={busy}

@@ -620,8 +620,11 @@ class QuoteResponse(BaseModel):
     discount_percentage: float
     labor_cost: float = 0  # İşçilik maliyeti
     total_list_price: float
-    total_discounted_price: float 
+    total_discounted_price: float
     total_net_price: float
+    total_cost_price: Optional[float] = None   # kâr analizi (mobil detay)
+    gross_profit: Optional[float] = None
+    margin_percent: Optional[float] = None
     products: List[Dict[str, Any]]
     notes: Optional[str] = None
     created_at: str
@@ -2896,6 +2899,22 @@ async def update_quote(quote_id: str, quote_update: Dict[str, Any]):
             update_data["discount_amount"] = discount_amount
             update_data["total_net_price"] = total_net_price
         
+        # --- Net + kâr/marj tek noktadan yeniden hesapla (indirim/işçilik/ürün değişince) ---
+        # Önceki dağınık hesapları geçersiz kılar; discount-only edit'te net'in bayat kalması bug'ını düzeltir.
+        if any(k in quote_update for k in ("discount_percentage", "labor_cost", "products")):
+            base = float(update_data.get("total_discounted_price", existing_quote.get("total_discounted_price", 0)) or 0)
+            disc_pct = float(update_data.get("discount_percentage", existing_quote.get("discount_percentage", 0)) or 0)
+            labor = float(update_data.get("labor_cost", existing_quote.get("labor_cost", 0)) or 0)
+            cost = float(update_data.get("total_cost_price", existing_quote.get("total_cost_price", 0)) or 0)
+            disc_amt = base * (disc_pct / 100)
+            net = base - disc_amt + labor
+            update_data["discount_percentage"] = disc_pct
+            update_data["labor_cost"] = labor
+            update_data["discount_amount"] = disc_amt
+            update_data["total_net_price"] = net
+            update_data["gross_profit"] = net - cost
+            update_data["margin_percent"] = round((net - cost) / net * 100, 2) if net > 0 else 0
+
         # Teklif notları güncellenirse
         if "notes" in quote_update:
             update_data["notes"] = quote_update["notes"]

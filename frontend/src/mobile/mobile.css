@@ -83,3 +83,51 @@
 
 /* Girişte odak halkasını yumuşat */
 #mobile-root input:focus, #mobile-root textarea:focus, #mobile-root select:focus { outline: none; }
+
+/* ===== Karanlık mod — #mobile-root.theme-dark class'ı ile (JS: sistem tercihi VEYA manuel) ===== */
+/* Class tabanlı: media-query duplikasyonu yok; MobileApp efektif temayı hesaplayıp class'ı ekler/çıkarır. */
+#mobile-root.theme-dark {
+  --m-bg: #0b0b0d;
+  --m-card: #1c1c1e;
+  --m-ink: #f2f2f7;
+  --m-ink-2: #9aa0a8;
+  --m-line: #2c2c2e;
+}
+/* Yüzeyler */
+#mobile-root.theme-dark .bg-white { background: var(--m-card); }
+#mobile-root.theme-dark .bg-slate-100 { background: #2c2c2e; }
+#mobile-root.theme-dark .bg-slate-50 { background: #242426; }
+#mobile-root.theme-dark .bg-slate-200\/70 { background: #3a3a3c; }
+/* Metin tonları */
+#mobile-root.theme-dark .text-slate-800, #mobile-root.theme-dark .text-slate-900 { color: var(--m-ink); }
+#mobile-root.theme-dark .text-slate-700 { color: #c9ccd2; }
+#mobile-root.theme-dark .text-slate-600 { color: #b3b7be; }
+#mobile-root.theme-dark .text-slate-500 { color: #a0a4ab; }
+#mobile-root.theme-dark .text-slate-400 { color: #8b8f96; }
+#mobile-root.theme-dark .text-slate-300 { color: #6c7076; }
+/* Kenarlar */
+#mobile-root.theme-dark .border-slate-50, #mobile-root.theme-dark .border-slate-100 { border-color: rgba(255,255,255,.08); }
+#mobile-root.theme-dark .border-black\/5 { border-color: rgba(255,255,255,.08); }
+/* Doldurulmuş alanlar (arama/chip/segment) — inline #e9e9ee yerine var */
+#mobile-root.theme-dark .m-fill { background: #2c2c2e !important; }
+/* Frosted header/tabbar */
+#mobile-root.theme-dark .m-frost { background: rgba(22,22,24,0.78); }
+/* Skeleton */
+#mobile-root.theme-dark .m-skel {
+  background: #2a2a2c linear-gradient(90deg, #2a2a2c 0px, #3a3a3c 80px, #2a2a2c 160px);
+  background-size: 400px 100%;
+}
+/* Segmented control */
+#mobile-root.theme-dark .m-seg { background: #2c2c2e; }
+#mobile-root.theme-dark .m-seg-item[data-on="true"] { background: #48484a; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+/* Placeholder */
+#mobile-root.theme-dark input::placeholder, #mobile-root.theme-dark textarea::placeholder { color: #6c7076; }
+/* Rozet (Pill) tonlu arka planları — koyu tint + parlak metin */
+#mobile-root.theme-dark .bg-emerald-50 { background: rgba(16,185,129,.18); }
+#mobile-root.theme-dark .text-emerald-700 { color: #5fe39b; }
+#mobile-root.theme-dark .bg-amber-50 { background: rgba(245,158,11,.18); }
+#mobile-root.theme-dark .text-amber-700 { color: #f5c451; }
+#mobile-root.theme-dark .bg-blue-50 { background: rgba(59,130,246,.20); }
+#mobile-root.theme-dark .text-blue-700 { color: #7cb0ff; }
+#mobile-root.theme-dark .bg-rose-50 { background: rgba(244,63,94,.18); }
+#mobile-root.theme-dark .text-rose-700 { color: #ff8093; }

@@ -1,8 +1,11 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Camera, Plus, Trash2, Loader2, X } from "lucide-react";
 import { services as servicesApi } from "../api";
+import { cache } from "../cache";
 import { Sheet, money } from "../ui";
+
+const DRAFT_KEY = "service_draft";
 
 const STATUSES = [
   { key: "received", label: "Geldi" },
@@ -50,7 +53,7 @@ const inp = "w-full bg-transparent text-[15px] text-right placeholder:text-slate
 
 export default function ServiceForm({ open, initial, onClose, onSaved }) {
   const editing = !!initial?.id;
-  const [f, setF] = useState(() => ({
+  const defaults = () => ({
     customer_name: initial?.customer_name || "",
     phone: initial?.phone || "",
     vehicle_brand: initial?.vehicle_brand || "",
@@ -64,11 +67,29 @@ export default function ServiceForm({ open, initial, onClose, onSaved }) {
     items: (initial?.items || []).map((it) => ({ ...it })),
     photos: [...(initial?.photos || [])],
     notes: initial?.notes || "",
-  }));
+  });
+  const [f, setF] = useState(() => {
+    // Yeni kayıt için taslak varsa geri yükle (foto hariç — kota).
+    if (!editing) {
+      const d = cache.get(DRAFT_KEY);
+      if (d && typeof d === "object") return { ...defaults(), ...d, photos: [] };
+    }
+    return defaults();
+  });
   const [busy, setBusy] = useState(false);
   const [imgBusy, setImgBusy] = useState(false);
   const fileRef = useRef();
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+
+  // Yeni kayıt taslağını kalıcı yap (foto hariç). Düzenlemede taslak tutulmaz.
+  useEffect(() => {
+    if (!editing && open) {
+      const { photos, ...rest } = f;
+      cache.set(DRAFT_KEY, rest);
+    }
+  }, [f, editing, open]);
+
+  const clearDraft = () => { cache.set(DRAFT_KEY, null); setF(defaults()); toast.success("Taslak temizlendi"); };
 
   const total = useMemo(
     () => f.items.reduce((a, it) => {
@@ -119,6 +140,7 @@ export default function ServiceForm({ open, initial, onClose, onSaved }) {
       if (editing) await servicesApi.update(initial.id, payload);
       else await servicesApi.create(payload);
       toast.success(editing ? "Kayıt güncellendi" : "Servis kaydı oluşturuldu");
+      if (!editing) { cache.set(DRAFT_KEY, null); setF(defaults()); } // taslağı temizle
       onSaved?.();
       onClose();
     } catch (e) {
@@ -186,6 +208,13 @@ export default function ServiceForm({ open, initial, onClose, onSaved }) {
                 <option value="TRY">₺</option><option value="EUR">€</option><option value="USD">$</option>
               </select>
             </div>
+            {it.currency && it.currency !== "TRY" && (
+              <div className="mt-1 flex items-center gap-2">
+                <span className="text-[12px] text-slate-400">Kur (1 {it.currency === "USD" ? "$" : "€"} = ₺)</span>
+                <input type="number" min="0" inputMode="decimal" className="w-20 rounded-lg bg-slate-100 px-2 py-1 text-right text-[13px] m-tnum" value={it.rate ?? ""} onChange={(e) => updItem(i, "rate", e.target.value)} placeholder="kur" />
+                <span className="m-tnum ml-auto text-[12px] font-semibold text-slate-500">₺{money((parseFloat(it.unit_price) || 0) * (parseFloat(it.qty) || 1) * (parseFloat(it.rate) || 0))}</span>
+              </div>
+            )}
           </div>
         ))}
         <button onClick={addItem} className="m-press flex w-full items-center justify-center gap-1.5 px-4 py-3 text-[14px] font-semibold" style={{ color: "var(--m-primary-2)" }}>
@@ -233,6 +262,11 @@ export default function ServiceForm({ open, initial, onClose, onSaved }) {
           {busy && <Loader2 className="h-5 w-5 animate-spin" />}
           {editing ? "Kaydet" : "Servis Kaydı Oluştur"}
         </button>
+        {!editing && (
+          <button onClick={clearDraft} className="m-press mt-2 w-full py-2 text-[13px] font-semibold text-slate-400">
+            Taslağı Temizle
+          </button>
+        )}
       </div>
     </Sheet>
   );

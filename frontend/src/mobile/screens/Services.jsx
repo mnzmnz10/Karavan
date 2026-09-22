@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Wrench, Car, Phone, Image as ImageIcon, Loader2, Plus, Pencil, Share2 } from "lucide-react";
+import { Wrench, Car, Phone, MessageCircle, Image as ImageIcon, Loader2, Plus, Pencil, Share2, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { services as servicesApi, docUrl, openDoc } from "../api";
-import { Header, SearchBar, Card, EmptyState, SkeletonList, Sheet, money, Pill, Lightbox } from "../ui";
+import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, Lightbox, RefreshScroll, OfflineBar } from "../ui";
+import { cache } from "../cache";
 import ServiceForm from "./ServiceForm";
 
 const STATUS = {
@@ -9,14 +11,32 @@ const STATUS = {
   in_progress: { label: "İşlemde", color: "blue" },
   delivered: { label: "Teslim", color: "green" },
 };
+const STATUS_CYCLE = ["received", "in_progress", "delivered"];
+const nextStatus = (s) => STATUS_CYCLE[(STATUS_CYCLE.indexOf(s) + 1) % STATUS_CYCLE.length];
 const fmtDate = (s) => {
   if (!s) return "";
   const d = new Date(s);
   return isNaN(d) ? s : d.toLocaleDateString("tr-TR");
 };
 const vehicleLine = (s) => [s.vehicle_brand, s.vehicle_model].filter(Boolean).join(" ") || (s.is_trailer ? "Çekme karavan" : "");
+// Teslim uyarısı: teslim edilmemiş + teslim tarihi bugün/geçmiş
+const dueBadge = (s) => {
+  if (!s.delivery_date || s.status === "delivered") return null;
+  const today = new Date().toISOString().slice(0, 10);
+  const dd = String(s.delivery_date).slice(0, 10);
+  if (dd < today) return { label: "Gecikmiş", color: "red" };
+  if (dd === today) return { label: "Bugün teslim", color: "amber" };
+  return null;
+};
+// TR telefon → wa.me formatı (10 haneyi 90 ile önekle)
+const waNumber = (phone) => {
+  let d = String(phone || "").replace(/\D/g, "");
+  if (d.startsWith("0")) d = d.slice(1);
+  if (d.length === 10) d = "90" + d;
+  return d;
+};
 
-function Row({ s, onOpen }) {
+function Row({ s, onOpen, onCycle, busy }) {
   const st = STATUS[s.status] || STATUS.received;
   return (
     <Card onClick={() => onOpen(s)} className="p-3.5">
@@ -27,7 +47,17 @@ function Row({ s, onOpen }) {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <div className="truncate text-[15px] font-semibold leading-tight">{s.customer_name || "İsimsiz"}</div>
-            <span className="ml-auto shrink-0"><Pill color={st.color}>{st.label}</Pill></span>
+            <button
+              onClick={(e) => { e.stopPropagation(); if (!busy) onCycle(s); }}
+              className="m-press ml-auto shrink-0"
+              title="Durumu değiştir"
+            >
+              {busy ? (
+                <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5"><Loader2 className="h-3 w-3 animate-spin text-slate-400" /></span>
+              ) : (
+                <Pill color={st.color}>{st.label}</Pill>
+              )}
+            </button>
           </div>
           <div className="mt-0.5 flex items-center gap-2 text-[12px]" style={{ color: "var(--m-ink-2)" }}>
             {vehicleLine(s) && <span className="truncate">{vehicleLine(s)}</span>}
@@ -36,6 +66,7 @@ function Row({ s, onOpen }) {
           <div className="mt-1 flex items-center gap-2 text-[12px] text-slate-400">
             {s.order_no && <span className="font-bold">{s.order_no}</span>}
             <span>{fmtDate(s.arrival_date || s.created_at)}</span>
+            {(() => { const b = dueBadge(s); return b ? <span className="ml-auto shrink-0"><Pill color={b.color}>{b.label}</Pill></span> : null; })()}
           </div>
         </div>
       </div>
@@ -43,10 +74,18 @@ function Row({ s, onOpen }) {
   );
 }
 
-function Detail({ id, onClose, onEdit }) {
+function Detail({ id, onClose, onEdit, onDeleted }) {
   const [s, setS] = useState(null);
   const [loading, setLoading] = useState(true);
   const [lb, setLb] = useState(null);
+  const [del, setDel] = useState(false);
+  const remove = async () => {
+    if (!s || del) return;
+    if (!window.confirm(`"${s.customer_name || "Bu kayıt"}" servis kaydı silinsin mi?`)) return;
+    setDel(true);
+    try { await servicesApi.remove(s.id); toast.success("Servis kaydı silindi"); onDeleted?.(); }
+    catch { toast.error("Silinemedi"); setDel(false); }
+  };
   useEffect(() => {
     if (!id) return;
     setLoading(true);
@@ -92,6 +131,16 @@ function Detail({ id, onClose, onEdit }) {
             <div className="mt-2 text-[12px] text-slate-400">
               {s.order_no ? `${s.order_no} · ` : ""}Geliş: {fmtDate(s.arrival_date)}{s.delivery_date ? ` · Teslim: ${fmtDate(s.delivery_date)}` : ""}
             </div>
+            {s.phone && (
+              <div className="mt-3 flex gap-2">
+                <a href={`tel:${s.phone}`} className="m-press flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2.5 text-[14px] font-bold text-white" style={{ background: "var(--m-primary)" }}>
+                  <Phone className="h-4 w-4" /> Ara
+                </a>
+                <a href={`https://wa.me/${waNumber(s.phone)}`} target="_blank" rel="noreferrer" className="m-press flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2.5 text-[14px] font-bold text-white" style={{ background: "#25d366" }}>
+                  <MessageCircle className="h-4 w-4" /> WhatsApp
+                </a>
+              </div>
+            )}
           </div>
 
           {s.operations && (
@@ -144,6 +193,9 @@ function Detail({ id, onClose, onEdit }) {
               <div className="whitespace-pre-wrap text-[14px] leading-relaxed">{s.notes}</div>
             </div>
           )}
+          <button onClick={remove} disabled={del} className="m-press mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-white py-3 text-[14px] font-bold text-rose-500 disabled:opacity-60">
+            {del ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Servis Kaydını Sil
+          </button>
           <Lightbox src={lb} onClose={() => setLb(null)} />
         </>
       )}
@@ -152,27 +204,63 @@ function Detail({ id, onClose, onEdit }) {
 }
 
 export default function Services() {
-  const [items, setItems] = useState([]);
+  const [items, setItems] = useState(() => cache.get("services") || []);
   const [q, setQ] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !cache.get("services"));
+  const [err, setErr] = useState(false);
+  const [offline, setOffline] = useState(false);
   const [selId, setSelId] = useState(null);
   const [formOpen, setFormOpen] = useState(false);
   const [formInitial, setFormInitial] = useState(null);
+  const [busyId, setBusyId] = useState(null);
+  const [statusF, setStatusF] = useState("");
 
   const reload = async () => {
-    setLoading(true);
-    try { setItems(await servicesApi.list()); } catch { setItems([]); } finally { setLoading(false); }
+    setErr(false);
+    if (!cache.get("services")) setLoading(true);
+    try {
+      const data = await servicesApi.list();
+      setItems(data); cache.set("services", data); setOffline(false);
+    } catch {
+      const c = cache.get("services");
+      if (c) { setItems(c); setOffline(true); } else { setItems([]); setErr(true); }
+    } finally { setLoading(false); }
   };
   useEffect(() => { reload(); }, []);
 
+  const cycleStatus = async (rec) => {
+    const next = nextStatus(rec.status);
+    setBusyId(rec.id);
+    setItems((prev) => prev.map((x) => (x.id === rec.id ? { ...x, status: next } : x))); // optimistic
+    try {
+      await servicesApi.update(rec.id, { status: next });
+      toast.success(STATUS[next].label);
+    } catch {
+      setItems((prev) => prev.map((x) => (x.id === rec.id ? { ...x, status: rec.status } : x))); // geri al
+      toast.error("Durum güncellenemedi");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const filtered = useMemo(() => {
     const s = q.trim().toLocaleLowerCase("tr");
-    if (!s) return items;
-    return items.filter((x) =>
-      [x.customer_name, x.plate, x.vehicle_brand, x.vehicle_model, x.order_no, x.phone]
-        .filter(Boolean).some((v) => v.toLocaleLowerCase("tr").includes(s))
-    );
-  }, [items, q]);
+    const key = (x) => x.arrival_date || x.created_at || "";
+    return items
+      .filter((x) => {
+        if (statusF && (x.status || "received") !== statusF) return false;
+        if (!s) return true;
+        return [x.customer_name, x.plate, x.vehicle_brand, x.vehicle_model, x.order_no, x.phone]
+          .filter(Boolean).some((v) => v.toLocaleLowerCase("tr").includes(s));
+      })
+      .sort((a, b) => String(key(b)).localeCompare(String(key(a)))); // en yeni üstte
+  }, [items, q, statusF]);
+
+  const counts = useMemo(() => {
+    const c = { received: 0, in_progress: 0, delivered: 0 };
+    items.forEach((x) => { const k = x.status || "received"; if (c[k] != null) c[k]++; });
+    return c;
+  }, [items]);
 
   const openNew = () => { setFormInitial(null); setFormOpen(true); };
   const openEdit = (rec) => { setSelId(null); setFormInitial(rec); setFormOpen(true); };
@@ -189,17 +277,31 @@ export default function Services() {
         }
       />
       <SearchBar value={q} onChange={setQ} placeholder="Müşteri, plaka, araç" />
-      <div className="m-scroll flex-1 pb-[calc(var(--m-tabbar-h)+env(safe-area-inset-bottom)+8px)]">
+      <div className="flex gap-2 overflow-x-auto px-4 pb-2" style={{ scrollbarWidth: "none" }}>
+        {[["", "Tümü", items.length], ["received", "Geldi", counts.received], ["in_progress", "İşlemde", counts.in_progress], ["delivered", "Teslim", counts.delivered]].map(([id, label, n]) => {
+          const on = statusF === id;
+          return (
+            <button key={id || "all"} onClick={() => setStatusF(id)} className={`m-press shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-semibold ${on ? "" : "m-fill"}`}
+              style={on ? { background: "var(--m-primary)", color: "#fff" } : { background: "#e9e9ee", color: "var(--m-ink-2)" }}>
+              {label} {n > 0 && <span className="opacity-70">{n}</span>}
+            </button>
+          );
+        })}
+      </div>
+      <OfflineBar show={offline} />
+      <RefreshScroll onRefresh={reload} className="flex-1 pb-[calc(var(--m-tabbar-h)+env(safe-area-inset-bottom)+8px)]">
         {loading ? (
           <SkeletonList />
+        ) : err ? (
+          <ErrorState onRetry={reload} />
         ) : filtered.length === 0 ? (
           <EmptyState icon={Wrench} title="Servis kaydı yok" hint={q ? "Aramayı değiştir" : "Sağ üstteki + ile ekle"} />
         ) : (
-          <div className="space-y-2 px-4 pt-1">{filtered.map((x) => <Row key={x.id} s={x} onOpen={(r) => setSelId(r.id)} />)}</div>
+          <div className="space-y-2 px-4 pt-1">{filtered.map((x) => <Row key={x.id} s={x} onOpen={(r) => setSelId(r.id)} onCycle={cycleStatus} busy={busyId === x.id} />)}</div>
         )}
-      </div>
-      <Detail id={selId} onClose={() => setSelId(null)} onEdit={openEdit} />
-      <ServiceForm open={formOpen} initial={formInitial} onClose={() => setFormOpen(false)} onSaved={reload} />
+      </RefreshScroll>
+      <Detail id={selId} onClose={() => setSelId(null)} onEdit={openEdit} onDeleted={() => { setSelId(null); reload(); }} />
+      <ServiceForm key={formInitial?.id || "new"} open={formOpen} initial={formInitial} onClose={() => setFormOpen(false)} onSaved={reload} />
     </div>
   );
 }

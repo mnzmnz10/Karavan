@@ -33,6 +33,8 @@ export const quotes = {
   list: () => http.get("/quotes").then((r) => r.data),
   get: (id) => http.get(`/quotes/${id}`).then((r) => r.data),
   create: (payload) => http.post("/quotes", payload).then((r) => r.data),
+  update: (id, payload) => http.put(`/quotes/${id}`, payload).then((r) => r.data),
+  remove: (id) => http.delete(`/quotes/${id}`).then((r) => r.data),
 };
 
 export const services = {
@@ -40,6 +42,7 @@ export const services = {
   get: (id) => http.get(`/services/${id}`).then((r) => r.data),
   create: (payload) => http.post("/services", payload).then((r) => r.data),
   update: (id, payload) => http.put(`/services/${id}`, payload).then((r) => r.data),
+  remove: (id) => http.delete(`/services/${id}`).then((r) => r.data),
 };
 
 // Belge (PDF/Excel) URL'leri. Native'de window.open -> mobileDownload köprüsü
