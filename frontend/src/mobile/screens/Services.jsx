@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Wrench, Car, Phone, Image as ImageIcon, Loader2, Plus, Pencil } from "lucide-react";
-import { services as servicesApi } from "../api";
+import { Wrench, Car, Phone, Image as ImageIcon, Loader2, Plus, Pencil, Share2 } from "lucide-react";
+import { services as servicesApi, docUrl, openDoc } from "../api";
 import { Header, SearchBar, Card, EmptyState, SkeletonList, Sheet, money, Pill } from "../ui";
 import ServiceForm from "./ServiceForm";
 
@@ -71,9 +71,14 @@ function Detail({ id, onClose, onEdit }) {
         <div className="flex items-center justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>
       ) : (
         <>
-          <button onClick={() => onEdit?.(s)} className="m-press mb-3 flex w-full items-center justify-center gap-1.5 rounded-2xl bg-white py-2.5 text-[14px] font-bold" style={{ color: "var(--m-primary)" }}>
-            <Pencil className="h-4 w-4" /> Düzenle
-          </button>
+          <div className="mb-3 flex gap-2">
+            <button onClick={() => onEdit?.(s)} className="m-press flex flex-1 items-center justify-center gap-1.5 rounded-2xl bg-white py-2.5 text-[14px] font-bold" style={{ color: "var(--m-primary)" }}>
+              <Pencil className="h-4 w-4" /> Düzenle
+            </button>
+            <button onClick={() => openDoc(docUrl.service(s.id))} className="m-press flex flex-1 items-center justify-center gap-1.5 rounded-2xl py-2.5 text-[14px] font-bold text-white" style={{ background: "var(--m-primary)" }}>
+              <Share2 className="h-4 w-4" /> PDF
+            </button>
+          </div>
           <div className="rounded-2xl bg-white p-4">
             <div className="flex items-center gap-2">
               <div className="text-[19px] font-bold">{s.customer_name || "İsimsiz"}</div>

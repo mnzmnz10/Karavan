@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { FileText, User, Calendar } from "lucide-react";
-import { quotes as quotesApi } from "../api";
+import { FileText, User, Calendar, Share2 } from "lucide-react";
+import { quotes as quotesApi, docUrl, openDoc } from "../api";
 import { Header, SearchBar, Card, EmptyState, SkeletonList, Sheet, money, Pill } from "../ui";
 
 const fmtDate = (s) => {
@@ -39,6 +39,9 @@ function Detail({ q, onClose }) {
   const total = Number(q.total_net_price || q.total_discounted_price || q.total_list_price || 0);
   return (
     <Sheet open={!!q} onClose={onClose} title="Teklif" full>
+      <button onClick={() => openDoc(docUrl.quote(q.id))} className="m-press mb-3 flex w-full items-center justify-center gap-2 rounded-2xl py-3 text-[15px] font-bold text-white" style={{ background: "var(--m-primary)" }}>
+        <Share2 className="h-4.5 w-4.5" /> PDF Paylaş
+      </button>
       <div className="rounded-2xl bg-white p-4">
         <div className="text-[19px] font-bold leading-snug">{q.name || "Teklif"}</div>
         <div className="mt-2 space-y-1 text-[13px]" style={{ color: "var(--m-ink-2)" }}>

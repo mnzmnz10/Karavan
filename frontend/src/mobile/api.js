@@ -41,4 +41,13 @@ export const services = {
   update: (id, payload) => http.put(`/services/${id}`, payload).then((r) => r.data),
 };
 
+// Belge (PDF/Excel) URL'leri. Native'de window.open -> mobileDownload köprüsü
+// (CapacitorHttp + Share sheet); web'de yeni sekmede açılır.
+export const docUrl = {
+  quote: (id) => `${API}/quotes/${id}/pdf`,
+  service: (id) => `${API}/services/${id}/pdf`,
+  contract: (id) => `${API}/contracts/${id}/download`,
+};
+export const openDoc = (url) => window.open(url, "_blank");
+
 export default http;

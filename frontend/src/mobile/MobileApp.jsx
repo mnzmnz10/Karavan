@@ -1,17 +1,19 @@
 import React, { useEffect, useState } from "react";
 import { Toaster } from "sonner";
-import { Wrench, Package, FileText, Loader2 } from "lucide-react";
+import { Wrench, Package, FileText, ScrollText, Loader2 } from "lucide-react";
 import "./mobile.css";
 import { auth } from "./api";
 import Login from "./screens/Login";
 import Services from "./screens/Services";
 import Products from "./screens/Products";
 import Quotes from "./screens/Quotes";
+import Contracts from "./screens/Contracts";
 
 const TABS = [
   { key: "products", label: "Ürünler", icon: Package, Comp: Products },
   { key: "quotes", label: "Teklifler", icon: FileText, Comp: Quotes },
   { key: "service", label: "Servis", icon: Wrench, Comp: Services },
+  { key: "contracts", label: "Sözleşme", icon: ScrollText, Comp: Contracts },
 ];
 
 function TabBar({ active, onChange }) {
