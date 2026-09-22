@@ -1,7 +1,31 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Package, Boxes } from "lucide-react";
-import { products as productsApi } from "../api";
+import { products as productsApi, categories as categoriesApi } from "../api";
 import { Header, SearchBar, Card, EmptyState, SkeletonList, Sheet, money, Pill } from "../ui";
+
+function CategoryBar({ cats, sel, onSel }) {
+  if (!cats.length) return null;
+  const Chip = ({ id, label }) => {
+    const on = sel === id;
+    return (
+      <button
+        onClick={() => onSel(id)}
+        className="m-press shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-semibold"
+        style={on
+          ? { background: "var(--m-primary)", color: "#fff" }
+          : { background: "#e9e9ee", color: "var(--m-ink-2)" }}
+      >
+        {label}
+      </button>
+    );
+  };
+  return (
+    <div className="flex gap-2 overflow-x-auto px-4 pb-2" style={{ scrollbarWidth: "none" }}>
+      <Chip id="" label="Tümü" />
+      {cats.map((c) => <Chip key={c.id} id={c.id} label={c.name} />)}
+    </div>
+  );
+}
 
 function priceTRY(p) {
   const disc = Number(p.discounted_price_try);
@@ -71,15 +95,17 @@ function Detail({ p, onClose }) {
 
 export default function Products() {
   const [items, setItems] = useState([]);
+  const [cats, setCats] = useState([]);
+  const [cat, setCat] = useState("");
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(true);
   const [sel, setSel] = useState(null);
   const debRef = useRef();
 
-  const load = useCallback(async (search) => {
+  const load = useCallback(async (search, category_id) => {
     setLoading(true);
     try {
-      const data = await productsApi.list({ search, page: 1, limit: 40 });
+      const data = await productsApi.list({ search, category_id: category_id || undefined, page: 1, limit: 60 });
       setItems(Array.isArray(data) ? data : data?.products || []);
     } catch (e) {
       setItems([]);
@@ -88,18 +114,19 @@ export default function Products() {
     }
   }, []);
 
-  useEffect(() => { load(""); }, [load]);
+  useEffect(() => { categoriesApi.list().then((c) => setCats(Array.isArray(c) ? c : [])).catch(() => {}); }, []);
 
   useEffect(() => {
     clearTimeout(debRef.current);
-    debRef.current = setTimeout(() => load(q.trim()), 300);
+    debRef.current = setTimeout(() => load(q.trim(), cat), 300);
     return () => clearTimeout(debRef.current);
-  }, [q, load]);
+  }, [q, cat, load]);
 
   return (
     <div className="flex h-full flex-col">
       <Header title="Ürünler" subtitle={loading ? "Yükleniyor…" : `${items.length} ürün`} />
       <SearchBar value={q} onChange={setQ} placeholder="Ürün adı veya marka" />
+      <CategoryBar cats={cats} sel={cat} onSel={setCat} />
       <div className="m-scroll flex-1 pb-[calc(var(--m-tabbar-h)+env(safe-area-inset-bottom)+8px)]">
         {loading ? (
           <SkeletonList />

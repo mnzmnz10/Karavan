@@ -9,9 +9,9 @@ import Products from "./screens/Products";
 import Quotes from "./screens/Quotes";
 
 const TABS = [
-  { key: "service", label: "Servis", icon: Wrench, Comp: Services },
   { key: "products", label: "Ürünler", icon: Package, Comp: Products },
   { key: "quotes", label: "Teklifler", icon: FileText, Comp: Quotes },
+  { key: "service", label: "Servis", icon: Wrench, Comp: Services },
 ];
 
 function TabBar({ active, onChange }) {
@@ -41,7 +41,7 @@ function TabBar({ active, onChange }) {
 
 export default function MobileApp() {
   const [authed, setAuthed] = useState(null); // null = kontrol ediliyor
-  const [tab, setTab] = useState("service");
+  const [tab, setTab] = useState("products");
 
   const refreshAuth = () =>
     auth.check().then((d) => setAuthed(!!d?.authenticated)).catch(() => setAuthed(false));

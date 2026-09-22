@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Wrench, Car, Phone, Image as ImageIcon, Loader2 } from "lucide-react";
+import { Wrench, Car, Phone, Image as ImageIcon, Loader2, Plus, Pencil } from "lucide-react";
 import { services as servicesApi } from "../api";
 import { Header, SearchBar, Card, EmptyState, SkeletonList, Sheet, money, Pill } from "../ui";
+import ServiceForm from "./ServiceForm";
 
 const STATUS = {
   received: { label: "Geldi", color: "amber" },
@@ -42,7 +43,7 @@ function Row({ s, onOpen }) {
   );
 }
 
-function Detail({ id, onClose }) {
+function Detail({ id, onClose, onEdit }) {
   const [s, setS] = useState(null);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
@@ -70,6 +71,9 @@ function Detail({ id, onClose }) {
         <div className="flex items-center justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>
       ) : (
         <>
+          <button onClick={() => onEdit?.(s)} className="m-press mb-3 flex w-full items-center justify-center gap-1.5 rounded-2xl bg-white py-2.5 text-[14px] font-bold" style={{ color: "var(--m-primary)" }}>
+            <Pencil className="h-4 w-4" /> Düzenle
+          </button>
           <div className="rounded-2xl bg-white p-4">
             <div className="flex items-center gap-2">
               <div className="text-[19px] font-bold">{s.customer_name || "İsimsiz"}</div>
@@ -145,13 +149,14 @@ export default function Services() {
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(true);
   const [selId, setSelId] = useState(null);
+  const [formOpen, setFormOpen] = useState(false);
+  const [formInitial, setFormInitial] = useState(null);
 
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      try { setItems(await servicesApi.list()); } catch { setItems([]); } finally { setLoading(false); }
-    })();
-  }, []);
+  const reload = async () => {
+    setLoading(true);
+    try { setItems(await servicesApi.list()); } catch { setItems([]); } finally { setLoading(false); }
+  };
+  useEffect(() => { reload(); }, []);
 
   const filtered = useMemo(() => {
     const s = q.trim().toLocaleLowerCase("tr");
@@ -162,20 +167,32 @@ export default function Services() {
     );
   }, [items, q]);
 
+  const openNew = () => { setFormInitial(null); setFormOpen(true); };
+  const openEdit = (rec) => { setSelId(null); setFormInitial(rec); setFormOpen(true); };
+
   return (
     <div className="flex h-full flex-col">
-      <Header title="Servis" subtitle={loading ? "Yükleniyor…" : `${items.length} kayıt`} />
+      <Header
+        title="Servis"
+        subtitle={loading ? "Yükleniyor…" : `${items.length} kayıt`}
+        right={
+          <button onClick={openNew} className="m-press flex h-9 w-9 items-center justify-center rounded-full" style={{ background: "var(--m-primary)" }}>
+            <Plus className="h-5 w-5 text-white" strokeWidth={2.6} />
+          </button>
+        }
+      />
       <SearchBar value={q} onChange={setQ} placeholder="Müşteri, plaka, araç" />
       <div className="m-scroll flex-1 pb-[calc(var(--m-tabbar-h)+env(safe-area-inset-bottom)+8px)]">
         {loading ? (
           <SkeletonList />
         ) : filtered.length === 0 ? (
-          <EmptyState icon={Wrench} title="Servis kaydı yok" hint={q ? "Aramayı değiştir" : "Henüz kayıt yok"} />
+          <EmptyState icon={Wrench} title="Servis kaydı yok" hint={q ? "Aramayı değiştir" : "Sağ üstteki + ile ekle"} />
         ) : (
           <div className="space-y-2 px-4 pt-1">{filtered.map((x) => <Row key={x.id} s={x} onOpen={(r) => setSelId(r.id)} />)}</div>
         )}
       </div>
-      <Detail id={selId} onClose={() => setSelId(null)} />
+      <Detail id={selId} onClose={() => setSelId(null)} onEdit={openEdit} />
+      <ServiceForm open={formOpen} initial={formInitial} onClose={() => setFormOpen(false)} onSaved={reload} />
     </div>
   );
 }

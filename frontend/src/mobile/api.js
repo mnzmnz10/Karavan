@@ -25,6 +25,10 @@ export const companies = {
   list: () => http.get("/companies").then((r) => r.data),
 };
 
+export const categories = {
+  list: () => http.get("/categories").then((r) => r.data),
+};
+
 export const quotes = {
   list: () => http.get("/quotes").then((r) => r.data),
   get: (id) => http.get(`/quotes/${id}`).then((r) => r.data),
@@ -33,6 +37,8 @@ export const quotes = {
 export const services = {
   list: () => http.get("/services").then((r) => r.data),
   get: (id) => http.get(`/services/${id}`).then((r) => r.data),
+  create: (payload) => http.post("/services", payload).then((r) => r.data),
+  update: (id, payload) => http.put(`/services/${id}`, payload).then((r) => r.data),
 };
 
 export default http;
