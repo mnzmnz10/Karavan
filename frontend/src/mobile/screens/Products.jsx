@@ -1,8 +1,37 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Package, Boxes, Plus } from "lucide-react";
+import { Package, Boxes, Plus, User, LogOut } from "lucide-react";
 import { products as productsApi, categories as categoriesApi } from "../api";
 import { Header, SearchBar, Card, EmptyState, SkeletonList, Sheet, money, Pill } from "../ui";
 import { useCart } from "../Cart";
+import { useSession } from "../session";
+
+function AccountButton() {
+  const s = useSession();
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button onClick={() => setOpen(true)} className="m-press flex h-9 w-9 items-center justify-center rounded-full bg-slate-200/70">
+        <User className="h-5 w-5" style={{ color: "var(--m-ink-2)" }} />
+      </button>
+      <Sheet open={open} onClose={() => setOpen(false)} title="Hesap">
+        <div className="rounded-2xl bg-white p-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full" style={{ background: "var(--m-primary)" }}>
+              <User className="h-6 w-6 text-white" />
+            </div>
+            <div>
+              <div className="text-[15px] font-bold">{s?.username || "Kullanıcı"}</div>
+              <div className="text-[12px]" style={{ color: "var(--m-ink-2)" }}>MSZ Karavan</div>
+            </div>
+          </div>
+        </div>
+        <button onClick={() => { setOpen(false); s?.logout?.(); }} className="m-press mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-white py-3.5 text-[15px] font-bold text-rose-500">
+          <LogOut className="h-5 w-5" /> Çıkış Yap
+        </button>
+      </Sheet>
+    </>
+  );
+}
 
 function CategoryBar({ cats, sel, onSel }) {
   if (!cats.length) return null;
@@ -137,7 +166,7 @@ export default function Products() {
 
   return (
     <div className="flex h-full flex-col">
-      <Header title="Ürünler" subtitle={loading ? "Yükleniyor…" : `${items.length} ürün`} />
+      <Header title="Ürünler" subtitle={loading ? "Yükleniyor…" : `${items.length} ürün`} right={<AccountButton />} />
       <SearchBar value={q} onChange={setQ} placeholder="Ürün adı veya marka" />
       <CategoryBar cats={cats} sel={cat} onSel={setCat} />
       <div className="m-scroll flex-1 pb-[calc(var(--m-tabbar-h)+env(safe-area-inset-bottom)+8px)]">

@@ -9,6 +9,8 @@ import Products from "./screens/Products";
 import Quotes from "./screens/Quotes";
 import Contracts from "./screens/Contracts";
 import { CartProvider, CartBar } from "./Cart";
+import ErrorBoundary from "./ErrorBoundary";
+import { SessionCtx } from "./session";
 
 const TABS = [
   { key: "products", label: "Ürünler", icon: Package, Comp: Products },
@@ -44,12 +46,19 @@ function TabBar({ active, onChange }) {
 
 export default function MobileApp() {
   const [authed, setAuthed] = useState(null); // null = kontrol ediliyor
+  const [username, setUsername] = useState("");
   const [tab, setTab] = useState("products");
 
   const refreshAuth = () =>
-    auth.check().then((d) => setAuthed(!!d?.authenticated)).catch(() => setAuthed(false));
+    auth.check().then((d) => { setAuthed(!!d?.authenticated); setUsername(d?.username || ""); }).catch(() => setAuthed(false));
 
   useEffect(() => { refreshAuth(); }, []);
+
+  const logout = async () => {
+    try { await auth.logout(); } catch {}
+    setAuthed(false);
+    setTab("products");
+  };
 
   if (authed === null) {
     return (
@@ -71,15 +80,19 @@ export default function MobileApp() {
   const Active = TABS.find((t) => t.key === tab)?.Comp || Services;
 
   return (
-    <div id="mobile-root" className="fixed inset-0 flex flex-col">
-      <CartProvider>
-        <div className="flex-1 overflow-hidden">
-          <Active />
-        </div>
-        <CartBar />
-        <TabBar active={tab} onChange={setTab} />
-        <Toaster position="top-center" richColors />
-      </CartProvider>
-    </div>
+    <SessionCtx.Provider value={{ username, logout }}>
+      <div id="mobile-root" className="fixed inset-0 flex flex-col">
+        <CartProvider>
+          <div className="flex-1 overflow-hidden">
+            <ErrorBoundary key={tab}>
+              <Active />
+            </ErrorBoundary>
+          </div>
+          <CartBar />
+          <TabBar active={tab} onChange={setTab} />
+          <Toaster position="top-center" richColors />
+        </CartProvider>
+      </div>
+    </SessionCtx.Provider>
   );
 }
