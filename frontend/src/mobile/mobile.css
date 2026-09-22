@@ -1,0 +1,85 @@
+/* MSZ Karavan — mobil (iOS-native his) tema */
+:root {
+  --m-bg: #f2f2f7;            /* iOS grouped background */
+  --m-card: #ffffff;
+  --m-ink: #0b1520;
+  --m-ink-2: #5b6774;
+  --m-line: #e6e8ec;
+  --m-primary: #143a5c;      /* MSZ navy */
+  --m-primary-2: #2e8b7a;    /* MSZ yeşil */
+  --m-accent: #1e73be;
+  --m-danger: #e5484d;
+  --m-tabbar-h: 56px;
+}
+
+/* Mobil kök: sistem fontu + iOS metin davranışı */
+#mobile-root, #mobile-root * {
+  -webkit-tap-highlight-color: transparent;
+}
+#mobile-root {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, system-ui, sans-serif;
+  background: var(--m-bg);
+  color: var(--m-ink);
+  min-height: 100dvh;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overscroll-behavior-y: none;
+}
+
+/* Güvenli alan yardımcıları */
+.m-safe-top { padding-top: env(safe-area-inset-top, 0px); }
+.m-safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
+
+/* Kaydırılabilir sayfa gövdesi — header sabit, içerik scroll */
+.m-scroll {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+}
+
+/* Frosted (buzlu) yüzey — tab bar + header */
+.m-frost {
+  background: rgba(255,255,255,0.82);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+}
+
+/* Büyük başlık */
+.m-largetitle { font-size: 30px; line-height: 1.1; font-weight: 800; letter-spacing: -0.02em; }
+
+/* Kart basış efekti */
+.m-press { transition: transform .12s ease, opacity .12s ease; }
+.m-press:active { transform: scale(0.975); opacity: .85; }
+
+/* Slide-in (detay ekranı) */
+@keyframes m-slide-in { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@keyframes m-slide-out { from { transform: translateX(0); } to { transform: translateX(100%); } }
+.m-page-enter { animation: m-slide-in .28s cubic-bezier(.32,.72,0,1) both; }
+.m-page-exit { animation: m-slide-out .24s cubic-bezier(.32,.72,0,1) both; }
+
+/* Bottom sheet */
+@keyframes m-sheet-in { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes m-fade-in { from { opacity: 0; } to { opacity: 1; } }
+.m-sheet-enter { animation: m-sheet-in .3s cubic-bezier(.32,.72,0,1) both; }
+.m-backdrop-enter { animation: m-fade-in .2s ease both; }
+
+/* Skeleton parıltı */
+@keyframes m-shimmer { 0% { background-position: -200px 0; } 100% { background-position: 200px 0; } }
+.m-skel {
+  background: #e9ebef linear-gradient(90deg, #e9ebef 0px, #f4f5f7 80px, #e9ebef 160px);
+  background-size: 400px 100%;
+  animation: m-shimmer 1.2s infinite linear;
+  border-radius: 10px;
+}
+
+/* Numara/parasal hizalama */
+.m-tnum { font-variant-numeric: tabular-nums; }
+
+/* Segmented control */
+.m-seg { background: #e9e9ee; border-radius: 10px; padding: 2px; }
+.m-seg-item { border-radius: 8px; transition: all .18s ease; }
+.m-seg-item[data-on="true"] { background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+
+/* Girişte odak halkasını yumuşat */
+#mobile-root input:focus, #mobile-root textarea:focus, #mobile-root select:focus { outline: none; }
