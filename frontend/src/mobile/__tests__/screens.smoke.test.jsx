@@ -381,3 +381,14 @@ test("aynı müşteriyle yeni servis: müşteri/araç dolu, kalem boş", async (
   expect(container.querySelector('input[inputmode="tel"]').value).toBe("05551112233");
   expect(container.querySelectorAll('input[placeholder="Parça/işlem"]').length).toBe(0);
 });
+
+test("servisten kaynak teklife git", async () => {
+  global.__SERVICE.notes = "not\n\n[Teklif: Kırklareli AFAD]";
+  let went = null;
+  await render(<Services go={(t) => { went = t; }} />);
+  const row = Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
+  await click(row);
+  await click(btnWith("Kaynak teklifi aç"));
+  expect(went).toBe("quotes");
+  expect(JSON.parse(localStorage.getItem("mz:quote_search"))).toBe("Kırklareli AFAD");
+});

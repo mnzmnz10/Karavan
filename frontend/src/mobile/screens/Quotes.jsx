@@ -618,7 +618,8 @@ function Detail({ q, onClose, onDeleted, onSaved, onCopied, go }) {
 
 export default function Quotes({ go }) {
   const [items, setItems] = useState(() => cache.get("quotes") || []);
-  const [q, setQ] = useState("");
+  // Servisten yönlendirme: tek seferlik arama (mz:quote_search)
+  const [q, setQ] = useState(() => { const v = cache.get("quote_search"); if (v) cache.set("quote_search", null); return v || ""; });
   const [loading, setLoading] = useState(() => !cache.get("quotes"));
   const [err, setErr] = useState(false);
   const [offline, setOffline] = useState(false);

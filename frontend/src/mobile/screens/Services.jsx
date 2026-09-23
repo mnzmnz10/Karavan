@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Wrench, Car, Phone, MessageCircle, Image as ImageIcon, Loader2, Plus, Pencil, Share2, Trash2, Eye, EyeOff, Wallet, X } from "lucide-react";
+import { Wrench, Car, Phone, MessageCircle, Image as ImageIcon, Loader2, Plus, Pencil, Share2, Trash2, Eye, EyeOff, Wallet, X, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { services as servicesApi, rates as ratesApi, docUrl, openDoc } from "../api";
 import { useCatalog, catRate } from "../catalog";
@@ -190,7 +190,7 @@ function CollectionSheet({ open, onClose, onAdd }) {
   );
 }
 
-function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, prodCost }) {
+function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuote, prodCost }) {
   const [s, setS] = useState(null);
   const [loading, setLoading] = useState(true);
   const [lb, setLb] = useState(null);
@@ -442,6 +442,14 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, prodCost 
               <div className="whitespace-pre-wrap text-[14px] leading-relaxed">{s.notes}</div>
             </div>
           )}
+          {(() => {
+            const m = /\[Teklif: ([^\]]*)\]/.exec(s.notes || "");
+            return m && m[1] ? (
+              <button onClick={() => onOpenQuote?.(m[1])} className="m-press mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-white py-3 text-[14px] font-bold" style={{ color: "#d9820a" }}>
+                <FileText className="h-4 w-4" /> Kaynak teklifi aç
+              </button>
+            ) : null;
+          })()}
           <button onClick={() => onRepeat?.(s)} className="m-press mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-white py-3 text-[14px] font-bold" style={{ color: "var(--m-primary)" }}>
             <Plus className="h-4 w-4" /> Aynı müşteriyle yeni kayıt
           </button>
@@ -455,7 +463,7 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, prodCost 
   );
 }
 
-export default function Services() {
+export default function Services({ go }) {
   const [items, setItems] = useState(() => cache.get("services") || []);
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(() => !cache.get("services"));
@@ -584,7 +592,7 @@ export default function Services() {
           <div className="space-y-2 px-4 pt-1">{filtered.map((x) => <Row key={x.id} s={x} onOpen={(r) => setSelId(r.id)} onCycle={cycleStatus} busy={busyId === x.id} />)}</div>
         )}
       </RefreshScroll>
-      <Detail id={selId} onClose={() => setSelId(null)} onEdit={openEdit} onDeleted={() => { setSelId(null); reload(); }} onChanged={reload} onRepeat={openRepeat} prodCost={prodCost} />
+      <Detail id={selId} onClose={() => setSelId(null)} onEdit={openEdit} onDeleted={() => { setSelId(null); reload(); }} onChanged={reload} onRepeat={openRepeat} onOpenQuote={(name) => { cache.set("quote_search", name); setSelId(null); go?.("quotes"); }} prodCost={prodCost} />
       <ServiceForm key={formInitial?.id || formInitial?.key || "new"} open={formOpen} initial={formInitial} onClose={() => setFormOpen(false)} onSaved={reload} prodCost={prodCost} />
     </div>
   );
