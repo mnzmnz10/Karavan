@@ -498,7 +498,11 @@ export default function Contracts() {
   const filtered = useMemo(() => {
     const s = q.trim().toLocaleLowerCase("tr");
     const byStage = stageF ? items.filter((c) => (c.stage === "agreed" ? "agreed" : "proposal") === stageF) : items;
-    const base = !s ? byStage : byStage.filter((c) => [custName(c), c.title].filter(Boolean).some((v) => v.toLocaleLowerCase("tr").includes(s)));
+    const digits = /^[\d\s+()-]+$/.test(s) ? s.replace(/\D/g, "").replace(/^0/, "") : "";
+    const base = !s ? byStage : byStage.filter((c) =>
+      [custName(c), c.title].filter(Boolean).some((v) => v.toLocaleLowerCase("tr").includes(s)) ||
+      (digits.length >= 4 && (String(custPhone(c)).replace(/\D/g, "").includes(digits) || String(custTc(c)).includes(digits)))
+    );
     return [...base].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || ""))); // en yeni üstte
   }, [items, q, stageF]);
   const agreedCnt = items.filter((c) => c.stage === "agreed").length;
@@ -514,7 +518,7 @@ export default function Contracts() {
           </button>
         }
       />
-      <SearchBar value={q} onChange={setQ} placeholder="Müşteri veya başlık" />
+      <SearchBar value={q} onChange={setQ} placeholder="Müşteri, başlık, telefon" />
       <div className="flex gap-2 overflow-x-auto px-4 pb-2" style={{ scrollbarWidth: "none" }}>
         {[["", "Tümü", items.length], ["proposal", "Teklif", items.length - agreedCnt], ["agreed", "Anlaşıldı", agreedCnt]].map(([id, label, n]) => {
           const on = stageF === id;
