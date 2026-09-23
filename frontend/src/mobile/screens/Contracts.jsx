@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { ScrollText, User, Share2, Loader2, CheckCircle2, Trash2, Plus, Pencil, X, Copy, Phone, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 import http, { docUrl, openDoc } from "../api";
-import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, RefreshScroll, OfflineBar } from "../ui";
+import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, RefreshScroll, OfflineBar, todayISO } from "../ui";
 import { cache, customerNames } from "../cache";
 import { formatPhoneTR } from "./ServiceForm";
 
@@ -335,9 +335,9 @@ function CollectionSheet({ c, open, onClose, onSaved }) {
   const [desc, setDesc] = useState("");
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState("TRY");
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => todayISO());
   const [busy, setBusy] = useState(false);
-  useEffect(() => { if (open) { setDesc(""); setAmount(""); setCurrency("TRY"); setDate(new Date().toISOString().slice(0, 10)); } }, [open]);
+  useEffect(() => { if (open) { setDesc(""); setAmount(""); setCurrency("TRY"); setDate(todayISO()); } }, [open]);
   if (!c) return null;
   const kur = Number(c.data?.kur) || 0;
   const amt = parseFloat(amount) || 0;

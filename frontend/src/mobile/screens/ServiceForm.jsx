@@ -4,7 +4,7 @@ import { Camera, Plus, Trash2, Loader2, X, Eye, EyeOff, Search } from "lucide-re
 import { useCatalog, catRate } from "../catalog";
 import { services as servicesApi } from "../api";
 import { cache } from "../cache";
-import { Sheet, money } from "../ui";
+import { Sheet, money, todayISO } from "../ui";
 
 const DRAFT_KEY = "service_draft";
 
@@ -13,7 +13,7 @@ const STATUSES = [
   { key: "in_progress", label: "İşlemde" },
   { key: "delivered", label: "Teslim" },
 ];
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => todayISO();
 
 // Görsel sıkıştırma (base64 şişmesin): max kenar 1280, JPEG 0.7
 export function compressImage(file, max = 1280, quality = 0.72) {

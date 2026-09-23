@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Wrench, FileText, ScrollText, Clock, CheckCircle2, TrendingUp, Eye, EyeOff } from "lucide-react";
 import http, { services as servicesApi, quotes as quotesApi } from "../api";
-import { Header, Card, SkeletonList, RefreshScroll, OfflineBar, money } from "../ui";
+import { Header, Card, SkeletonList, RefreshScroll, OfflineBar, money, todayISO } from "../ui";
 import { useSession } from "../session";
 import { cache } from "../cache";
 import { serviceNet, collectedTRY } from "./Services";
@@ -54,7 +54,7 @@ export default function Dashboard({ go }) {
     const services = data?.services || [], quotes = data?.quotes || [], contracts = data?.contracts || [];
     const active = services.filter((x) => (x.status || "received") !== "delivered").length;
     const delivered = services.filter((x) => x.status === "delivered").length;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayISO();
     const overdue = services.filter((x) => x.status !== "delivered" && x.delivery_date && String(x.delivery_date).slice(0, 10) < today).length;
     const dueToday = services.filter((x) => x.status !== "delivered" && x.delivery_date && String(x.delivery_date).slice(0, 10) === today).length;
     const quotesMonth = quotes.filter((q) => sameMonth(q.created_at)).length;
@@ -111,7 +111,7 @@ export default function Dashboard({ go }) {
         ) : (
           <div className="px-4 pt-1">
             <div className="grid grid-cols-2 gap-2">
-              <Stat icon={Wrench} tint={{ bg: "#fef0e8", fg: "#e56a1f" }} value={stats.active} label="Aktif servis" sub={[stats.overdue > 0 ? `⚠ ${stats.overdue} gecikmiş` : null, stats.dueToday > 0 ? `${stats.dueToday} bugün teslim` : null].filter(Boolean).join(" · ") || `${stats.sTotal} kayıt · ${stats.delivered} teslim`} onClick={() => { if (stats.overdue > 0) cache.set("svc_filter", "overdue"); go?.("service"); }} />
+              <Stat icon={Wrench} tint={{ bg: "#fef0e8", fg: "#e56a1f" }} value={stats.active} label="Aktif servis" sub={[stats.overdue > 0 ? `⚠ ${stats.overdue} gecikmiş` : null, stats.dueToday > 0 ? `${stats.dueToday} bugün teslim` : null].filter(Boolean).join(" · ") || `${stats.sTotal} kayıt · ${stats.delivered} teslim`} onClick={() => { if (stats.overdue > 0) cache.set("svc_filter", "overdue"); else if (stats.dueToday > 0) cache.set("svc_filter", "today"); go?.("service"); }} />
               <Stat icon={FileText} tint={{ bg: "#fff5e6", fg: "#d9820a" }} value={stats.qTotal} label="Teklif" sub={`Bu ay ${stats.quotesMonth}`} onClick={() => go?.("quotes")} />
               <Stat icon={ScrollText} tint={{ bg: "#e8f0fb", fg: "#1e73be" }} value={stats.cTotal} label="Sözleşme" sub={`${stats.agreed} anlaşıldı`} onClick={() => go?.("contracts")} />
               <Stat icon={TrendingUp} tint={{ bg: "#e7f3ee", fg: "#2e8b7a" }} value={`₺${money(stats.quotesMonthSum)}`} label="Bu ay teklif" sub={`${stats.quotesMonth} teklif`} onClick={() => go?.("quotes")} />

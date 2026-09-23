@@ -3,7 +3,7 @@ import { Wrench, Car, Phone, MessageCircle, Image as ImageIcon, Loader2, Plus, P
 import { toast } from "sonner";
 import { services as servicesApi, rates as ratesApi, docUrl, openDoc } from "../api";
 import { useCatalog, catRate } from "../catalog";
-import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, Lightbox, RefreshScroll, OfflineBar } from "../ui";
+import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, Lightbox, RefreshScroll, OfflineBar, todayISO } from "../ui";
 import { cache } from "../cache";
 import ServiceForm, { compressImage } from "./ServiceForm";
 
@@ -23,7 +23,7 @@ const vehicleLine = (s) => [s.vehicle_brand, s.vehicle_model].filter(Boolean).jo
 // Teslim uyarısı: teslim edilmemiş + teslim tarihi bugün/geçmiş
 const dueBadge = (s) => {
   if (!s.delivery_date || s.status === "delivered") return null;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayISO();
   const dd = String(s.delivery_date).slice(0, 10);
   if (dd < today) return { label: "Gecikmiş", color: "red" };
   if (dd === today) return { label: "Bugün teslim", color: "amber" };
@@ -151,11 +151,11 @@ function CollectionSheet({ open, onClose, onAdd }) {
   const [currency, setCurrency] = useState("TRY");
   const [rate, setRate] = useState("");
   const [live, setLive] = useState(() => cache.get("rates") || {});
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => todayISO());
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     if (!open) return;
-    setDesc(""); setAmount(""); setCurrency("TRY"); setRate(""); setDate(new Date().toISOString().slice(0, 10));
+    setDesc(""); setAmount(""); setCurrency("TRY"); setRate(""); setDate(todayISO());
     ratesApi.get().then((r) => { if (r && r.EUR) { setLive(r); cache.set("rates", r); } }).catch(() => {});
   }, [open]);
   // Döviz değişince kur DAİMA o dövizin güncel kuruna (masaüstü ile aynı); kullanıcı ezebilir
@@ -216,7 +216,7 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuo
     if (!s || s.status === "delivered" || advancing) return;
     const next = s.status === "in_progress" ? "delivered" : "in_progress";
     const patch = { status: next };
-    if (next === "delivered" && !s.delivery_date) patch.delivery_date = new Date().toISOString().slice(0, 10);
+    if (next === "delivered" && !s.delivery_date) patch.delivery_date = todayISO();
     setAdvancing(true);
     try {
       await servicesApi.update(s.id, patch);
@@ -580,7 +580,7 @@ export default function Services({ go }) {
     setBusyId(rec.id);
     // Teslim'e geçerken teslim tarihi boşsa bugün yazılır (Özet "bu ay teslim" buna dayanır)
     const patch = { status: next };
-    if (next === "delivered" && !rec.delivery_date) patch.delivery_date = new Date().toISOString().slice(0, 10);
+    if (next === "delivered" && !rec.delivery_date) patch.delivery_date = todayISO();
     setItems((prev) => prev.map((x) => (x.id === rec.id ? { ...x, ...patch } : x))); // optimistic
     try {
       await servicesApi.update(rec.id, patch);
@@ -598,7 +598,8 @@ export default function Services({ go }) {
     const key = (x) => x.arrival_date || x.created_at || "";
     return items
       .filter((x) => {
-        if (statusF === "overdue") { if (dueBadge(x)?.label !== "Gecikmiş") return false; }
+        if (statusF === "today") { if (dueBadge(x)?.label !== "Bugün teslim") return false; }
+        else if (statusF === "overdue") { if (dueBadge(x)?.label !== "Gecikmiş") return false; }
         else if (statusF === "unpaid") { if (!(serviceNet(x) > 0 && serviceNet(x) - collectedTRY(x) > 0.5)) return false; }
         else if (statusF && (x.status || "received") !== statusF) return false;
         if (!s) return true;
@@ -622,6 +623,7 @@ export default function Services({ go }) {
     return c;
   }, [items]);
 
+  const todayCnt = useMemo(() => items.filter((x) => dueBadge(x)?.label === "Bugün teslim").length, [items]);
   const overdueCnt = useMemo(() => items.filter((x) => dueBadge(x)?.label === "Gecikmiş").length, [items]);
   const unpaidCnt = useMemo(() => items.filter((x) => serviceNet(x) > 0 && serviceNet(x) - collectedTRY(x) > 0.5).length, [items]);
   const openNew = () => { setFormInitial(null); setFormOpen(true); };
@@ -651,7 +653,7 @@ export default function Services({ go }) {
       />
       <SearchBar value={q} onChange={setQ} placeholder="Müşteri, plaka, araç, parça" />
       <div className="flex gap-2 overflow-x-auto px-4 pb-2" style={{ scrollbarWidth: "none" }}>
-        {[["", "Tümü", items.length], ["received", "Geldi", counts.received], ["in_progress", "İşlemde", counts.in_progress], ["delivered", "Teslim", counts.delivered], ["unpaid", "Ödenmemiş", unpaidCnt], ["overdue", "Gecikmiş", overdueCnt]].filter(([id, , n]) => !["unpaid", "overdue"].includes(id) || n > 0 || statusF === id).map(([id, label, n]) => {
+        {[["", "Tümü", items.length], ["received", "Geldi", counts.received], ["in_progress", "İşlemde", counts.in_progress], ["delivered", "Teslim", counts.delivered], ["unpaid", "Ödenmemiş", unpaidCnt], ["overdue", "Gecikmiş", overdueCnt], ["today", "Bugün", todayCnt]].filter(([id, , n]) => !["unpaid", "overdue", "today"].includes(id) || n > 0 || statusF === id).map(([id, label, n]) => {
           const on = statusF === id;
           return (
             <button key={id || "all"} onClick={() => setStatusF(id)} className={`m-press shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-semibold ${on ? "" : "m-fill"}`}

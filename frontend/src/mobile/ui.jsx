@@ -2,6 +2,12 @@
 import React, { useEffect, useRef, useState } from "react";
 import { ChevronLeft, Search, X, Loader2, WifiOff, RotateCw } from "lucide-react";
 
+// Yerel (cihaz saat dilimi) bugün YYYY-MM-DD — toISOString UTC'dir; TR'de 00:00-03:00 arası bir önceki günü verirdi
+export const todayISO = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+
 export const money = (n) =>
   (Number(n) || 0).toLocaleString("tr-TR", { maximumFractionDigits: 0 });
 

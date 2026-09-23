@@ -276,7 +276,7 @@ test("durum Teslim'e geçince teslim tarihi bugün", async () => {
   const api = require("../api");
   const p = api.__calls.svcUpdate.at(-1);
   expect(p.status).toBe("delivered");
-  expect(p.delivery_date).toBe(new Date().toISOString().slice(0, 10));
+  expect(p.delivery_date).toBe(require("../ui").todayISO());
 });
 
 test("sepet: liste fiyatı (alış gizli) + özel fiyat custom_price olarak gider", async () => {
@@ -435,7 +435,7 @@ test("servis detay: Teslim et → status + teslim tarihi", async () => {
   await click(row);
   await click(btnWith("Teslim et"));
   const api = require("../api");
-  expect(api.__calls.svcUpdate.at(-1)).toEqual({ status: "delivered", delivery_date: new Date().toISOString().slice(0, 10) });
+  expect(api.__calls.svcUpdate.at(-1)).toEqual({ status: "delivered", delivery_date: require("../ui").todayISO() });
   expect(btnWith("Teslim et")).toBeFalsy();
 });
 
@@ -478,4 +478,21 @@ test("yeni sözleşme: bilinen müşteri adı telefonu doldurur", async () => {
   if (!container.querySelector('input[placeholder="Müşteri adı"]')) await click(plus);
   await setVal(container.querySelector('input[placeholder="Müşteri adı"]'), "Mustafa Akçaoluk");
   expect(container.querySelector('input[placeholder="Telefon"]').value).toBe("0555 111 22 33");
+});
+
+test("servis Bugün filtresi", async () => {
+  const d = new Date(); const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  global.__SERVICE.delivery_date = require("../ui").todayISO();
+  await render(<Services />);
+  const chip = Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim().startsWith("Bugün"));
+  expect(chip).toBeTruthy();
+  await click(chip);
+  expect(text()).toContain("Test Müşteri");
+  void iso;
+});
+
+test("todayISO yerel tarih", () => {
+  const { todayISO } = require("../ui");
+  const d = new Date();
+  expect(todayISO()).toBe(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
 });
