@@ -470,12 +470,15 @@ export default function Services() {
   const cycleStatus = async (rec) => {
     const next = nextStatus(rec.status);
     setBusyId(rec.id);
-    setItems((prev) => prev.map((x) => (x.id === rec.id ? { ...x, status: next } : x))); // optimistic
+    // Teslim'e geçerken teslim tarihi boşsa bugün yazılır (Özet "bu ay teslim" buna dayanır)
+    const patch = { status: next };
+    if (next === "delivered" && !rec.delivery_date) patch.delivery_date = new Date().toISOString().slice(0, 10);
+    setItems((prev) => prev.map((x) => (x.id === rec.id ? { ...x, ...patch } : x))); // optimistic
     try {
-      await servicesApi.update(rec.id, { status: next });
+      await servicesApi.update(rec.id, patch);
       toast.success(STATUS[next].label);
     } catch {
-      setItems((prev) => prev.map((x) => (x.id === rec.id ? { ...x, status: rec.status } : x))); // geri al
+      setItems((prev) => prev.map((x) => (x.id === rec.id ? { ...x, status: rec.status, delivery_date: rec.delivery_date } : x))); // geri al
       toast.error("Durum güncellenemedi");
     } finally {
       setBusyId(null);

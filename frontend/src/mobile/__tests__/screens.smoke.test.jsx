@@ -267,3 +267,13 @@ test("servis Ödenmemiş filtresi", async () => {
   expect(text()).toContain("Test Müşteri"); // net 70.000, tahsilat yok
   global.__SERVICE.collections = [{ id: "c", amount: 70000, currency: "TRY" }];
 });
+
+test("durum Teslim'e geçince teslim tarihi bugün", async () => {
+  await render(<Services />);
+  const pill = Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim() === "İşlemde");
+  await click(pill);
+  const api = require("../api");
+  const p = api.__calls.svcUpdate.at(-1);
+  expect(p.status).toBe("delivered");
+  expect(p.delivery_date).toBe(new Date().toISOString().slice(0, 10));
+});
