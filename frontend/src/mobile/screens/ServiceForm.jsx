@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Camera, Plus, Trash2, Loader2, X } from "lucide-react";
+import { Camera, Plus, Trash2, Loader2, X, Eye, EyeOff } from "lucide-react";
 import { services as servicesApi } from "../api";
 import { cache } from "../cache";
 import { Sheet, money } from "../ui";
@@ -67,10 +67,13 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
     items: (initial?.items || []).map((it) => ({ ...it })),
     photos: [...(initial?.photos || [])],
     notes: initial?.notes || "",
+    discount_amount: Number(initial?.discount_amount) > 0 ? String(initial.discount_amount) : "",
   });
+  const [showProfit, setShowProfit] = useState(() => cache.get("svc_profit") === true);
+  useEffect(() => { cache.set("svc_profit", showProfit); }, [showProfit]);
   const [f, setF] = useState(() => {
-    // Yeni kayıt için taslak varsa geri yükle (foto hariç — kota).
-    if (!editing) {
+    // Yeni kayıt için taslak varsa geri yükle (foto hariç — kota). Tekliften aktarımda taslak YOK.
+    if (!editing && !initial?.fromQuote) {
       const d = cache.get(DRAFT_KEY);
       if (d && typeof d === "object") return { ...defaults(), ...d, photos: [] };
     }
@@ -83,7 +86,7 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
 
   // Yeni kayıt taslağını kalıcı yap (foto hariç). Düzenlemede taslak tutulmaz.
   useEffect(() => {
-    if (!editing && open) {
+    if (!editing && open && !initial?.fromQuote) {
       const { photos, ...rest } = f;
       cache.set(DRAFT_KEY, rest);
     }
@@ -123,6 +126,15 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
     () => f.items.reduce((a, it) => a + costLineTRY(it), 0),
     [f.items, prodCost]
   );
+  // İndirim ₺ (servis indirimi tutar olarak saklanır; % bilgi amaçlı türetilir)
+  const discount = Math.min(total, Math.max(0, parseFloat(f.discount_amount) || 0));
+  const net = total - discount;
+  const discPct = total > 0 ? (discount / total) * 100 : 0;
+  const onDiscPct = (v) => {
+    const p = Math.min(100, Math.max(0, parseFloat(v) || 0));
+    set("discount_amount", p > 0 && total > 0 ? String(Math.round(total * p) / 100) : "");
+  };
+  const laborTotal = f.items.reduce((a, it) => a + (it.unit_cost !== "" && it.unit_cost != null && parseFloat(it.unit_cost) === 0 ? lineTRY(it, "unit_price") : 0), 0);
   const updItem = (i, k, v) => set("items", f.items.map((it, j) => (j === i ? { ...it, [k]: v } : it)));
   const delItem = (i) => set("items", f.items.filter((_, j) => j !== i));
 
@@ -144,8 +156,11 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
     if (!f.customer_name.trim()) { toast.error("Müşteri adı gerekli"); return; }
     setBusy(true);
     try {
+      const { fromQuote, ...rest } = f;
       const payload = {
-        ...f,
+        ...rest,
+        discount_amount: discount,
+        discount_percent: Math.round(discPct * 100) / 100,
         customer_name: f.customer_name.trim(),
         plate: f.is_trailer ? "" : f.plate,
         items: f.items
@@ -162,7 +177,7 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
       if (editing) await servicesApi.update(initial.id, payload);
       else await servicesApi.create(payload);
       toast.success(editing ? "Kayıt güncellendi" : "Servis kaydı oluşturuldu");
-      if (!editing) { cache.set(DRAFT_KEY, null); setF(defaults()); } // taslağı temizle
+      if (!editing && !initial?.fromQuote) { cache.set(DRAFT_KEY, null); setF(defaults()); } // taslağı temizle
       onSaved?.();
       onClose();
     } catch (e) {
@@ -230,14 +245,12 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
                 <option value="TRY">₺</option><option value="EUR">€</option><option value="USD">$</option>
               </select>
             </div>
-            <div className="mt-1 flex items-center gap-2">
-              <span className="text-[12px] text-slate-400">Maliyet</span>
-              <input type="number" min="0" inputMode="decimal" className="w-24 rounded-lg bg-slate-100 px-2 py-1 text-right text-[13px] m-tnum" value={it.unit_cost ?? ""} onChange={(e) => updItem(i, "unit_cost", e.target.value)} placeholder="geliş" />
-              {(() => {
-                const prof = lineTRY(it, "unit_price") - costLineTRY(it);
-                return prof > 0 ? <span className="m-tnum ml-auto text-[12px] font-semibold" style={{ color: "var(--m-primary-2)" }}>kâr ₺{money(prof)}</span> : null;
-              })()}
-            </div>
+            {showProfit && (
+              <div className="mt-1 flex items-center gap-2">
+                <span className="text-[12px] text-slate-400">Geliş</span>
+                <input type="number" min="0" inputMode="decimal" className="w-24 rounded-lg bg-slate-100 px-2 py-1 text-right text-[13px] m-tnum" value={it.unit_cost ?? ""} onChange={(e) => updItem(i, "unit_cost", e.target.value)} placeholder="birim" />
+              </div>
+            )}
             {it.currency && it.currency !== "TRY" && (
               <div className="mt-1 flex items-center gap-2">
                 <span className="text-[12px] text-slate-400">Kur (1 {it.currency === "USD" ? "$" : "€"} = ₺)</span>
@@ -251,20 +264,43 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
           <Plus className="h-4 w-4" /> Kalem Ekle
         </button>
         {total > 0 && (
-          <>
-            <div className="flex items-center justify-between border-t border-slate-100 px-4 py-2.5">
-              <span className="text-[13px] font-semibold text-slate-500">Toplam (satış)</span>
-              <span className="m-tnum text-[16px] font-extrabold" style={{ color: "var(--m-primary)" }}>₺{money(total)}</span>
+          <div className="space-y-1.5 border-t border-slate-100 px-4 py-2.5">
+            <div className="flex items-center justify-between text-[13px]">
+              <span className="text-slate-500">Ara toplam</span>
+              <span className="m-tnum font-semibold">₺{money(total)}</span>
             </div>
-            {total - costTotal > 0 && (
-              <div className="flex items-center justify-between px-4 pb-2.5">
-                <span className="text-[12px] font-semibold text-slate-400">Kâr (maliyet ₺{money(costTotal)})</span>
-                <span className="m-tnum text-[13px] font-bold" style={{ color: "var(--m-primary-2)" }}>
-                  ₺{money(total - costTotal)}{total > 0 ? ` · %${Math.round((total - costTotal) / total * 100)}` : ""}
-                </span>
+            <div className="flex items-center gap-2">
+              <span className="flex-1 text-[13px] text-slate-500">İskonto</span>
+              <div className="relative w-20">
+                <input key={`p-${Math.round(discPct * 100)}`} defaultValue={discount > 0 ? String(Math.round(discPct * 100) / 100) : ""} onBlur={(e) => onDiscPct(e.target.value)} onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()} inputMode="decimal" placeholder="%" className="w-full rounded-lg bg-slate-100 py-1 pl-2 pr-5 text-right text-[13px] m-tnum" />
+                <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[12px] text-slate-400">%</span>
+              </div>
+              <div className="relative w-28">
+                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[12px] text-slate-400">₺</span>
+                <input value={f.discount_amount} onChange={(e) => set("discount_amount", e.target.value)} inputMode="decimal" placeholder="0" className="w-full rounded-lg bg-slate-100 py-1 pl-5 pr-2 text-right text-[13px] m-tnum" />
+              </div>
+            </div>
+            <div className="flex items-center justify-between pt-1">
+              <div className="flex items-center gap-2">
+                <span className="text-[13px] font-semibold text-slate-500">Net toplam</span>
+                <button onClick={() => setShowProfit((v) => !v)} aria-label="Göster/Gizle" className="m-press flex h-5 w-5 items-center justify-center" style={{ opacity: showProfit ? 0.9 : 0.28 }}>
+                  {showProfit ? <EyeOff className="h-3.5 w-3.5" style={{ color: "var(--m-primary-2)" }} /> : <Eye className="h-3.5 w-3.5" style={{ color: "var(--m-ink-2)" }} />}
+                </button>
+              </div>
+              <span className="m-tnum text-[16px] font-extrabold" style={{ color: "var(--m-primary)" }}>₺{money(net)}</span>
+            </div>
+            {showProfit && (
+              <div className="mt-1 space-y-1 rounded-xl px-3 py-2 text-[12px]" style={{ background: "#f0f7f4" }}>
+                <div className="flex justify-between"><span className="text-slate-500">Geliş (maliyet) toplamı</span><span className="m-tnum">₺{money(costTotal)}</span></div>
+                {laborTotal > 0 && <div className="flex justify-between"><span className="text-slate-500">İşçilik (tamamı kâr)</span><span className="m-tnum">₺{money(laborTotal)}</span></div>}
+                {discount > 0 && <div className="flex justify-between"><span className="text-slate-500">İndirim (müşteriye)</span><span className="m-tnum" style={{ color: "#e11d48" }}>−₺{money(discount)}</span></div>}
+                <div className="flex justify-between text-[13px] font-bold" style={{ color: net - costTotal >= 0 ? "var(--m-primary-2)" : "#e11d48" }}>
+                  <span>Brüt kazanç</span>
+                  <span className="m-tnum">₺{money(net - costTotal)}{net > 0 ? ` · %${Math.round(((net - costTotal) / net) * 100)}` : ""}</span>
+                </div>
               </div>
             )}
-          </>
+          </div>
         )}
       </Group>
 

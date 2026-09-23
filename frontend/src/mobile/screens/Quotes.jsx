@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { FileText, User, Calendar, Share2, Trash2, Loader2, Pencil, Eye, EyeOff, Minus, Plus, Search, ListPlus } from "lucide-react";
+import { FileText, User, Calendar, Share2, Trash2, Loader2, Pencil, Eye, EyeOff, Minus, Plus, Search, ListPlus, Wrench } from "lucide-react";
+import ServiceForm from "./ServiceForm";
 import { toast } from "sonner";
 import { quotes as quotesApi, products as productsApi, docUrl, openDoc } from "../api";
 import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, RefreshScroll, OfflineBar } from "../ui";
@@ -219,6 +220,7 @@ function useCatalog(open) {
       const arr = (Array.isArray(data) ? data : data?.products || []).map((p) => ({
         id: p.id, name: p.name, currency: p.currency || "TRY",
         list_price: Number(p.list_price) || 0, list_price_try: Number(p.list_price_try) || 0,
+        discounted_price: Number(p.discounted_price) || 0,
       }));
       if (arr.length) { setCat(arr); cache.set("catalog_min", arr); }
     }).catch(() => {});
@@ -227,6 +229,39 @@ function useCatalog(open) {
 }
 
 const catRate = (p) => (p.currency === "TRY" ? 1 : (p.list_price > 0 ? p.list_price_try / p.list_price : 0));
+
+// Teklif → servis formu (masaüstü sendQuoteToService ile aynı kural):
+// kalemler liste (teklif anı TL) fiyatıyla, maliyet katalogdaki güncel geliş; işçilik ayrı kalem (maliyet 0);
+// indirim tek tutar: kalemler brüt − teklif net → servis net = teklif net.
+function quoteToServiceInit(q, byId) {
+  const items = (q.products || []).map((it) => {
+    const qty = qtyOf(it);
+    const unit = Math.round(lineSaleTRY(it) / qty);
+    const prod = byId.get(it.id);
+    let cost;
+    if (prod && !it.manual) {
+      const base = prod.discounted_price > 0 ? prod.discounted_price : prod.list_price;
+      cost = Math.round(base * catRate(prod));
+    } else {
+      cost = Math.round(lineCostTRY(it) / qty); // manuel geliş (0 dahil) / eski format snapshot
+    }
+    return { name: it.name || "Ürün", qty, unit_price: unit, unit_cost: cost, currency: "TRY" };
+  });
+  const labor = Number(q.labor_cost || 0);
+  if (labor > 0) items.push({ name: "İşçilik", qty: 1, unit_price: Math.round(labor), unit_cost: 0, currency: "TRY" });
+  const gross = items.reduce((a, it) => a + it.unit_price * it.qty, 0);
+  const net = Number(q.total_net_price);
+  const disc = Number.isFinite(net) && gross > net ? Math.round(gross - net) : 0;
+  return {
+    fromQuote: true,
+    key: `q-${q.id}-${Date.now()}`,
+    customer_name: q.customer_name || q.name || "",
+    items,
+    discount_amount: disc,
+    notes: `${q.notes ? `${q.notes}\n\n` : ""}[Teklif: ${q.name || ""}]`,
+    status: "received",
+  };
+}
 
 function QuoteItemsSheet({ q, open, onClose, onSaved, showCost }) {
   const catalog = useCatalog(open);
@@ -388,10 +423,13 @@ function QuoteItemsSheet({ q, open, onClose, onSaved, showCost }) {
   );
 }
 
-function Detail({ q, onClose, onDeleted, onSaved }) {
+function Detail({ q, onClose, onDeleted, onSaved, go }) {
   const [del, setDel] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [itemsOpen, setItemsOpen] = useState(false);
+  const [svcInit, setSvcInit] = useState(null);
+  const catalog = useCatalog(!!q);
+  const byId = useMemo(() => new Map(catalog.map((p) => [p.id, p])), [catalog]);
   const [showProfit, setShowProfit] = useState(() => cache.get("quote_profit") === true);
   useEffect(() => { cache.set("quote_profit", showProfit); }, [showProfit]);
   if (!q) return null;
@@ -415,6 +453,10 @@ function Detail({ q, onClose, onDeleted, onSaved }) {
       </div>
       <QuoteEditSheet q={q} open={editOpen} onClose={() => setEditOpen(false)} onSaved={onSaved} />
       <QuoteItemsSheet q={q} open={itemsOpen} onClose={() => setItemsOpen(false)} onSaved={onSaved} showCost={showProfit} />
+      {svcInit && (
+        <ServiceForm key={svcInit.key} open={!!svcInit} initial={svcInit} onClose={() => setSvcInit(null)}
+          onSaved={() => { onClose(); go?.("service"); }} />
+      )}
       <div className="rounded-2xl bg-white p-4">
         <div className="text-[19px] font-bold leading-snug">{q.name || "Teklif"}</div>
         <div className="mt-2 space-y-1 text-[13px]" style={{ color: "var(--m-ink-2)" }}>
@@ -464,6 +506,9 @@ function Detail({ q, onClose, onDeleted, onSaved }) {
           <div className="whitespace-pre-wrap text-[14px] leading-relaxed">{q.notes}</div>
         </div>
       )}
+      <button onClick={() => { setSvcInit(quoteToServiceInit(q, byId)); toast("Kalemleri kontrol edip kaydet"); }} className="m-press mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-white py-3 text-[14px] font-bold" style={{ color: "var(--m-primary-2)" }}>
+        <Wrench className="h-4 w-4" /> Servise aktar
+      </button>
       <button onClick={remove} disabled={del} className="m-press mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-white py-3 text-[14px] font-bold text-rose-500 disabled:opacity-60">
         {del ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Teklifi Sil
       </button>
@@ -471,7 +516,7 @@ function Detail({ q, onClose, onDeleted, onSaved }) {
   );
 }
 
-export default function Quotes() {
+export default function Quotes({ go }) {
   const [items, setItems] = useState(() => cache.get("quotes") || []);
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(() => !cache.get("quotes"));
@@ -519,6 +564,7 @@ export default function Quotes() {
       <Detail
         q={sel}
         onClose={() => setSel(null)}
+        go={go}
         onDeleted={() => { setSel(null); reload(); }}
         onSaved={(u) => { setSel((s) => (s ? { ...s, ...u } : s)); setItems((prev) => prev.map((x) => (x.id === u.id ? { ...x, ...u } : x))); }}
       />
