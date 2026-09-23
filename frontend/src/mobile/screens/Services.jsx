@@ -24,6 +24,16 @@ const dueBadge = (s) => {
   if (dd === today) return { label: "Bugün teslim", color: "amber" };
   return null;
 };
+// Garanti bitişi: teslim tarihi + garanti ayı (teslim yoksa null)
+export const warrantyEnd = (s) => {
+  const m = parseInt(s?.warranty_months, 10);
+  if (!s?.delivery_date || !(m > 0)) return null;
+  const d = new Date(String(s.delivery_date).slice(0, 10) + "T00:00:00");
+  if (isNaN(d)) return null;
+  const end = new Date(d.getFullYear(), d.getMonth() + m, d.getDate());
+  const endISO = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, "0")}-${String(end.getDate()).padStart(2, "0")}`;
+  return { end: endISO, active: endISO >= todayISO() };
+};
 // Teslim edilmemiş araç kaç gündür serviste (geliş tarihinden bugüne; 0 → null)
 export const daysIn = (s) => {
   if (!s || s.status === "delivered" || !s.arrival_date) return null;
@@ -492,6 +502,16 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuo
             <div className="mt-3 rounded-2xl bg-white p-4">
               <div className="mb-1 text-[12px] font-bold uppercase tracking-wide text-slate-400">Garanti</div>
               <div className="text-[14px]">{s.warranty_months != null ? s.warranty_months + ' ay' : ''}{s.warranty_months != null && s.warranty_note ? ' · ' : ''}{s.warranty_note || ''}</div>
+              {(() => {
+                const w = warrantyEnd(s);
+                if (!w) return null;
+                return (
+                  <div className="mt-1 flex items-center gap-2 text-[12px]">
+                    <span style={{ color: "var(--m-ink-2)" }}>{fmtDate(w.end)}'e kadar</span>
+                    <Pill color={w.active ? "green" : "slate"}>{w.active ? "devam ediyor" : "sona erdi"}</Pill>
+                  </div>
+                );
+              })()}
             </div>
           )}
           {s.notes && (

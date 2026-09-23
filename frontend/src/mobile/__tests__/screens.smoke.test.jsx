@@ -565,3 +565,11 @@ test("web geri iç içe: sadece üstteki sheet kapanır", async () => {
   expect(container.querySelector('input[placeholder="Tutar"]')).toBeNull();
   expect(text()).toContain("Servis Kaydı");
 });
+
+test("warrantyEnd: teslim + ay", () => {
+  const { warrantyEnd } = require("../screens/Services");
+  expect(warrantyEnd({ delivery_date: "2026-01-15", warranty_months: 12 })).toEqual({ end: "2027-01-15", active: true });
+  expect(warrantyEnd({ delivery_date: "2020-01-15", warranty_months: 6 })).toEqual({ end: "2020-07-15", active: false });
+  expect(warrantyEnd({ warranty_months: 6 })).toBeNull();
+  expect(warrantyEnd({ delivery_date: "2026-01-15" })).toBeNull();
+});
