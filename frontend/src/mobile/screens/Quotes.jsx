@@ -3,7 +3,7 @@ import { FileText, User, Calendar, Share2, Trash2, Loader2, Pencil, Eye, EyeOff,
 import ServiceForm from "./ServiceForm";
 import CustomerSheet from "../CustomerSheet";
 import { useCatalog, catRate } from "../catalog";
-import { toast } from "sonner";
+import { toast } from "../toast";
 import { quotes as quotesApi, docUrl, openDoc } from "../api";
 import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, RefreshScroll, OfflineBar, waNumber, fmtDate } from "../ui";
 import { cache, customerNames, phoneForCustomer } from "../cache";

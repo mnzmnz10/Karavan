@@ -38,7 +38,7 @@ function TabBar({ active, onChange }) {
               style={{ color: on ? "var(--m-primary)" : "#8a94a0" }}
             >
               <Icon className="h-6 w-6" strokeWidth={on ? 2.5 : 2} />
-              <span className="text-[10.5px] font-semibold tracking-tight">{t.label}</span>
+              <span className="text-[11px] font-semibold tracking-tight">{t.label}</span>
             </button>
           );
         })}

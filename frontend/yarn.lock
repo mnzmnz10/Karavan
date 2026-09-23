@@ -1155,6 +1155,11 @@
   dependencies:
     "@capacitor/synapse" "^1.0.4"
 
+"@capacitor/haptics@^8":
+  version "8.0.2"
+  resolved "https://registry.yarnpkg.com/@capacitor/haptics/-/haptics-8.0.2.tgz#821d2687b81ff8855327273314d0d146476f069f"
+  integrity sha512-c2hZzRR5Fk1tbTvhG1jhh2XBAf3EhnIerMIb2sl7Mt41Gxx1fhBJFDa0/BI1IbY4loVepyyuqNC9820/GZuoWQ==
+
 "@capacitor/ios@^8.5.0":
   version "8.5.0"
   resolved "https://registry.yarnpkg.com/@capacitor/ios/-/ios-8.5.0.tgz#d21c99b50119e586ca08b25e7630396db6fcf91f"

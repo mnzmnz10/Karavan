@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "./toast";
 import { ShoppingCart, Minus, Plus, Trash2, Loader2, Package, Eye, EyeOff, X } from "lucide-react";
 import { quotes as quotesApi } from "./api";
 import { cache, customerNames } from "./cache";
@@ -36,7 +36,7 @@ export function CartProvider({ children }) {
       n.set(product.id, { product, qty: (cur?.qty || 0) + qty, price: cur?.price ?? null });
       return n;
     });
-    toast.success("Teklife eklendi", { duration: 1200 });
+    toast.success("Teklife eklendi", { duration: 1200, haptic: "light" });
   };
   const setQty = (id, qty) => setItems((prev) => {
     const n = new Map(prev);

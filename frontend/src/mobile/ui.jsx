@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { cache } from "./cache";
 import { ChevronLeft, Search, X, Loader2, WifiOff, RotateCw, Copy, Check } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "./toast";
 
 // Yerel (cihaz saat dilimi) bugün YYYY-MM-DD — toISOString UTC'dir; TR'de 00:00-03:00 arası bir önceki günü verirdi
 export const todayISO = () => {
@@ -248,7 +248,7 @@ export function Lightbox({ src, onClose }) {
   return (
     <div className="m-backdrop-enter fixed inset-0 z-[60] flex items-center justify-center bg-black" onClick={onClose}>
       <img src={src} alt="" className="max-h-[92dvh] max-w-full object-contain" />
-      <button onClick={onClose} className="absolute right-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white" style={{ top: "calc(env(safe-area-inset-top) + 12px)" }}>
+      <button onClick={onClose} aria-label="Kapat" className="absolute right-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white" style={{ top: "calc(env(safe-area-inset-top) + 12px)" }}>
         <X className="h-5 w-5" />
       </button>
     </div>

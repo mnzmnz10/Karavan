@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { toast } from "sonner";
+import { toast } from "../toast";
 import { Loader2, Eye, EyeOff } from "lucide-react";
 import { auth } from "../api";
 import { cache } from "../cache";

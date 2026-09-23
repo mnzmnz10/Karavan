@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Package, Boxes, Plus, Minus, User, LogOut, Loader2, Eye, EyeOff, Star, MessageCircle } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "../toast";
 import { products as productsApi, categories as categoriesApi } from "../api";
 import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, RefreshScroll, Lightbox, OfflineBar } from "../ui";
 import { cache } from "../cache";
@@ -158,7 +158,7 @@ function Row({ p, onOpen, onAdd, onDec, qty, showDisc }) {
         >
           <Plus className="h-5 w-5" strokeWidth={2.6} />
           {qty > 0 && (
-            <span className="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[10px] font-extrabold text-white" style={{ background: "var(--m-primary-2)" }}>{qty}</span>
+            <span className="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[11px] font-extrabold text-white" style={{ background: "var(--m-primary-2)" }}>{qty}</span>
           )}
         </button>
       </div>

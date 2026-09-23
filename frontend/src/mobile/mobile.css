@@ -131,3 +131,16 @@
 #mobile-root.theme-dark .text-blue-700 { color: #7cb0ff; }
 #mobile-root.theme-dark .bg-rose-50 { background: rgba(244,63,94,.18); }
 #mobile-root.theme-dark .text-rose-700 { color: #ff8093; }
+
+/* iOS HIG: küçük ikon butonlarında görünmez 44px dokunma alanı (görünüm aynı) */
+#mobile-root button.h-6.w-6:not(.absolute):not(.fixed),
+#mobile-root button.h-7.w-7:not(.absolute):not(.fixed),
+#mobile-root button.h-8.w-8:not(.absolute):not(.fixed),
+#mobile-root button.h-9.w-9:not(.absolute):not(.fixed) { position: relative; }
+#mobile-root button.h-6.w-6::after { content: ""; position: absolute; inset: -10px; }
+#mobile-root button.h-7.w-7::after { content: ""; position: absolute; inset: -8px; }
+#mobile-root button.h-8.w-8::after { content: ""; position: absolute; inset: -6px; }
+#mobile-root button.h-9.w-9::after { content: ""; position: absolute; inset: -4px; }
+
+/* iOS HIG kontrast: açık temada ikincil gri yazı ≥4.5:1 (slate-500); koyu tema kuralı üstte daha özgül */
+#mobile-root .text-slate-400 { color: #64748b; }

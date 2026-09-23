@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { ScrollText, User, Share2, Loader2, CheckCircle2, Trash2, Plus, Pencil, X, Copy, Phone, MessageCircle } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "../toast";
 import http, { docUrl, openDoc } from "../api";
 import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, RefreshScroll, OfflineBar, todayISO, waNumber, fmtDate } from "../ui";
 import { cache, customerNames, phoneForCustomer } from "../cache";

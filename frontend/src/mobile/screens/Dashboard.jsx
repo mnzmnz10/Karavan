@@ -192,9 +192,9 @@ export default function Dashboard({ go }) {
                   <div className="mt-3 flex h-24 items-end gap-2">
                     {stats.months.map((mm) => (
                       <div key={`${mm.y}-${mm.m}`} className="flex flex-1 flex-col items-center gap-1">
-                        <div className="m-tnum text-[9px] text-slate-400">{mm.total > 0 ? `${Math.round(mm.total / 1000)}b` : ""}</div>
+                        <div className="m-tnum text-[11px] text-slate-400">{mm.total > 0 ? `${Math.round(mm.total / 1000)}b` : ""}</div>
                         <div className="w-full rounded-t-md" style={{ height: `${Math.max(2, (mm.total / max) * 64)}px`, background: "var(--m-primary)", opacity: mm.total > 0 ? 0.85 : 0.15 }} />
-                        <div className="text-[10px] text-slate-400">{mm.label}</div>
+                        <div className="text-[11px] text-slate-400">{mm.label}</div>
                       </div>
                     ))}
                   </div>

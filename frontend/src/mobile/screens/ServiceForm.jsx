@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "../toast";
 import { Camera, Plus, Trash2, Loader2, X, Eye, EyeOff, Search } from "lucide-react";
 import { useCatalog, catRate } from "../catalog";
 import { services as servicesApi } from "../api";
