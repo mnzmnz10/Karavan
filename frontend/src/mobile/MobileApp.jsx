@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { startOutbox } from "./outbox";
+import { startTextSize } from "./textsize";
 import { Toaster } from "sonner";
 import { Wrench, Package, FileText, ScrollText, Home, Loader2 } from "lucide-react";
 import "./mobile.css";
@@ -100,6 +101,8 @@ export default function MobileApp() {
       });
 
   useEffect(() => { refreshAuth(); }, []);
+  // iPhone Metin Boyutu (Dynamic Type) — giriş ekranı dahil tüm yazılara
+  useEffect(() => { startTextSize(); }, []);
   // Çevrimdışı kuyruk: oturum açıkken bekleyen servis kayıtlarını gönder (bağlantı/öne gelme/30 sn)
   useEffect(() => { if (authed) startOutbox(); }, [authed]);
 
