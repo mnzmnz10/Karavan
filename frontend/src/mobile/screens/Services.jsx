@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Wrench, Car, Phone, MessageCircle, Image as ImageIcon, Loader2, Plus, Pencil, Share2, Trash2, Eye, EyeOff, Wallet, X, FileText, Camera } from "lucide-react";
 import { toast } from "../toast";
 import { services as servicesApi, rates as ratesApi, docUrl, openDoc } from "../api";
+import { applyPending, onOutbox, pendingCount } from "../outbox";
 import { useCatalog, catRate } from "../catalog";
 import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, Lightbox, RefreshScroll, OfflineBar, todayISO, waNumber, fmtDate, CopyBtn } from "../ui";
 import { cache } from "../cache";
@@ -93,6 +94,7 @@ function Row({ s, onOpen, onCycle, busy }) {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <div className="truncate text-[15px] font-semibold leading-tight">{s.customer_name || "İsimsiz"}</div>
+            {s._pending && <span className="shrink-0"><Pill color="amber">Gönderilmedi</Pill></span>}
             <button
               onClick={(e) => { e.stopPropagation(); if (!busy) onCycle(s); }}
               className="m-press ml-auto shrink-0"
@@ -270,10 +272,10 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuo
       // Eski avans listeye taşındı (baseCollections) → advance_amount sıfırlanır, çift sayım/geri gelme yok
       const patch = { collections: list };
       if (parseFloat(s.advance_amount) > 0) patch.advance_amount = 0;
-      await servicesApi.update(s.id, patch);
-      setS((prev) => ({ ...prev, ...patch }));
+      const r = await servicesApi.update(s.id, patch);
+      setS((prev) => ({ ...prev, ...patch, ...(r?._pending ? { _pending: true } : {}) }));
       onChanged?.();
-      toast.success(okMsg);
+      if (!r?._pending) toast.success(okMsg);
       return true;
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Kaydedilemedi");
@@ -591,10 +593,13 @@ export default function Services({ go }) {
       setItems(data); cache.set("services", data); setOffline(false);
     } catch {
       const c = cache.get("services");
-      if (c) { setItems(c); setOffline(true); } else { setItems([]); setErr(true); }
+      if (c) { setItems(applyPending("svc", c)); setOffline(true); } else { setItems([]); setErr(true); }
     } finally { setLoading(false); }
   };
   useEffect(() => { reload(); }, []);
+  // Giden kutusu değişince (kuyruğa eklendi / gönderildi) listeyi tazele
+  const [pending, setPending] = useState(() => pendingCount());
+  useEffect(() => onOutbox((e) => { setPending(e.detail?.count ?? pendingCount()); reload(); }), []);
 
   const cycleStatus = async (rec) => {
     const next = nextStatus(rec.status);
@@ -672,7 +677,7 @@ export default function Services({ go }) {
     <div className="flex h-full flex-col">
       <Header
         title="Servis"
-        subtitle={loading ? "Yükleniyor…" : `${items.length} kayıt`}
+        subtitle={loading ? "Yükleniyor…" : `${items.length} kayıt${pending ? ` · ${pending} gönderilmedi` : ""}`}
         right={
           <button onClick={openNew} aria-label="Yeni servis" className="m-press flex h-9 w-9 items-center justify-center rounded-full" style={{ background: "var(--m-primary)" }}>
             <Plus className="h-5 w-5 text-white" strokeWidth={2.6} />

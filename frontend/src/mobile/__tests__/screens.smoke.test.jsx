@@ -713,3 +713,11 @@ test("servis detayı: plaka + telefon kopyala butonları panoya yazar", async ()
   await click(container.querySelector('button[aria-label="Telefonu kopyala"]'));
   expect(copied).toEqual(["59 ABC 123", "0555 111 22 33"]);
 });
+
+test("çevrimdışı bekleyen servis: listede 'Gönderilmedi' rozeti + başlıkta sayı", async () => {
+  global.__SERVICE._pending = true;
+  localStorage.setItem("mz:outbox", JSON.stringify([{ op: "svc:update", id: "s1", payload: { status: "delivered" }, ts: 1 }]));
+  await render(<Services />);
+  expect(text()).toContain("Gönderilmedi");
+  expect(text()).toContain("1 gönderilmedi");
+});

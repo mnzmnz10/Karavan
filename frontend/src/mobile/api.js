@@ -1,6 +1,8 @@
 // Mobil API katmanı — masaüstü App.js'ten bağımsız, backend'e doğrudan.
 // Auth: web'de same-origin cookie, native'de CapacitorHttp cookie jar (httpOnly session_token).
 import axios from "axios";
+import { cache } from "./cache";
+import { registerRunner, enqueue, applyPending, applyPendingOne, pendingRecord, realId, isTmpId } from "./outbox";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "";
 export const API = `${BACKEND_URL}/api`;
@@ -54,12 +56,34 @@ export const quotes = {
   remove: (id) => http.delete(`/quotes/${id}`).then((r) => r.data),
 };
 
-export const services = {
-  list: () => http.get("/services").then((r) => r.data),
-  get: (id) => http.get(`/services/${id}`).then((r) => r.data),
+// Servis yazmaları çevrimdışı kuyruğa düşer (outbox.js); okumalar bekleyen değişiklikleri üstüne uygular
+const svcRaw = {
   create: (payload) => http.post("/services", payload).then((r) => r.data),
   update: (id, payload) => http.put(`/services/${id}`, payload).then((r) => r.data),
-  remove: (id) => http.delete(`/services/${id}`).then((r) => r.data),
+};
+registerRunner("svc:create", (_id, payload) => svcRaw.create(payload));
+registerRunner("svc:update", (id, payload) => svcRaw.update(id, payload));
+const offlineErr = (e) => e?.response?.status === 0;
+
+export const services = {
+  list: () => http.get("/services").then((r) => applyPending("svc", r.data)),
+  get: (id) => {
+    const rid = realId(id);
+    if (isTmpId(rid)) { const p = pendingRecord("svc", rid); return p ? Promise.resolve(p) : Promise.reject({ response: { status: 404, data: { detail: "Kayıt bulunamadı" } } }); }
+    return http.get(`/services/${rid}`).then((r) => applyPendingOne("svc", r.data)).catch((e) => {
+      // çevrimdışı: listedeki önbellek kaydı (fotoğrafsız) + bekleyen değişiklikler
+      const c = offlineErr(e) && (cache.get("services") || []).find((x) => x.id === rid);
+      if (c) return applyPendingOne("svc", c);
+      throw e;
+    });
+  },
+  create: (payload) => svcRaw.create(payload).catch((e) => { if (offlineErr(e)) return enqueue("svc:create", null, payload); throw e; }),
+  update: (id, payload) => {
+    const rid = realId(id);
+    if (isTmpId(rid)) return Promise.resolve().then(() => enqueue("svc:update", rid, payload)); // oluşturması hâlâ kuyrukta → birleşir
+    return svcRaw.update(rid, payload).catch((e) => { if (offlineErr(e)) return enqueue("svc:update", rid, payload); throw e; });
+  },
+  remove: (id) => http.delete(`/services/${realId(id)}`).then((r) => r.data),
 };
 
 // Belge (PDF/Excel) URL'leri. Native'de window.open -> mobileDownload köprüsü

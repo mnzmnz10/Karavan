@@ -257,9 +257,8 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
       };
       // Fotoğraflar değişmediyse gönderme: liste kaydından (photos alanı yok) açılan düzenleme mevcut fotoğrafları silmesin
       if (editing && (initial.photos === undefined || JSON.stringify(f.photos) === JSON.stringify(initial.photos || []))) delete payload.photos;
-      if (editing) await servicesApi.update(initial.id, payload);
-      else await servicesApi.create(payload);
-      toast.success(editing ? "Kayıt güncellendi" : "Servis kaydı oluşturuldu");
+      const r = editing ? await servicesApi.update(initial.id, payload) : await servicesApi.create(payload);
+      if (!r?._pending) toast.success(editing ? "Kayıt güncellendi" : "Servis kaydı oluşturuldu"); // kuyruktaysa outbox uyarısı gösterildi
       if (!editing && !initial?.fromQuote) { cache.set(DRAFT_KEY, null); setF(defaults()); } // taslağı temizle
       onSaved?.();
       onClose();

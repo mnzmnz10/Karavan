@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { startOutbox } from "./outbox";
 import { Toaster } from "sonner";
 import { Wrench, Package, FileText, ScrollText, Home, Loader2 } from "lucide-react";
 import "./mobile.css";
@@ -99,6 +100,8 @@ export default function MobileApp() {
       });
 
   useEffect(() => { refreshAuth(); }, []);
+  // Çevrimdışı kuyruk: oturum açıkken bekleyen servis kayıtlarını gönder (bağlantı/öne gelme/30 sn)
+  useEffect(() => { if (authed) startOutbox(); }, [authed]);
 
   const logout = async () => {
     try { await auth.logout(); } catch {}
