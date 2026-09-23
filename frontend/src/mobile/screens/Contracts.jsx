@@ -439,6 +439,7 @@ function CreateSheet({ open, onClose, onCreated }) {
 export default function Contracts() {
   const [items, setItems] = useState(() => cache.get("contracts") || []);
   const [q, setQ] = useState("");
+  const [stageF, setStageF] = useState(""); // "" | proposal | agreed
   const [loading, setLoading] = useState(() => !cache.get("contracts"));
   const [err, setErr] = useState(false);
   const [offline, setOffline] = useState(false);
@@ -478,9 +479,11 @@ export default function Contracts() {
 
   const filtered = useMemo(() => {
     const s = q.trim().toLocaleLowerCase("tr");
-    const base = !s ? items : items.filter((c) => [custName(c), c.title].filter(Boolean).some((v) => v.toLocaleLowerCase("tr").includes(s)));
+    const byStage = stageF ? items.filter((c) => (c.stage === "agreed" ? "agreed" : "proposal") === stageF) : items;
+    const base = !s ? byStage : byStage.filter((c) => [custName(c), c.title].filter(Boolean).some((v) => v.toLocaleLowerCase("tr").includes(s)));
     return [...base].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || ""))); // en yeni üstte
-  }, [items, q]);
+  }, [items, q, stageF]);
+  const agreedCnt = items.filter((c) => c.stage === "agreed").length;
 
   return (
     <div className="flex h-full flex-col">
@@ -494,6 +497,17 @@ export default function Contracts() {
         }
       />
       <SearchBar value={q} onChange={setQ} placeholder="Müşteri veya başlık" />
+      <div className="flex gap-2 overflow-x-auto px-4 pb-2" style={{ scrollbarWidth: "none" }}>
+        {[["", "Tümü", items.length], ["proposal", "Teklif", items.length - agreedCnt], ["agreed", "Anlaşıldı", agreedCnt]].map(([id, label, n]) => {
+          const on = stageF === id;
+          return (
+            <button key={id || "all"} onClick={() => setStageF(id)} className={`m-press shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-semibold ${on ? "" : "m-fill"}`}
+              style={on ? { background: "var(--m-primary)", color: "#fff" } : { background: "#e9e9ee", color: "var(--m-ink-2)" }}>
+              {label} {n > 0 && <span className="opacity-70">{n}</span>}
+            </button>
+          );
+        })}
+      </div>
       <OfflineBar show={offline} />
       <RefreshScroll onRefresh={reload} className="flex-1 pb-[calc(var(--m-tabbar-h)+env(safe-area-inset-bottom)+8px)]">
         {loading ? (

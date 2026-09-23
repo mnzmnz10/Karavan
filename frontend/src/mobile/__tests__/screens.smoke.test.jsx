@@ -252,3 +252,11 @@ test("servis formu: garanti/ödeme hesabı payload", async () => {
   expect(p.warranty_note).toBe("Akü 2 yıl");
   expect(p.payment_account).toBeNull();
 });
+
+test("sözleşme aşama filtresi", async () => {
+  await render(<Contracts />);
+  await click(btnWith("Anlaşıldı"));
+  expect(text()).not.toContain("IVECO Karavan");
+  await click(btnWith("Teklif"));
+  expect(text()).toContain("IVECO Karavan");
+});
