@@ -172,3 +172,14 @@ test("WhatsApp özeti: kalem+toplam var, maliyet yok", async () => {
   expect(msg).toContain("İşçilik");
   expect(msg).not.toMatch(/Maliyet|Kâr|810/);
 });
+
+test("daha önce aktarılmış teklif: rozet + onay", async () => {
+  localStorage.setItem("mz:services", JSON.stringify([{ id: "s1", customer_name: "Ali", notes: "x\n\n[Teklif: Test Teklif]" }]));
+  let asked = 0;
+  global.confirm = () => { asked++; return false; };
+  await openDetail();
+  expect(text()).toContain("Servise aktarıldı");
+  await click(btnWith("Servise aktar"));
+  expect(asked).toBe(1);
+  expect(text()).not.toContain("Yeni Servis");
+});

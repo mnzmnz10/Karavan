@@ -492,6 +492,13 @@ function Detail({ q, onClose, onDeleted, onSaved, onCopied, go }) {
   const catalog = useCatalog(!!q);
   const byId = useMemo(() => new Map(catalog.map((p) => [p.id, p])), [catalog]);
   const [copying, setCopying] = useState(false);
+  // Daha önce servise aktarıldı mı? (aktarım notuna "[Teklif: ad]" yazılır; önbellekteki servislerde ara)
+  const transferred = useMemo(() => {
+    if (!q?.name) return null;
+    const tag = `[Teklif: ${q.name}]`;
+    const svcs = cache.get("services") || cache.get("dashboard")?.services || [];
+    return svcs.find((x) => (x.notes || "").includes(tag)) || null;
+  }, [q]);
   const copy = async () => {
     if (copying || !q) return;
     setCopying(true);
@@ -542,6 +549,7 @@ function Detail({ q, onClose, onDeleted, onSaved, onCopied, go }) {
       )}
       <div className="rounded-2xl bg-white p-4">
         <div className="text-[19px] font-bold leading-snug">{q.name || "Teklif"}</div>
+        {transferred && <div className="mt-1"><Pill color="green">Servise aktarıldı</Pill></div>}
         <div className="mt-2 space-y-1 text-[13px]" style={{ color: "var(--m-ink-2)" }}>
           <div className="flex items-center gap-2"><User className="h-4 w-4" /> {q.customer_name || "—"}</div>
           <div className="flex items-center gap-2"><Calendar className="h-4 w-4" /> {fmtDate(q.created_at)}</div>
@@ -590,7 +598,10 @@ function Detail({ q, onClose, onDeleted, onSaved, onCopied, go }) {
         </div>
       )}
       <div className="mt-4 flex gap-2">
-        <button onClick={() => { setSvcInit(quoteToServiceInit(q, byId)); toast("Kalemleri kontrol edip kaydet"); }} className="m-press flex flex-1 items-center justify-center gap-2 rounded-2xl bg-white py-3 text-[14px] font-bold" style={{ color: "var(--m-primary-2)" }}>
+        <button onClick={() => {
+          if (transferred && !window.confirm(`Bu teklif daha önce servise aktarılmış (${transferred.customer_name || "kayıt"}). Yine de yeni servis açılsın mı?`)) return;
+          setSvcInit(quoteToServiceInit(q, byId)); toast("Kalemleri kontrol edip kaydet");
+        }} className="m-press flex flex-1 items-center justify-center gap-2 rounded-2xl bg-white py-3 text-[14px] font-bold" style={{ color: "var(--m-primary-2)" }}>
           <Wrench className="h-4 w-4" /> Servise aktar
         </button>
         <button onClick={copy} disabled={copying || catalog.length === 0} className="m-press flex flex-1 items-center justify-center gap-2 rounded-2xl bg-white py-3 text-[14px] font-bold disabled:opacity-60" style={{ color: "var(--m-ink-2)" }}>
