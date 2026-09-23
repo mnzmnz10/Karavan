@@ -133,7 +133,7 @@ function CartSheet({ open, onClose }) {
             name: m.name.trim(),
             price: parseFloat(m.price) || 0,
             quantity: Math.max(1, parseInt(m.qty) || 1),
-            cost: parseFloat(m.cost) > 0 ? parseFloat(m.cost) : undefined,
+            cost: m.cost === "" || m.cost == null ? undefined : (parseFloat(m.cost) || 0),
             currency: "TRY",
           })),
         ],
@@ -196,7 +196,7 @@ function CartSheet({ open, onClose }) {
                 <div className="mt-1 flex items-center gap-2">
                   <span className="text-[12px] text-slate-400">Geliş</span>
                   <input type="number" min="0" inputMode="decimal" value={m.cost} onChange={(e) => updManual(m.key, "cost", e.target.value)} placeholder="maliyet ₺" className="w-28 rounded-lg bg-slate-100 px-2 py-1 text-right text-[13px] m-tnum" />
-                  {parseFloat(m.cost) > 0 && prof !== 0 && (
+                  {m.cost !== "" && m.cost != null && prof !== 0 && (
                     <span className="m-tnum ml-auto text-[12px] font-semibold" style={{ color: prof >= 0 ? "var(--m-primary-2)" : "#e11d48" }}>kâr ₺{money(prof * (parseFloat(m.qty) || 1))}</span>
                   )}
                 </div>

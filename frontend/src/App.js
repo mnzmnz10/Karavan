@@ -4028,7 +4028,8 @@ function App() {
     const cur = manualItem.currency || 'TRY';
     const rate = cur === 'TRY' ? 1 : (parseFloat(exchangeRates[cur]) || (cur === 'USD' ? 34 : 37));
     const costNum = parseFloat(String(manualItem.cost).replace(',', '.'));
-    const hasCost = costNum > 0;
+    // 0 geçerli maliyettir (tam kâr). Sadece boş girilmemiş sayılır.
+    const hasCost = manualItem.cost !== '' && manualItem.cost != null && !isNaN(costNum) && costNum >= 0;
     const id = `manual-${Date.now()}`;
     const data = {
       id, name, brand: '', company_name: 'Elle Girilen', manual: true,
@@ -4048,9 +4049,10 @@ function App() {
       if (!cur) return prev;
       const next = { ...cur, ...patch };
       if ('discounted_price' in patch) {
-        const c = parseFloat(patch.discounted_price);
+        const raw = patch.discounted_price;
+        const c = parseFloat(raw);
         const rate = (cur.currency && cur.currency !== 'TRY') ? (parseFloat(exchangeRates[cur.currency]) || (cur.currency === 'USD' ? 34 : 37)) : 1;
-        const hasC = c > 0;
+        const hasC = raw !== '' && raw != null && !isNaN(c) && c >= 0; // 0 geçerli maliyet
         next.discounted_price = hasC ? c : null;
         next.discounted_price_try = (hasC ? c : (parseFloat(cur.list_price) || 0)) * rate;
       }
@@ -4125,7 +4127,7 @@ function App() {
               id: p.id,
               name: p.name,
               price: parseFloat(p.customPrice ?? p.list_price) || 0,
-              cost: (p.discounted_price !== null && p.discounted_price !== undefined && parseFloat(p.discounted_price) > 0) ? parseFloat(p.discounted_price) : undefined,
+              cost: (p.discounted_price !== null && p.discounted_price !== undefined && p.discounted_price !== '' && parseFloat(p.discounted_price) >= 0) ? parseFloat(p.discounted_price) : undefined,
               currency: p.currency || 'TRY',
               quantity: p.quantity || 1
             }
@@ -4313,7 +4315,7 @@ function App() {
               id: p.id,
               name: p.name,
               price: parseFloat(p.customPrice ?? p.list_price) || 0,
-              cost: (p.discounted_price !== null && p.discounted_price !== undefined && parseFloat(p.discounted_price) > 0) ? parseFloat(p.discounted_price) : undefined,
+              cost: (p.discounted_price !== null && p.discounted_price !== undefined && p.discounted_price !== '' && parseFloat(p.discounted_price) >= 0) ? parseFloat(p.discounted_price) : undefined,
               currency: p.currency || 'TRY',
               quantity: p.quantity || 1
             }

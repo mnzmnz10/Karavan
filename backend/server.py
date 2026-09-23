@@ -2584,7 +2584,8 @@ def _process_manual_quote_item(mi: dict, exchange_rates: dict):
         cost = float(cost_val) if cost_val not in (None, "") else None
     except (ValueError, TypeError):
         cost = None
-    has_cost = cost is not None and cost > 0
+    # 0 GEÇERLİ maliyettir (tam kâr). Sadece boş/None girilmemiş sayılır → satışa düşer.
+    has_cost = cost is not None and cost >= 0
     cost_try = (cost * rate) if has_cost else price_try
     entry = {
         "id": mi.get("id") or f"manual-{uuid.uuid4()}",
