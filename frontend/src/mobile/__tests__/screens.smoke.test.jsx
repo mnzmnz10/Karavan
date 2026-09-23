@@ -260,3 +260,10 @@ test("sözleşme aşama filtresi", async () => {
   await click(btnWith("Teklif"));
   expect(text()).toContain("IVECO Karavan");
 });
+
+test("servis Ödenmemiş filtresi", async () => {
+  await render(<Services />);
+  await click(btnWith("Ödenmemiş"));
+  expect(text()).toContain("Test Müşteri"); // net 70.000, tahsilat yok
+  global.__SERVICE.collections = [{ id: "c", amount: 70000, currency: "TRY" }];
+});

@@ -486,7 +486,8 @@ export default function Services() {
     const key = (x) => x.arrival_date || x.created_at || "";
     return items
       .filter((x) => {
-        if (statusF && (x.status || "received") !== statusF) return false;
+        if (statusF === "unpaid") { if (!(serviceNet(x) > 0 && serviceNet(x) - collectedTRY(x) > 0.5)) return false; }
+        else if (statusF && (x.status || "received") !== statusF) return false;
         if (!s) return true;
         return [x.customer_name, x.plate, x.vehicle_brand, x.vehicle_model, x.order_no, x.phone, x.operations, ...(x.items || []).map((it) => it.name)]
           .filter(Boolean).some((v) => String(v).toLocaleLowerCase("tr").includes(s));
@@ -500,6 +501,7 @@ export default function Services() {
     return c;
   }, [items]);
 
+  const unpaidCnt = useMemo(() => items.filter((x) => serviceNet(x) > 0 && serviceNet(x) - collectedTRY(x) > 0.5).length, [items]);
   const openNew = () => { setFormInitial(null); setFormOpen(true); };
   const openEdit = (rec) => { setSelId(null); setFormInitial(rec); setFormOpen(true); };
 
@@ -516,7 +518,7 @@ export default function Services() {
       />
       <SearchBar value={q} onChange={setQ} placeholder="Müşteri, plaka, araç, parça" />
       <div className="flex gap-2 overflow-x-auto px-4 pb-2" style={{ scrollbarWidth: "none" }}>
-        {[["", "Tümü", items.length], ["received", "Geldi", counts.received], ["in_progress", "İşlemde", counts.in_progress], ["delivered", "Teslim", counts.delivered]].map(([id, label, n]) => {
+        {[["", "Tümü", items.length], ["received", "Geldi", counts.received], ["in_progress", "İşlemde", counts.in_progress], ["delivered", "Teslim", counts.delivered], ["unpaid", "Ödenmemiş", unpaidCnt]].map(([id, label, n]) => {
           const on = statusF === id;
           return (
             <button key={id || "all"} onClick={() => setStatusF(id)} className={`m-press shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-semibold ${on ? "" : "m-fill"}`}
