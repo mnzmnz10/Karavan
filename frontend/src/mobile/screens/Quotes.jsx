@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { FileText, User, Calendar, Share2, Trash2, Loader2, Pencil } from "lucide-react";
+import { FileText, User, Calendar, Share2, Trash2, Loader2, Pencil, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { quotes as quotesApi, docUrl, openDoc } from "../api";
 import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, RefreshScroll, OfflineBar } from "../ui";
@@ -45,15 +45,42 @@ function Line({ label, value, strong, color }) {
   );
 }
 
-function ProfitBlock({ q }) {
-  const sub = Number(q.total_discounted_price || 0);
+const num = (x) => { const n = parseFloat(x); return Number.isFinite(n) ? n : null; };
+const qtyOf = (it) => num(it.quantity ?? it.qty) || 1;
+// Kalem satış tutarı (TRY): list_price_try = özel fiyat dahil birim satış
+const lineSaleTRY = (it) => num(it.total_price) ?? (num(it.list_price_try) ?? num(it.price) ?? 0) * qtyOf(it);
+
+// Kalem geliş (maliyet) TRY — kayıtlı total_cost_price eski güncellemelerde bayat kalabildiği için
+// kalem snapshot'ından canlı hesaplanır (masaüstü quoteItemCostUnit ile aynı kural).
+function lineCostTRY(it) {
+  const qty = qtyOf(it);
+  const cur = it.currency;
+  const dp = num(it.discounted_price);
+  if (!cur && dp == null) return (num(it.discounted_price_try) ?? num(it.list_price_try) ?? 0) * qty; // eski format: doğrudan TRY
+  const list = num(it.list_price) ?? 0;
+  const manual = it.manual || it.is_manual === true;
+  const unitCost = manual ? (dp ?? list) : (dp || list);
+  let rate = 1;
+  if (cur && cur !== "TRY") {
+    const unitSale = num(it.custom_price) ?? list;
+    rate = unitSale > 0 ? (num(it.list_price_try) ?? 0) / unitSale : 0;
+  }
+  return unitCost * rate * qty;
+}
+
+function ProfitBlock({ q, showProfit }) {
+  const net = Number(q.total_net_price || 0);
   const labor = Number(q.labor_cost || 0);
   const discPct = Number(q.discount_percentage || 0);
+  // Ara toplam net'ten türetilir → her zaman gösterilen Genel Toplam ile tutarlı
+  const sub = discPct < 100 ? (net - labor) / (1 - discPct / 100) : Number(q.total_discounted_price || 0);
   const discAmt = sub * (discPct / 100);
-  const cost = Number(q.total_cost_price || 0);
-  const profit = Number(q.gross_profit != null ? q.gross_profit : (Number(q.total_net_price || 0) - cost));
-  const margin = Number(q.margin_percent != null ? q.margin_percent : (Number(q.total_net_price) > 0 ? (profit / Number(q.total_net_price) * 100) : 0));
-  const hasCost = cost > 0;
+  const items = q.products || [];
+  const liveCost = items.reduce((s, it) => s + lineCostTRY(it), 0);
+  const cost = liveCost > 0 ? liveCost : Number(q.total_cost_price || 0);
+  const profit = net - cost;
+  const margin = net > 0 ? (profit / net) * 100 : 0;
+  const hasCost = showProfit && cost > 0;
   const hasBreakdown = discPct > 0 || labor > 0;
   if (!hasCost && !hasBreakdown) return null;
   const pos = profit >= 0;
@@ -83,27 +110,60 @@ function QuoteEditSheet({ q, open, onClose, onSaved }) {
   const [disc, setDisc] = useState("");
   const [labor, setLabor] = useState("");
   const [notes, setNotes] = useState("");
+  const [discTL, setDiscTL] = useState("");
+  const [targetNet, setTargetNet] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     if (open && q) {
       setName(q.name || "");
       setCustomer(q.customer_name || "");
-      setDisc(String(q.discount_percentage || "") === "0" ? "" : String(q.discount_percentage || ""));
+      const d0 = Number(q.discount_percentage || 0);
+      setDisc(d0 > 0 ? String(d0) : "");
+      setDiscTL(d0 > 0 ? String(Math.round(Number(q.total_discounted_price || 0) * d0 / 100)) : "");
+      setTargetNet("");
       setLabor(String(q.labor_cost || "") === "0" ? "" : String(q.labor_cost || ""));
       setNotes(q.notes || "");
     }
   }, [open, q]);
   if (!q) return null;
+  // Backend net'i bu tabandan hesaplar (PUT /quotes recompute) → önizleme birebir aynı
   const base = Number(q.total_discounted_price || 0);
   const discPct = Math.min(100, Math.max(0, parseFloat(disc) || 0));
   const laborTL = Math.max(0, parseFloat(labor) || 0);
   const net = base - base * (discPct / 100) + laborTL;
+  // İndirim çift yön (Cart ile aynı): % → ₺, ₺ → % (tam hassasiyet), hedef net → indirim
+  const onPct = (v) => {
+    setDisc(v); setTargetNet("");
+    const pct = Math.min(100, Math.max(0, parseFloat(v) || 0));
+    setDiscTL(pct > 0 && base > 0 ? String(Math.round(base * pct / 100)) : "");
+  };
+  const onTL = (v) => {
+    setDiscTL(v); setTargetNet("");
+    const tl = Math.max(0, parseFloat(v) || 0);
+    setDisc(tl > 0 && base > 0 ? String(Math.min(100, tl / base * 100)) : "");
+  };
+  const onTargetNet = (v) => {
+    setTargetNet(v);
+    const target = parseFloat(v);
+    if (isNaN(target)) return;
+    const discAmt = Math.max(0, Math.min(base, base + laborTL - target));
+    setDisc(base > 0 && discAmt > 0 ? String(discAmt / base * 100) : "");
+    setDiscTL(discAmt > 0 ? String(Math.round(discAmt * 100) / 100) : "");
+  };
 
   const save = async () => {
     if (!name.trim()) { toast.error("Teklif adı gerekli"); return; }
+    const patch = {};
+    if (name.trim() !== (q.name || "")) patch.name = name.trim();
+    if (customer.trim() !== (q.customer_name || "")) patch.customer_name = customer.trim();
+    if (notes.trim() !== (q.notes || "").trim()) patch.notes = notes.trim();
+    // İndirim/işçilik sadece değiştiyse → gereksiz net yeniden hesabı yok
+    if (Math.abs(discPct - Number(q.discount_percentage || 0)) > 1e-9) patch.discount_percentage = discPct;
+    if (Math.abs(laborTL - Number(q.labor_cost || 0)) > 1e-9) patch.labor_cost = laborTL;
+    if (Object.keys(patch).length === 0) { onClose(); return; }
     setBusy(true);
     try {
-      const updated = await quotesApi.update(q.id, { name: name.trim(), customer_name: customer.trim(), discount_percentage: discPct, labor_cost: laborTL, notes: notes.trim() });
+      const updated = await quotesApi.update(q.id, patch);
       toast.success("Teklif güncellendi");
       onSaved?.(updated);
       onClose();
@@ -121,13 +181,21 @@ function QuoteEditSheet({ q, open, onClose, onSaved }) {
         <input value={customer} onChange={(e) => setCustomer(e.target.value)} placeholder="Müşteri adı" className={field} />
         <div className="flex gap-2">
           <div className="relative flex-1">
-            <input value={disc} onChange={(e) => setDisc(e.target.value)} inputMode="decimal" placeholder="İskonto" className={`${field} pr-7`} />
+            <input value={disc} onChange={(e) => onPct(e.target.value)} inputMode="decimal" placeholder="İskonto" className={`${field} pr-7`} />
             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[14px] text-slate-400">%</span>
           </div>
           <div className="relative flex-1">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[14px] text-slate-400">₺</span>
-            <input value={labor} onChange={(e) => setLabor(e.target.value)} inputMode="decimal" placeholder="İşçilik" className={`${field} pl-7`} />
+            <input value={discTL} onChange={(e) => onTL(e.target.value)} inputMode="decimal" placeholder="İskonto ₺" className={`${field} pl-7`} />
           </div>
+        </div>
+        <div className="relative">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[14px] text-slate-400">₺</span>
+          <input value={labor} onChange={(e) => { setLabor(e.target.value); setTargetNet(""); }} inputMode="decimal" placeholder="İşçilik" className={`${field} pl-7`} />
+        </div>
+        <div className="relative">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] font-semibold text-emerald-700">Net ₺</span>
+          <input value={targetNet} onChange={(e) => onTargetNet(e.target.value)} inputMode="decimal" placeholder="Net toplamı ayarla (indirim otomatik)" className={`${field} pl-16`} style={{ background: "#ecfdf5" }} />
         </div>
         <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Not" rows={2} className={`${field} resize-none`} />
       </div>
@@ -145,6 +213,8 @@ function QuoteEditSheet({ q, open, onClose, onSaved }) {
 function Detail({ q, onClose, onDeleted, onSaved }) {
   const [del, setDel] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [showProfit, setShowProfit] = useState(() => cache.get("quote_profit") === true);
+  useEffect(() => { cache.set("quote_profit", showProfit); }, [showProfit]);
   if (!q) return null;
   const total = Number(q.total_net_price || q.total_discounted_price || q.total_list_price || 0);
   const remove = async () => {
@@ -178,10 +248,10 @@ function Detail({ q, onClose, onDeleted, onSaved }) {
           <div key={i} className="flex items-center justify-between gap-2 border-b border-slate-50 px-2 py-2.5 last:border-0">
             <div className="min-w-0">
               <div className="truncate text-[14px] font-medium">{it.name || it.product_name || "Ürün"}</div>
-              {(it.quantity || it.qty) > 1 && <div className="text-[12px] text-slate-400">× {it.quantity || it.qty}</div>}
+              {qtyOf(it) > 1 && <div className="m-tnum text-[12px] text-slate-400">{qtyOf(it)} × ₺{money(lineSaleTRY(it) / qtyOf(it))}</div>}
             </div>
             <div className="m-tnum shrink-0 text-[14px] font-semibold" style={{ color: "var(--m-ink)" }}>
-              ₺{money(it.total_price || it.net_price || it.list_price_try || it.price || 0)}
+              ₺{money(lineSaleTRY(it))}
             </div>
           </div>
         ))}
@@ -189,11 +259,21 @@ function Detail({ q, onClose, onDeleted, onSaved }) {
       </div>
 
       <div className="mt-3 flex items-center justify-between rounded-2xl bg-white px-4 py-3.5">
-        <span className="text-[14px] font-semibold" style={{ color: "var(--m-ink-2)" }}>Genel Toplam</span>
+        <div className="flex items-center gap-2">
+          <span className="text-[14px] font-semibold" style={{ color: "var(--m-ink-2)" }}>Genel Toplam</span>
+          <button
+            onClick={() => setShowProfit((v) => !v)}
+            aria-label="Göster/Gizle"
+            className="m-press flex h-5 w-5 items-center justify-center"
+            style={{ opacity: showProfit ? 0.9 : 0.28 }}
+          >
+            {showProfit ? <EyeOff className="h-3.5 w-3.5" style={{ color: "var(--m-primary-2)" }} /> : <Eye className="h-3.5 w-3.5" style={{ color: "var(--m-ink-2)" }} />}
+          </button>
+        </div>
         <span className="m-tnum text-[20px] font-extrabold" style={{ color: "var(--m-primary)" }}>₺{money(total)}</span>
       </div>
 
-      <ProfitBlock q={q} />
+      <ProfitBlock q={q} showProfit={showProfit} />
 
       {q.notes && (
         <div className="mt-3 rounded-2xl bg-white p-4">

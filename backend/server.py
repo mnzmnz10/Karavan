@@ -2796,7 +2796,7 @@ async def update_quote(quote_id: str, quote_update: Dict[str, Any]):
         update_data = {}
         
         # İşçilik maliyeti güncellenirse toplam hesapla
-        if "labor_cost" in quote_update:
+        if "labor_cost" in quote_update and abs(float(quote_update["labor_cost"] or 0) - float(existing_quote.get("labor_cost", 0) or 0)) > 1e-9:
             labor_cost = float(quote_update["labor_cost"])
             
             # Mevcut hesapları al
@@ -2918,7 +2918,16 @@ async def update_quote(quote_id: str, quote_update: Dict[str, Any]):
         
         # --- Net + kâr/marj tek noktadan yeniden hesapla (indirim/işçilik/ürün değişince) ---
         # Önceki dağınık hesapları geçersiz kılar; discount-only edit'te net'in bayat kalması bug'ını düzeltir.
-        if any(k in quote_update for k in ("discount_percentage", "labor_cost", "products")):
+        # Sadece değer GERÇEKTEN değişince: ad/not düzenlemesinde aynı indirim/işçilik tekrar gönderilse de
+        # eski formatlı tekliflerde (total_discounted_price = maliyet toplamı) net bozulmasın.
+        def _changed(key):
+            if key not in quote_update:
+                return False
+            try:
+                return abs(float(quote_update[key] or 0) - float(existing_quote.get(key, 0) or 0)) > 1e-9
+            except (TypeError, ValueError):
+                return True
+        if "products" in quote_update or _changed("discount_percentage") or _changed("labor_cost"):
             base = float(update_data.get("total_discounted_price", existing_quote.get("total_discounted_price", 0)) or 0)
             disc_pct = float(update_data.get("discount_percentage", existing_quote.get("discount_percentage", 0)) or 0)
             labor = float(update_data.get("labor_cost", existing_quote.get("labor_cost", 0)) or 0)
