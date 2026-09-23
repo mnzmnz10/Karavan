@@ -5,6 +5,7 @@ import http, { docUrl, openDoc } from "../api";
 import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, RefreshScroll, OfflineBar, todayISO, waNumber, fmtDate } from "../ui";
 import { cache, customerNames, phoneForCustomer } from "../cache";
 import { formatPhoneTR } from "./ServiceForm";
+import CustomerSheet from "../CustomerSheet";
 
 const contractsApi = {
   list: () => http.get("/contracts").then((r) => r.data),
@@ -57,7 +58,8 @@ function Row({ c, onOpen }) {
   );
 }
 
-function Detail({ c, onClose, onStage, staging, onDeleted, onEditItems, onCopy, onAddCollection, onDeleteCollection }) {
+function Detail({ c, onClose, onStage, staging, onDeleted, onEditItems, onCopy, onAddCollection, onDeleteCollection, go }) {
+  const [custOpen, setCustOpen] = useState(false);
   const [del, setDel] = useState(false);
   const [copying, setCopying] = useState(false);
   const copy = async () => {
@@ -109,7 +111,10 @@ function Detail({ c, onClose, onStage, staging, onDeleted, onEditItems, onCopy, 
 
       <div className="rounded-2xl bg-white p-4">
         <div className="flex items-center gap-2">
-          <div className="text-[19px] font-bold leading-snug">{custName(c) || "Sözleşme"}</div>
+          {custName(c)
+            ? <button onClick={() => setCustOpen(true)} className="m-press text-left text-[19px] font-bold leading-snug underline decoration-dotted decoration-slate-300 underline-offset-4">{custName(c)}</button>
+            : <div className="text-[19px] font-bold leading-snug">Sözleşme</div>}
+          <CustomerSheet name={custName(c)} open={custOpen} onClose={() => setCustOpen(false)} go={(t) => { onClose(); go?.(t); }} />
           <span className="ml-auto"><Pill color={st.color}>{st.label}</Pill></span>
         </div>
         {c.title && <div className="mt-1 text-[13px]" style={{ color: "var(--m-ink-2)" }}>{c.title}</div>}
@@ -465,7 +470,7 @@ function CreateSheet({ open, onClose, onCreated }) {
   );
 }
 
-export default function Contracts() {
+export default function Contracts({ go }) {
   const [items, setItems] = useState(() => cache.get("contracts") || []);
   const [q, setQ] = useState("");
   const [stageF, setStageF] = useState(""); // "" | proposal | agreed
@@ -560,6 +565,7 @@ export default function Contracts() {
         staging={staging}
         onDeleted={() => { setSel(null); reload(); }}
         onEditItems={(c) => setEditItems(c)}
+        go={go}
         onAddCollection={(c) => setCollFor(c)}
         onDeleteCollection={async (c, idx) => {
           try {
