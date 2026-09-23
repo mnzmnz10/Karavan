@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Wrench, FileText, ScrollText, Clock, CheckCircle2, TrendingUp, Eye, EyeOff } from "lucide-react";
 import http, { services as servicesApi, quotes as quotesApi } from "../api";
-import { Header, Card, SkeletonList, RefreshScroll, OfflineBar, money, todayISO } from "../ui";
+import { Header, Card, SkeletonList, RefreshScroll, OfflineBar, money, ago, todayISO } from "../ui";
 import { useSession } from "../session";
 import { cache } from "../cache";
 import { serviceNet, collectedTRY } from "./Services";
@@ -103,7 +103,7 @@ export default function Dashboard({ go }) {
 
   return (
     <div className="flex h-full flex-col">
-      <Header title="Özet" subtitle={`${greet}${s?.username ? ", " + s.username : ""}`} />
+      <Header title="Özet" subtitle={`${greet}${s?.username ? ", " + s.username : ""}${data?.at ? " · güncellendi " + ago(data.at) : ""}`} />
       <OfflineBar show={offline} cacheKey="dashboard" />
       <RefreshScroll onRefresh={load} className="flex-1 pb-[calc(var(--m-tabbar-h)+env(safe-area-inset-bottom)+8px)]">
         {loading ? (
