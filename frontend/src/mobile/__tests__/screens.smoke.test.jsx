@@ -701,3 +701,20 @@ test("tahsilat: 'Kalanın tamamı' tutarı doldurur (₺ ve €/kur), açıklama
   await click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim() === "Nakit"));
   expect(container.querySelector('input[placeholder^="Açıklama"]').value).toBe("Nakit");
 });
+
+test("Özet garanti kartı: 30 gün içinde biten garanti listelenir, uzağı listelenmez", async () => {
+  const iso = (offDays, offMonths = 0) => { const d = new Date(); d.setMonth(d.getMonth() + offMonths); d.setDate(d.getDate() + offDays); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  Object.assign(global.__SERVICE, { status: "delivered", warranty_months: 12, delivery_date: iso(10, -12) });
+  let went = null;
+  await render(<Dashboard go={(t) => { went = t; }} />);
+  expect(text()).toContain("Garantisi Bitiyor");
+  expect(text()).toMatch(/\d+ gün kaldı/);
+  await click(Array.from(container.querySelectorAll("div")).find((d) => /gün kaldı/.test(d.textContent) && d.className.includes("gap-3")));
+  expect(went).toBe("service");
+  act(() => root.unmount());
+  root = createRoot(container);
+  localStorage.clear();
+  global.__SERVICE.delivery_date = iso(0, -6);
+  await render(<Dashboard go={() => {}} />);
+  expect(text()).not.toContain("Garantisi Bitiyor");
+});
