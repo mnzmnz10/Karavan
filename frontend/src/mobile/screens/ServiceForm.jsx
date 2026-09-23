@@ -369,7 +369,7 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
               <span className="m-tnum text-[16px] font-extrabold" style={{ color: "var(--m-primary)" }}>₺{money(net)}</span>
             </div>
             {showProfit && (
-              <div className="mt-1 space-y-1 rounded-xl px-3 py-2 text-[12px]" style={{ background: "#f0f7f4" }}>
+              <div className="mt-1 space-y-1 rounded-xl bg-emerald-50 px-3 py-2 text-[12px]">
                 <div className="flex justify-between"><span className="text-slate-500">Geliş (maliyet) toplamı</span><span className="m-tnum">₺{money(costTotal)}</span></div>
                 {laborTotal > 0 && <div className="flex justify-between"><span className="text-slate-500">İşçilik (tamamı kâr)</span><span className="m-tnum">₺{money(laborTotal)}</span></div>}
                 {discount > 0 && <div className="flex justify-between"><span className="text-slate-500">İndirim (müşteriye)</span><span className="m-tnum" style={{ color: "#e11d48" }}>−₺{money(discount)}</span></div>}
