@@ -421,3 +421,10 @@ test("dashboard: son 6 ay ciro grafiği", async () => {
   expect(text()).toContain("Son 6 ay teslim cirosu");
   expect(text()).toContain("70b"); // net 70.000
 });
+
+test("servis detay: adetli kalemde birim fiyat", async () => {
+  await render(<Services />);
+  const row = Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
+  await click(row);
+  expect(text()).toContain(`2 × ₺${money(13866)}`);
+});
