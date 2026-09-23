@@ -795,6 +795,7 @@ function App() {
   const [showQuickCustomerModal, setShowQuickCustomerModal] = useState(false); // Hızlı müşteri ekleme modal'ı
   const [loadedQuote, setLoadedQuote] = useState(null); // Yüklenen teklif bilgisi
   const [showDiscountedPrices, setShowDiscountedPrices] = useState(false); // İndirimli fiyat görünürlüğü - Varsayılan KAPALI
+  const [showServiceProfit, setShowServiceProfit] = useState(false); // Servis kâr/maliyet görünürlüğü - Varsayılan KAPALI (müşteriye açık değil)
   const [showQuoteDiscountedPrices, setShowQuoteDiscountedPrices] = useState(false); // Teklif indirimli fiyat görünürlüğü - Varsayılan KAPALI
   const [selectedProductsCustomPrices, setSelectedProductsCustomPrices] = useState(new Map()); // Map<productId, customPrice>
   const [quoteSubTab, setQuoteSubTab] = useState('create'); // Teklif alt sekmesi: 'create' veya 'list'
@@ -2363,12 +2364,23 @@ function App() {
     return line * r;
   };
   const serviceItemsTotal = (items) => (items || []).reduce((sum, it) => sum + serviceItemLineTRY(it), 0);
-  const addServiceItem = () => setServiceForm((f) => ({ ...f, items: [...(f.items || []), { name: '', qty: 1, unit_price: 0, currency: 'TRY', rate: '' }] }));
-  // Üründen servis kalemi ekle (isim + fiyat + para birimi ürün kartından gelir)
+  // Kâr analizi: kalem maliyeti (geliş). Maliyet boşsa satışa eşit sayılır (o kalemde kâr 0).
+  const serviceItemCostLineTRY = (it) => {
+    const hasCost = it.unit_cost !== '' && it.unit_cost != null && !isNaN(parseFloat(it.unit_cost));
+    if (!hasCost) return serviceItemLineTRY(it);
+    const q = parseFloat(it.qty) || 0;
+    const cur = it.currency || 'TRY';
+    const r = cur === 'TRY' ? 1 : (parseFloat(it.rate) || parseFloat(exchangeRates?.[cur]) || 0);
+    return (parseFloat(it.unit_cost) || 0) * q * r;
+  };
+  const serviceItemsCostTotal = (items) => (items || []).reduce((sum, it) => sum + serviceItemCostLineTRY(it), 0);
+  const addServiceItem = () => setServiceForm((f) => ({ ...f, items: [...(f.items || []), { name: '', qty: 1, unit_price: 0, unit_cost: '', currency: 'TRY', rate: '' }] }));
+  // Üründen servis kalemi ekle: SATIŞ = liste fiyatı, MALİYET = geliş (indirimli, yoksa liste). Kâr = satış − maliyet.
   const addServiceItemFromProduct = (p) => {
-    const price = (parseFloat(p.discounted_price) > 0 ? parseFloat(p.discounted_price) : parseFloat(p.list_price)) || 0;
+    const list = parseFloat(p.list_price) || 0;
+    const gelis = (parseFloat(p.discounted_price) > 0 ? parseFloat(p.discounted_price) : list) || 0;
     const currency = p.currency || 'TRY';
-    const item = { name: p.name, qty: 1, unit_price: price, currency, rate: '' };
+    const item = { name: p.name, qty: 1, unit_price: list, unit_cost: gelis, currency, rate: '' };
     if (currency !== 'TRY') {
       const live = parseFloat(exchangeRates?.[currency]);
       if (live > 0) item.rate = live.toFixed(2);
@@ -2507,7 +2519,7 @@ function App() {
       plate: svc.plate || '', is_trailer: !!svc.is_trailer,
       arrival_date: svc.arrival_date || '', delivery_date: svc.delivery_date || '',
       operations: svc.operations || '',
-      items: Array.isArray(svc.items) ? svc.items.map((it) => ({ name: it.name || '', qty: it.qty != null ? it.qty : 1, unit_price: it.unit_price != null ? it.unit_price : 0, currency: it.currency || 'TRY', rate: it.rate != null ? String(it.rate) : '' })) : [],
+      items: Array.isArray(svc.items) ? svc.items.map((it) => ({ name: it.name || '', qty: it.qty != null ? it.qty : 1, unit_price: it.unit_price != null ? it.unit_price : 0, unit_cost: it.unit_cost != null ? String(it.unit_cost) : '', currency: it.currency || 'TRY', rate: it.rate != null ? String(it.rate) : '' })) : [],
       photos: Array.isArray(svc.photos) ? svc.photos : [],
       notes: svc.notes || '',
       cost: svc.cost != null ? String(svc.cost) : '',
@@ -2538,7 +2550,8 @@ function App() {
           const live = parseFloat(exchangeRates?.[cur]);
           rate = live > 0 ? parseFloat(live.toFixed(4)) : null; // kur kayıt anında sabitlenir
         }
-        return { name: (it.name || '').trim(), qty: parseFloat(it.qty) || 0, unit_price: parseFloat(it.unit_price) || 0, currency: cur, rate };
+        const unit_cost = it.unit_cost !== '' && it.unit_cost != null ? parseFloat(it.unit_cost) : null;
+        return { name: (it.name || '').trim(), qty: parseFloat(it.qty) || 0, unit_price: parseFloat(it.unit_price) || 0, unit_cost: unit_cost != null && !isNaN(unit_cost) ? unit_cost : null, currency: cur, rate };
       });
     const itemsCost = serviceItemsTotal(cleanItems);
     const cleanCollections = (serviceForm.collections || [])
@@ -2647,10 +2660,13 @@ function App() {
       if (!unit || isNaN(unit)) unit = parseFloat(p.discounted_price_try);
       if (!unit || isNaN(unit)) unit = parseFloat(p.list_price) || 0; // manuel kalem (TL)
       unit = unit * (1 - disc / 100);
-      return { name: nm, qty, unit_price: Math.round(unit) };
+      // Maliyet = geliş (indirimli TL), yoksa liste TL; iskonto uygulanmaz (maliyet sabittir)
+      let cost = parseFloat(p.discounted_price_try);
+      if (!cost || isNaN(cost)) cost = parseFloat(p.list_price_try) || 0;
+      return { name: nm, qty, unit_price: Math.round(unit), unit_cost: cost > 0 ? Math.round(cost) : '' };
     });
-    // İşçilik ayrı kalem olarak (teklif toplamına dahildi)
-    if (labor > 0) quoteItems.push({ name: 'İşçilik', qty: 1, unit_price: Math.round(labor) });
+    // İşçilik ayrı kalem olarak (teklif toplamına dahildi) — maliyeti yok, tamamı kâr
+    if (labor > 0) quoteItems.push({ name: 'İşçilik', qty: 1, unit_price: Math.round(labor), unit_cost: 0 });
     const baseNote = quote?.notes ? `${quote.notes}\n\n` : '';
     setServiceEditingId(null);
     setServiceForm({
@@ -11158,6 +11174,11 @@ function App() {
                         <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-wider text-emerald-700">
                           <Package className="w-3.5 h-3.5" /> Yapılan İşlemler / Parçalar
                         </div>
+                        <button type="button" onClick={() => setShowServiceProfit((v) => !v)}
+                          title={showServiceProfit ? "Maliyet/kârı gizle" : "Maliyet/kâr göster (müşteriye kapalı)"}
+                          className={`flex items-center gap-1.5 h-8 px-2.5 rounded-lg border text-xs font-semibold transition-colors ${showServiceProfit ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
+                          {showServiceProfit ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />} Maliyet / Kâr
+                        </button>
                       </div>
 
                       {(serviceForm.items || []).length === 0 ? (
@@ -11169,7 +11190,9 @@ function App() {
                               <tr className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
                                 <th className="text-left font-bold px-3 py-2">Parça / İşlem</th>
                                 <th className="text-center font-bold px-2 py-2 w-16">Adet</th>
-                                <th className="text-right font-bold px-2 py-2 w-28">Birim (₺)</th>
+                                <th className="text-right font-bold px-2 py-2 w-28">Satış (₺)</th>
+                                {showServiceProfit && <th className="text-right font-bold px-2 py-2 w-24">Maliyet</th>}
+                                {showServiceProfit && <th className="text-right font-bold px-2 py-2 w-24">Kâr</th>}
                                 <th className="text-right font-bold px-3 py-2 w-28">Tutar (₺)</th>
                                 <th className="w-9"></th>
                               </tr>
@@ -11196,6 +11219,14 @@ function App() {
                                       )}
                                     </div>
                                   </td>
+                                  {showServiceProfit && (
+                                    <td className="px-1 py-1.5">
+                                      <input type="number" min="0" step="0.01" value={it.unit_cost ?? ''} onChange={(e) => updateServiceItem(idx, 'unit_cost', e.target.value)} placeholder="geliş" title="Birim maliyet (geliş)" className="w-full h-8 px-1 border border-slate-200 rounded text-sm text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                                    </td>
+                                  )}
+                                  {showServiceProfit && (
+                                    <td className="px-2 py-1.5 text-right font-semibold tabular-nums" style={{ color: (serviceItemLineTRY(it) - serviceItemCostLineTRY(it)) >= 0 ? '#059669' : '#e11d48' }}>₺ {formatPrice(serviceItemLineTRY(it) - serviceItemCostLineTRY(it))}</td>
+                                  )}
                                   <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-slate-700">₺ {formatPrice(serviceItemLineTRY(it))}</td>
                                   <td className="px-1 py-1.5 text-center">
                                     <button type="button" onClick={() => removeServiceItem(idx)} className="text-rose-400 hover:text-rose-600" title="Kalemi sil"><Trash2 className="w-4 h-4" /></button>
@@ -11325,6 +11356,9 @@ function App() {
                         const grossTotal = (serviceForm.items || []).length > 0 ? serviceItemsTotal(serviceForm.items) : (parseFloat(serviceForm.cost) || 0);
                         const discount = Math.min(parseFloat(serviceForm.discount_amount) || 0, grossTotal);
                         const total = grossTotal - discount;
+                        const costTotal = (serviceForm.items || []).length > 0 ? serviceItemsCostTotal(serviceForm.items) : 0;
+                        const svcProfit = total - costTotal;
+                        const svcMargin = total > 0 ? Math.round(svcProfit / total * 100) : 0;
                         const adv = parseFloat(serviceForm.advance_amount) || 0;
                         const collected = adv + serviceCollectedTRY(serviceForm.collections);
                         const remaining = total - collected;
@@ -11337,6 +11371,12 @@ function App() {
                               <span className="text-white/70">Toplam</span>
                               <span className="tabular-nums font-semibold">₺ {formatPrice(grossTotal)}</span>
                             </div>
+                            {showServiceProfit && (serviceForm.items || []).length > 0 && (
+                              <div className="flex items-center justify-between text-sm rounded-lg bg-white/10 px-2 py-1.5">
+                                <span className="text-emerald-200 font-semibold flex items-center gap-1.5"><TrendingUp className="w-3.5 h-3.5" /> Kâr (maliyet ₺{formatPrice(costTotal)})</span>
+                                <span className="tabular-nums font-extrabold text-emerald-200">₺ {formatPrice(svcProfit)} · %{svcMargin}</span>
+                              </div>
+                            )}
                             {/* İndirim: % veya ₺ — biri girilince diğeri otomatik hesaplanır */}
                             <div className="flex items-center justify-between text-sm gap-2">
                               <span className="font-bold text-rose-200 shrink-0">İndirim</span>
@@ -11567,6 +11607,17 @@ function App() {
                                 <div className="flex justify-between text-white/65"><span>Toplam</span><span className="tabular-nums font-semibold text-white">₺ {formatPrice(total)}</span></div>
                               )}
                               <div className="flex justify-between text-white/65"><span>Tahsil Edilen</span><span className="tabular-nums font-semibold text-emerald-300">₺ {formatPrice(collected)}</span></div>
+                              {showServiceProfit && (s.items || []).length > 0 && (() => {
+                                const cost = serviceItemsCostTotal(s.items);
+                                const prof = total - cost;
+                                const mg = total > 0 ? Math.round(prof / total * 100) : 0;
+                                return (
+                                  <div className="flex justify-between items-center rounded-lg bg-emerald-500/20 border border-emerald-300/40 px-2.5 py-1.5 -mx-1">
+                                    <span className="font-bold text-emerald-200">Kâr <span className="font-normal text-emerald-200/70">(mlyt ₺{formatPrice(cost)})</span></span>
+                                    <span className="tabular-nums font-black text-emerald-200">₺ {formatPrice(prof)} · %{mg}</span>
+                                  </div>
+                                );
+                              })()}
                             </div>
                             <div className="flex flex-col justify-center sm:items-end">
                               <div className="text-[11px] uppercase tracking-[0.2em] text-emerald-300 font-bold">Kalan Tutar</div>
@@ -11602,9 +11653,16 @@ function App() {
                 </h2>
                 <p className="text-sm text-slate-500">Tadilata/bakıma gelen araçlar, yapılan işlemler ve teslim durumu</p>
               </div>
-              <Button onClick={openNewServiceDialog} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl">
-                <Plus className="w-4 h-4 mr-2" /> Yeni Servis Kaydı
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" onClick={() => setShowServiceProfit((v) => !v)}
+                  title={showServiceProfit ? "Maliyet/kârı gizle (müşteriye açık görünüm)" : "Maliyet/kâr göster"}
+                  className={`rounded-xl font-bold ${showServiceProfit ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-600'}`}>
+                  {showServiceProfit ? <EyeOff className="w-4 h-4 mr-2" /> : <Eye className="w-4 h-4 mr-2" />} Kâr
+                </Button>
+                <Button onClick={openNewServiceDialog} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl">
+                  <Plus className="w-4 h-4 mr-2" /> Yeni Servis Kaydı
+                </Button>
+              </div>
             </div>
 
             {/* Durum filtresi (segmented — sözleşmeler gibi) */}
@@ -11671,6 +11729,9 @@ function App() {
                     const collected = serviceCollectedTotalTRY(s);
                     const remaining = Math.max(total - collected, 0);
                     const pct = total > 0 ? Math.max(0, Math.min(100, Math.round(collected / total * 100))) : 0;
+                    const cardCost = (s.items || []).length > 0 ? serviceItemsCostTotal(s.items) : 0;
+                    const cardProfit = total - cardCost;
+                    const cardMargin = total > 0 ? Math.round(cardProfit / total * 100) : 0;
                     const payStatus = total <= 0 ? null : (collected - total > 0.01 ? { t: 'FAZLA ÖDEME', c: 'bg-violet-500 text-white' } : (remaining <= 0.01 ? { t: 'TAMAMLANDI', c: 'bg-emerald-500 text-white' } : (collected > 0.01 ? { t: `ÖDEME %${pct}`, c: 'bg-amber-500 text-white' } : { t: 'ÖDENMEDİ', c: 'bg-rose-500 text-white' })));
                     return (
                       <div key={s.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow p-5 flex flex-col gap-3">
@@ -11731,6 +11792,9 @@ function App() {
                             <div className="flex items-center justify-between"><span className="text-slate-500">Toplam</span><span className="font-bold text-slate-700 tabular-nums">₺ {formatPrice(total)}</span></div>
                             {collected > 0 && <div className="flex items-center justify-between"><span className="text-slate-500">Tahsil Edilen</span><span className="font-semibold text-slate-600 tabular-nums">₺ {formatPrice(collected)}</span></div>}
                             <div className="flex items-center justify-between"><span className="text-slate-500">Kalan</span><span className="font-black text-emerald-700 tabular-nums">₺ {formatPrice(remaining)}</span></div>
+                            {showServiceProfit && (s.items || []).length > 0 && (
+                              <div className="flex items-center justify-between border-t border-slate-200 pt-1 mt-1"><span className="text-slate-500">Kâr</span><span className="font-black tabular-nums" style={{ color: cardProfit >= 0 ? '#059669' : '#e11d48' }}>₺ {formatPrice(cardProfit)} · %{cardMargin}</span></div>
+                            )}
                           </div>
                         )}
 

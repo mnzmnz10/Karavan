@@ -101,7 +101,18 @@ export default function ServiceForm({ open, initial, onClose, onSaved }) {
     [f.items]
   );
 
-  const addItem = () => set("items", [...f.items, { name: "", qty: 1, unit_price: "", currency: "TRY" }]);
+  const addItem = () => set("items", [...f.items, { name: "", qty: 1, unit_price: "", unit_cost: "", currency: "TRY" }]);
+  // Kâr = satış − maliyet (kalem maliyeti boşsa o kalemde kâr 0 sayılır)
+  const lineTRY = (it, field) => {
+    const q = parseFloat(it.qty) || 1;
+    const v = parseFloat(it[field]) || 0;
+    const rate = it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || 1) : 1;
+    return v * q * rate;
+  };
+  const costTotal = useMemo(
+    () => f.items.reduce((a, it) => a + (it.unit_cost === "" || it.unit_cost == null ? lineTRY(it, "unit_price") : lineTRY(it, "unit_cost")), 0),
+    [f.items]
+  );
   const updItem = (i, k, v) => set("items", f.items.map((it, j) => (j === i ? { ...it, [k]: v } : it)));
   const delItem = (i) => set("items", f.items.filter((_, j) => j !== i));
 
@@ -133,6 +144,7 @@ export default function ServiceForm({ open, initial, onClose, onSaved }) {
             name: (it.name || "").trim(),
             qty: parseFloat(it.qty) || 1,
             unit_price: parseFloat(it.unit_price) || 0,
+            unit_cost: it.unit_cost === "" || it.unit_cost == null ? null : (parseFloat(it.unit_cost) || 0),
             currency: it.currency || "TRY",
             rate: it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || null) : null,
           })),
@@ -203,10 +215,18 @@ export default function ServiceForm({ open, initial, onClose, onSaved }) {
             </div>
             <div className="mt-1 flex items-center gap-2">
               <input type="number" min="0" className="w-12 rounded-lg bg-slate-100 px-2 py-1 text-center text-[13px] m-tnum" value={it.qty} onChange={(e) => updItem(i, "qty", e.target.value)} placeholder="Adet" />
-              <input type="number" min="0" className="min-w-0 flex-1 rounded-lg bg-slate-100 px-2 py-1 text-right text-[13px] m-tnum" value={it.unit_price} onChange={(e) => updItem(i, "unit_price", e.target.value)} placeholder="Birim" />
+              <input type="number" min="0" className="min-w-0 flex-1 rounded-lg bg-slate-100 px-2 py-1 text-right text-[13px] m-tnum" value={it.unit_price} onChange={(e) => updItem(i, "unit_price", e.target.value)} placeholder="Satış" />
               <select className="rounded-lg bg-slate-100 px-1.5 py-1 text-[13px]" value={it.currency} onChange={(e) => updItem(i, "currency", e.target.value)}>
                 <option value="TRY">₺</option><option value="EUR">€</option><option value="USD">$</option>
               </select>
+            </div>
+            <div className="mt-1 flex items-center gap-2">
+              <span className="text-[12px] text-slate-400">Maliyet</span>
+              <input type="number" min="0" inputMode="decimal" className="w-24 rounded-lg bg-slate-100 px-2 py-1 text-right text-[13px] m-tnum" value={it.unit_cost ?? ""} onChange={(e) => updItem(i, "unit_cost", e.target.value)} placeholder="geliş" />
+              {(() => {
+                const prof = lineTRY(it, "unit_price") - (it.unit_cost === "" || it.unit_cost == null ? lineTRY(it, "unit_price") : lineTRY(it, "unit_cost"));
+                return prof > 0 ? <span className="m-tnum ml-auto text-[12px] font-semibold" style={{ color: "var(--m-primary-2)" }}>kâr ₺{money(prof)}</span> : null;
+              })()}
             </div>
             {it.currency && it.currency !== "TRY" && (
               <div className="mt-1 flex items-center gap-2">
@@ -221,10 +241,20 @@ export default function ServiceForm({ open, initial, onClose, onSaved }) {
           <Plus className="h-4 w-4" /> Kalem Ekle
         </button>
         {total > 0 && (
-          <div className="flex items-center justify-between border-t border-slate-100 px-4 py-2.5">
-            <span className="text-[13px] font-semibold text-slate-500">Toplam</span>
-            <span className="m-tnum text-[16px] font-extrabold" style={{ color: "var(--m-primary)" }}>₺{money(total)}</span>
-          </div>
+          <>
+            <div className="flex items-center justify-between border-t border-slate-100 px-4 py-2.5">
+              <span className="text-[13px] font-semibold text-slate-500">Toplam (satış)</span>
+              <span className="m-tnum text-[16px] font-extrabold" style={{ color: "var(--m-primary)" }}>₺{money(total)}</span>
+            </div>
+            {total - costTotal > 0 && (
+              <div className="flex items-center justify-between px-4 pb-2.5">
+                <span className="text-[12px] font-semibold text-slate-400">Kâr (maliyet ₺{money(costTotal)})</span>
+                <span className="m-tnum text-[13px] font-bold" style={{ color: "var(--m-primary-2)" }}>
+                  ₺{money(total - costTotal)}{total > 0 ? ` · %${Math.round((total - costTotal) / total * 100)}` : ""}
+                </span>
+              </div>
+            )}
+          </>
         )}
       </Group>
 

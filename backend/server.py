@@ -634,7 +634,8 @@ class QuoteResponse(BaseModel):
 class ServiceItem(BaseModel):
     name: Optional[str] = Field("", max_length=300)              # Parça/işlem adı
     qty: Optional[float] = Field(1, ge=0)                        # Adet
-    unit_price: Optional[float] = Field(0, ge=0)                 # Birim fiyat (kendi para biriminde)
+    unit_price: Optional[float] = Field(0, ge=0)                 # Birim SATIŞ fiyatı (müşteriye, kendi para biriminde)
+    unit_cost: Optional[float] = Field(None, ge=0)              # Birim MALİYET/geliş (kâr analizi; sadece sistemde, PDF'te yok)
     currency: Optional[str] = "TRY"                              # TRY | EUR | USD
     rate: Optional[float] = Field(None, ge=0)                    # 1 birim döviz = ? ₺ (kayıt anında sabitlenir)
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Wrench, Car, Phone, MessageCircle, Image as ImageIcon, Loader2, Plus, Pencil, Share2, Trash2 } from "lucide-react";
+import { Wrench, Car, Phone, MessageCircle, Image as ImageIcon, Loader2, Plus, Pencil, Share2, Trash2, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { services as servicesApi, docUrl, openDoc } from "../api";
 import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, Lightbox, RefreshScroll, OfflineBar } from "../ui";
@@ -79,6 +79,8 @@ function Detail({ id, onClose, onEdit, onDeleted }) {
   const [loading, setLoading] = useState(true);
   const [lb, setLb] = useState(null);
   const [del, setDel] = useState(false);
+  const [showProfit, setShowProfit] = useState(() => cache.get("svc_profit") === true);
+  useEffect(() => { cache.set("svc_profit", showProfit); }, [showProfit]);
   const remove = async () => {
     if (!s || del) return;
     if (!window.confirm(`"${s.customer_name || "Bu kayıt"}" servis kaydı silinsin mi?`)) return;
@@ -92,16 +94,25 @@ function Detail({ id, onClose, onEdit, onDeleted }) {
     servicesApi.get(id).then(setS).catch(() => setS(null)).finally(() => setLoading(false));
   }, [id]);
 
+  const lineTRY = (it, field) => {
+    const q = parseFloat(it.qty) || 1;
+    const v = parseFloat(it[field]) || 0;
+    const rate = it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || 1) : 1;
+    return v * q * rate;
+  };
   const total = useMemo(() => {
     if (!s) return 0;
-    if (s.cost != null) return Number(s.cost) || 0;
-    return (s.items || []).reduce((a, it) => {
-      const q = parseFloat(it.qty) || 1;
-      const up = parseFloat(it.unit_price) || 0;
-      const rate = it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || 1) : 1;
-      return a + up * q * rate;
-    }, 0);
+    if ((s.items || []).length === 0 && s.cost != null) return Number(s.cost) || 0;
+    return (s.items || []).reduce((a, it) => a + lineTRY(it, "unit_price"), 0);
   }, [s]);
+  // Kâr = satış − maliyet; kalem maliyeti yoksa o kalemde kâr 0 (cost=satış).
+  const costTotal = useMemo(() => {
+    if (!s) return 0;
+    return (s.items || []).reduce((a, it) => a + (it.unit_cost === "" || it.unit_cost == null ? lineTRY(it, "unit_price") : lineTRY(it, "unit_cost")), 0);
+  }, [s]);
+  const profit = total - costTotal;
+  const margin = total > 0 ? Math.round((profit / total) * 100) : 0;
+  const hasCost = !!s && (s.items || []).some((it) => it.unit_cost !== "" && it.unit_cost != null);
 
   const st = s ? STATUS[s.status] || STATUS.received : null;
 
@@ -160,16 +171,50 @@ function Detail({ id, onClose, onEdit, onDeleted }) {
                 return (
                   <div key={i} className="flex items-center justify-between gap-2 border-b border-slate-50 px-2 py-2.5 last:border-0">
                     <div className="min-w-0"><div className="truncate text-[14px] font-medium">{it.name}</div>{q > 1 && <div className="text-[12px] text-slate-400">× {q}</div>}</div>
-                    <div className="m-tnum shrink-0 text-[14px] font-semibold">₺{money(up * q * rate)}</div>
+                    <div className="shrink-0 text-right">
+                      <div className="m-tnum text-[14px] font-semibold">₺{money(up * q * rate)}</div>
+                      {showProfit && it.unit_cost !== "" && it.unit_cost != null && (
+                        <div className="m-tnum text-[11px] text-slate-400">mlyt ₺{money((parseFloat(it.unit_cost) || 0) * q * rate)}</div>
+                      )}
+                    </div>
                   </div>
                 );
               })}
             </div>
           )}
 
-          <div className="mt-3 flex items-center justify-between rounded-2xl bg-white px-4 py-3.5">
-            <span className="text-[14px] font-semibold" style={{ color: "var(--m-ink-2)" }}>Toplam</span>
-            <span className="m-tnum text-[20px] font-extrabold" style={{ color: "var(--m-primary)" }}>₺{money(total)}</span>
+          <div className="mt-3 rounded-2xl bg-white px-4 py-3.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-[14px] font-semibold" style={{ color: "var(--m-ink-2)" }}>Toplam</span>
+                <button
+                  onClick={() => setShowProfit((v) => !v)}
+                  title={showProfit ? "Kârı gizle" : "Kârı göster"}
+                  className="m-press flex h-7 w-7 items-center justify-center rounded-full"
+                  style={showProfit ? { background: "var(--m-primary-2)" } : { background: "rgba(148,163,184,.22)" }}
+                >
+                  {showProfit ? <EyeOff className="h-4 w-4 text-white" /> : <Eye className="h-4 w-4" style={{ color: "var(--m-ink-2)" }} />}
+                </button>
+              </div>
+              <span className="m-tnum text-[20px] font-extrabold" style={{ color: "var(--m-primary)" }}>₺{money(total)}</span>
+            </div>
+            {showProfit && (
+              <div className="mt-3 space-y-1.5 border-t border-slate-100 pt-3">
+                <div className="flex items-center justify-between text-[13px]">
+                  <span style={{ color: "var(--m-ink-2)" }}>Maliyet</span>
+                  <span className="m-tnum font-semibold" style={{ color: "var(--m-ink-2)" }}>₺{money(costTotal)}</span>
+                </div>
+                <div className="flex items-center justify-between text-[13px]">
+                  <span className="font-semibold" style={{ color: "var(--m-ink-2)" }}>Kâr</span>
+                  <span className="m-tnum text-[15px] font-extrabold" style={{ color: profit >= 0 ? "var(--m-primary-2)" : "#e11d48" }}>₺{money(profit)}</span>
+                </div>
+                <div className="flex items-center justify-between text-[13px]">
+                  <span style={{ color: "var(--m-ink-2)" }}>Marj</span>
+                  <span className="m-tnum font-semibold" style={{ color: profit >= 0 ? "var(--m-primary-2)" : "#e11d48" }}>%{margin}</span>
+                </div>
+                {!hasCost && <div className="pt-0.5 text-[11px] text-slate-400">Kalemlere maliyet girilmemiş — kâr 0 görünür. Düzenle'den maliyet ekle.</div>}
+              </div>
+            )}
           </div>
 
           {(s.photos || []).length > 0 && (
