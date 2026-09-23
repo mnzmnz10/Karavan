@@ -38,6 +38,25 @@ const waText = (s) => {
   if (s.status === "in_progress") return `${hi}${arac} için servis işlemleriniz devam ediyor.`;
   return `${hi}${arac} servisimize ulaştı.`;
 };
+// Müşteriye hesap özeti (kalemler, iskonto, toplam, ödenen, kalan) — maliyet YOK
+const statementText = (s) => {
+  const lineTL = (it) => (parseFloat(it.unit_price) || 0) * (parseFloat(it.qty) || 1) * (it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || 1) : 1);
+  const L = [`Merhaba ${(s.customer_name || "").trim()},`.replace(" ,", ","), "", `*Servis hesap özeti${s.order_no ? " (" + s.order_no + ")" : ""}*`];
+  (s.items || []).forEach((it) => {
+    const q = parseFloat(it.qty) || 1;
+    L.push(`• ${it.name || "Kalem"}${q > 1 ? " × " + q : ""} — ₺${money(lineTL(it))}`);
+  });
+  const net = serviceNet(s);
+  const gross = (s.items || []).length ? (s.items || []).reduce((a, it) => a + lineTL(it), 0) : net;
+  if (gross - net > 0.5) L.push(`İskonto: −₺${money(gross - net)}`);
+  const got = collectedTRY(s);
+  const left = net - got;
+  L.push("", `*Toplam: ₺${money(net)}*`);
+  if (got > 0) L.push(`Ödenen: ₺${money(got)}`);
+  L.push(left > 0.5 ? `*Kalan: ₺${money(left)}*` : "Ödeme tamamlandı, teşekkür ederiz.");
+  L.push("", "Çorlu Karavan");
+  return L.join("\n");
+};
 // TR telefon → wa.me formatı (10 haneyi 90 ile önekle)
 const waNumber = (phone) => {
   let d = String(phone || "").replace(/\D/g, "");
@@ -386,6 +405,11 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, prodCost }) {
                 <button onClick={() => setCollOpen(true)} className="m-press mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl bg-slate-100 py-2.5 text-[14px] font-bold" style={{ color: "var(--m-primary-2)" }}>
                   <Plus className="h-4 w-4" /> Tahsilat Ekle
                 </button>
+                {s.phone && (
+                  <a href={`https://wa.me/${waNumber(s.phone)}?text=${encodeURIComponent(statementText(s))}`} target="_blank" rel="noreferrer" className="m-press mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl py-2.5 text-[14px] font-bold text-white" style={{ background: "#25d366" }}>
+                    <MessageCircle className="h-4 w-4" /> Hesap özeti gönder
+                  </a>
+                )}
                 <CollectionSheet open={collOpen} onClose={() => setCollOpen(false)} onAdd={addCollection} />
               </div>
             );

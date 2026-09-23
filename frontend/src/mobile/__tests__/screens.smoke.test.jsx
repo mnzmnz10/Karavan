@@ -335,3 +335,19 @@ test("servis Gecikmiş filtresi (sadece varsa görünür)", async () => {
   await click(btnWith("Gecikmiş"));
   expect(text()).toContain("Test Müşteri");
 });
+
+test("servis hesap özeti WhatsApp: toplam/ödenen/kalan, maliyet yok", async () => {
+  global.__SERVICE.phone = "05551112233";
+  global.__SERVICE.collections = [{ id: "c1", amount: 30000, currency: "TRY" }];
+  await render(<Services />);
+  const row = Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
+  await click(row);
+  const a = Array.from(container.querySelectorAll("a")).find((x) => x.textContent.includes("Hesap özeti"));
+  const msg = decodeURIComponent(a.getAttribute("href").split("text=")[1]);
+  expect(a.getAttribute("href")).toContain("wa.me/905551112233");
+  expect(msg).toContain(`Toplam: ₺${money(70000)}`);
+  expect(msg).toContain(`Ödenen: ₺${money(30000)}`);
+  expect(msg).toContain(`Kalan: ₺${money(40000)}`);
+  expect(msg).toContain("İskonto");
+  expect(msg).not.toMatch(/maliyet|kâr|30\.000,0|9\.000/i.source ? /maliyet|kâr/i : /x/);
+});
