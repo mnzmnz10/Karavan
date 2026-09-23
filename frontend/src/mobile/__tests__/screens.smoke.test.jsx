@@ -584,3 +584,16 @@ test("servis Garantide filtresi", async () => {
   await click(chip);
   expect(text()).toContain("Test Müşteri");
 });
+
+test("servis araması: telefon ve plaka boşluksuz", async () => {
+  global.__SERVICE.phone = "0555 111 22 33";
+  global.__SERVICE.plate = "59 ABC 123";
+  await render(<Services />);
+  const input = container.querySelector('input[placeholder^="Müşteri, plaka"]');
+  await setVal(input, "5551112233");
+  expect(text()).toContain("Test Müşteri");
+  await setVal(input, "59abc");
+  expect(text()).toContain("Test Müşteri");
+  await setVal(input, "5559999");
+  expect(text()).not.toContain("Test Müşteri");
+});

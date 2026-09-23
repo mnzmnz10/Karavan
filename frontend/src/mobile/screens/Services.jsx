@@ -612,6 +612,11 @@ export default function Services({ go }) {
         else if (statusF === "unpaid") { if (!(serviceNet(x) > 0 && serviceNet(x) - collectedTRY(x) > 0.5)) return false; }
         else if (statusF && (x.status || "received") !== statusF) return false;
         if (!s) return true;
+        // Telefon/plaka: boşluksuz rakam-harf karşılaştırması da (0555 111 22 33 ↔ 5551112233, 59 ABC 123 ↔ 59abc123)
+        const compact = s.replace(/\s+/g, "");
+        const digits = s.replace(/\D/g, "");
+        if (/^[\d\s+()-]+$/.test(s) && digits.length >= 4 && String(x.phone || "").replace(/\D/g, "").includes(digits.replace(/^0/, ""))) return true;
+        if (compact.length >= 3 && String(x.plate || "").toLocaleLowerCase("tr").replace(/\s+/g, "").includes(compact)) return true;
         return [x.customer_name, x.plate, x.vehicle_brand, x.vehicle_model, x.order_no, x.phone, x.operations, ...(x.items || []).map((it) => it.name)]
           .filter(Boolean).some((v) => String(v).toLocaleLowerCase("tr").includes(s));
       })
