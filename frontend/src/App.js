@@ -2671,10 +2671,21 @@ function App() {
       let unit = parseFloat(p.list_price_try);
       if (!unit || isNaN(unit)) unit = parseFloat(p.discounted_price_try);
       if (!unit || isNaN(unit)) unit = parseFloat(p.list_price) || 0; // manuel kalem (TL)
-      // Maliyet = geliş (indirimli TL). Manuel kalemde geliş girilmemişse discounted=list (kâr 0).
-      let cost = parseFloat(p.discounted_price_try);
-      if (!cost || isNaN(cost)) cost = parseFloat(p.list_price_try) || 0;
-      return { name: nm, qty, unit_price: Math.round(unit), unit_cost: cost > 0 ? Math.round(cost) : '' };
+      // Maliyet = ürünün İNDİRİMLİ fiyatı (geliş). Canlı üründen oku (teklif snapshot satışa eşit olabilir).
+      const prod = products.find((prd) => prd.id === p.id);
+      let cost;
+      if (prod) {
+        const cur = prod.currency || 'TRY';
+        const rate = cur === 'TRY' ? 1 : (parseFloat(exchangeRates[cur]) || (cur === 'USD' ? 34 : 37));
+        const dp = parseFloat(prod.discounted_price);
+        const base = dp > 0 ? dp : (parseFloat(prod.list_price) || 0); // indirimli yoksa liste (kâr 0)
+        cost = Math.round(base * rate);
+      } else {
+        // manuel/eşleşmeyen kalem: teklifte girilen geliş (satıştan küçükse gerçek maliyet), yoksa satış
+        const snap = parseFloat(p.discounted_price_try);
+        cost = (snap > 0 && snap < unit) ? Math.round(snap) : Math.round(unit);
+      }
+      return { name: nm, qty, unit_price: Math.round(unit), unit_cost: cost };
     });
     // İşçilik ayrı kalem (maliyeti yok, tamamı kâr)
     if (labor > 0) quoteItems.push({ name: 'İşçilik', qty: 1, unit_price: Math.round(labor), unit_cost: 0 });
@@ -11329,7 +11340,6 @@ function App() {
                                 <th className="text-center font-bold px-2 py-2 w-16">Adet</th>
                                 <th className="text-right font-bold px-2 py-2 w-28">Satış (₺)</th>
                                 {showServiceProfit && <th className="text-right font-bold px-2 py-2 w-24">Maliyet</th>}
-                                {showServiceProfit && <th className="text-right font-bold px-2 py-2 w-24">Kâr</th>}
                                 <th className="text-right font-bold px-3 py-2 w-28">Tutar (₺)</th>
                                 <th className="w-9"></th>
                               </tr>
@@ -11360,9 +11370,6 @@ function App() {
                                     <td className="px-1 py-1.5">
                                       <input type="number" min="0" step="0.01" value={it.unit_cost ?? ''} onChange={(e) => updateServiceItem(idx, 'unit_cost', e.target.value)} placeholder="geliş" title="Birim maliyet (geliş)" className="w-full h-8 px-1 border border-slate-200 rounded text-sm text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-emerald-500" />
                                     </td>
-                                  )}
-                                  {showServiceProfit && (
-                                    <td className="px-2 py-1.5 text-right font-semibold tabular-nums" style={{ color: (serviceItemLineTRY(it) - serviceItemCostLineTRY(it)) >= 0 ? '#059669' : '#e11d48' }}>₺ {formatPrice(serviceItemLineTRY(it) - serviceItemCostLineTRY(it))}</td>
                                   )}
                                   <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-slate-700">₺ {formatPrice(serviceItemLineTRY(it))}</td>
                                   <td className="px-1 py-1.5 text-center">
