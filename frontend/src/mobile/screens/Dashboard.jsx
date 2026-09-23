@@ -135,7 +135,7 @@ export default function Dashboard({ go }) {
                 <div className="px-1 pb-1.5 pt-4 text-[12px] font-bold uppercase tracking-wide text-slate-400">Son Servisler</div>
                 <div className="space-y-2">
                   {stats.recent.map((x) => (
-                    <Card key={x.id} onClick={() => go?.("service")} className="flex items-center gap-3 p-3">
+                    <Card key={x.id} onClick={() => { cache.set("svc_open", x.id); go?.("service"); }} className="flex items-center gap-3 p-3">
                       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" style={{ background: x.status === "delivered" ? "#e7f3ee" : "#fef0e8" }}>
                         {x.status === "delivered" ? <CheckCircle2 className="h-5 w-5" style={{ color: "#2e8b7a" }} /> : <Clock className="h-5 w-5" style={{ color: "#e56a1f" }} />}
                       </div>

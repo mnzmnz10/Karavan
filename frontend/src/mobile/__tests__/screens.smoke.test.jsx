@@ -392,3 +392,10 @@ test("servisten kaynak teklife git", async () => {
   expect(went).toBe("quotes");
   expect(JSON.parse(localStorage.getItem("mz:quote_search"))).toBe("Kırklareli AFAD");
 });
+
+test("Özet'ten servis detayı deep-link", async () => {
+  localStorage.setItem("mz:svc_open", JSON.stringify("s1"));
+  await render(<Services />);
+  expect(text()).toContain("Servis Kaydı");
+  expect(localStorage.getItem("mz:svc_open")).toBe("null");
+});

@@ -469,7 +469,8 @@ export default function Services({ go }) {
   const [loading, setLoading] = useState(() => !cache.get("services"));
   const [err, setErr] = useState(false);
   const [offline, setOffline] = useState(false);
-  const [selId, setSelId] = useState(null);
+  // Özet'ten yönlendirme: tek seferlik detay aç (mz:svc_open)
+  const [selId, setSelId] = useState(() => { const v = cache.get("svc_open"); if (v) cache.set("svc_open", null); return v || null; });
   const [formOpen, setFormOpen] = useState(false);
   const [formInitial, setFormInitial] = useState(null);
   const [busyId, setBusyId] = useState(null);
