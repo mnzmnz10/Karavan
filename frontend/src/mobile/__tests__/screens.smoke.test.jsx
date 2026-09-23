@@ -428,3 +428,13 @@ test("servis detay: adetli kalemde birim fiyat", async () => {
   await click(row);
   expect(text()).toContain(`2 × ₺${money(13866)}`);
 });
+
+test("servis detay: Teslim et → status + teslim tarihi", async () => {
+  await render(<Services />);
+  const row = Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
+  await click(row);
+  await click(btnWith("Teslim et"));
+  const api = require("../api");
+  expect(api.__calls.svcUpdate.at(-1)).toEqual({ status: "delivered", delivery_date: new Date().toISOString().slice(0, 10) });
+  expect(btnWith("Teslim et")).toBeFalsy();
+});

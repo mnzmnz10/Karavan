@@ -200,6 +200,23 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuo
   const [collOpen, setCollOpen] = useState(false);
   // Hızlı foto ekleme (düzenleme formuna girmeden): sıkıştır → photos'a ekle → PUT
   const [photoBusy, setPhotoBusy] = useState(false);
+  // Durumu ilerlet: Geldi → İşlemde → Teslim (teslimde boş teslim tarihi = bugün)
+  const [advancing, setAdvancing] = useState(false);
+  const advance = async () => {
+    if (!s || s.status === "delivered" || advancing) return;
+    const next = s.status === "in_progress" ? "delivered" : "in_progress";
+    const patch = { status: next };
+    if (next === "delivered" && !s.delivery_date) patch.delivery_date = new Date().toISOString().slice(0, 10);
+    setAdvancing(true);
+    try {
+      await servicesApi.update(s.id, patch);
+      setS((prev) => ({ ...prev, ...patch }));
+      onChanged?.();
+      toast.success(STATUS[next].label);
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Güncellenemedi");
+    } finally { setAdvancing(false); }
+  };
   const removePhoto = async (idx) => {
     if (!s || !window.confirm("Fotoğraf silinsin mi?")) return;
     const photos = (s.photos || []).filter((_, j) => j !== idx);
@@ -445,6 +462,12 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuo
             );
           })()}
 
+          {s.status !== "delivered" && (
+            <button onClick={advance} disabled={advancing} className="m-press mt-3 flex w-full items-center justify-center gap-2 rounded-2xl py-3 text-[15px] font-bold text-white disabled:opacity-60" style={{ background: s.status === "in_progress" ? "#2e8b7a" : "#1e73be" }}>
+              {advancing && <Loader2 className="h-4 w-4 animate-spin" />}
+              {s.status === "in_progress" ? "Teslim et" : "İşleme al"}
+            </button>
+          )}
           <label className="m-press mt-3 flex w-full cursor-pointer items-center justify-center gap-2 rounded-2xl bg-white py-3 text-[14px] font-bold" style={{ color: "var(--m-primary)" }}>
             {photoBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />} Foto ekle
             <input type="file" accept="image/*" multiple className="hidden" disabled={photoBusy} onChange={(e) => { addPhotos(e.target.files); e.target.value = ""; }} />
