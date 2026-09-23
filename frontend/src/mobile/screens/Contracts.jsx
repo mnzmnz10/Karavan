@@ -532,7 +532,7 @@ export default function Contracts() {
           );
         })}
       </div>
-      <OfflineBar show={offline} />
+      <OfflineBar show={offline} cacheKey="contracts" />
       <RefreshScroll onRefresh={reload} className="flex-1 pb-[calc(var(--m-tabbar-h)+env(safe-area-inset-bottom)+8px)]">
         {loading ? (
           <SkeletonList />

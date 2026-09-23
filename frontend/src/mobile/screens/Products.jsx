@@ -359,7 +359,7 @@ export default function Products() {
       />
       <SearchBar value={q} onChange={setQ} placeholder="Ürün adı veya marka" />
       <CategoryCards cats={cats} sel={cat} onSel={setCat} />
-      <OfflineBar show={offline} />
+      <OfflineBar show={offline} cacheKey="products_home" />
       <RefreshScroll onRefresh={() => fetchPage(q.trim(), cat, 1, false)} onScroll={onScroll} className="flex-1 pb-[calc(var(--m-tabbar-h)+env(safe-area-inset-bottom)+8px)]">
         {loading ? (
           <SkeletonList />

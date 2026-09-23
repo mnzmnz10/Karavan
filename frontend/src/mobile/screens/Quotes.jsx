@@ -712,7 +712,7 @@ export default function Quotes({ go }) {
           );
         })}
       </div>
-      <OfflineBar show={offline} />
+      <OfflineBar show={offline} cacheKey="quotes" />
       <RefreshScroll onRefresh={reload} className="flex-1 pb-[calc(var(--m-tabbar-h)+env(safe-area-inset-bottom)+8px)]">
         {loading ? (
           <SkeletonList />

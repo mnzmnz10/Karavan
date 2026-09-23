@@ -667,7 +667,7 @@ export default function Services({ go }) {
           Teslime göre
         </button>
       </div>
-      <OfflineBar show={offline} />
+      <OfflineBar show={offline} cacheKey="services" />
       <RefreshScroll onRefresh={reload} className="flex-1 pb-[calc(var(--m-tabbar-h)+env(safe-area-inset-bottom)+8px)]">
         {loading ? (
           <SkeletonList />

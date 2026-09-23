@@ -14,14 +14,19 @@ export const cache = {
   set(key, val) {
     try {
       localStorage.setItem(PFX + key, JSON.stringify(val));
+      localStorage.setItem(PFX + key + "@t", String(Date.now())); // veri yaşı (çevrimdışı çubuğu)
     } catch {
       // kota/private mode — sessiz geç
     }
   },
+  // Anahtarın son yazılma zamanı (ms) — yoksa null
+  savedAt(key) {
+    try { const v = Number(localStorage.getItem(PFX + key + "@t")); return v > 0 ? v : null; } catch { return null; }
+  },
   // Çıkışta iş verisini (teklif/servis/maliyet/sepet önbellekleri) sil; sadece `keep` anahtarları kalır
   clearAll(keep = []) {
     try {
-      const keepSet = new Set(keep.map((k) => PFX + k));
+      const keepSet = new Set(keep.flatMap((k) => [PFX + k, PFX + k + "@t"]));
       Object.keys(localStorage)
         .filter((k) => k.startsWith(PFX) && !keepSet.has(k))
         .forEach((k) => localStorage.removeItem(k));

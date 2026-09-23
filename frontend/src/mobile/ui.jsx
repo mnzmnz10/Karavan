@@ -1,5 +1,6 @@
 // Mobil UI primitifleri — iOS-native his (büyük başlık, kart, sheet, arama, tab bar).
 import React, { useEffect, useRef, useState } from "react";
+import { cache } from "./cache";
 import { ChevronLeft, Search, X, Loader2, WifiOff, RotateCw } from "lucide-react";
 
 // Yerel (cihaz saat dilimi) bugün YYYY-MM-DD — toISOString UTC'dir; TR'de 00:00-03:00 arası bir önceki günü verirdi
@@ -107,11 +108,23 @@ export function ErrorState({ onRetry, title = "Bağlantı hatası", hint = "Veri
 }
 
 // Çevrimdışı bandı (önbellekten gösterim)
-export function OfflineBar({ show }) {
+// "3 dk önce" / "2 saat önce" / "5 gün önce"
+export const ago = (ms) => {
+  if (!ms) return "";
+  const m = Math.max(0, Math.floor((Date.now() - ms) / 60000));
+  if (m < 1) return "az önce";
+  if (m < 60) return `${m} dk önce`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h} saat önce`;
+  return `${Math.round(h / 24)} gün önce`;
+};
+
+export function OfflineBar({ show, cacheKey }) {
   if (!show) return null;
+  const at = cacheKey ? cache.savedAt(cacheKey) : null;
   return (
     <div className="mx-4 mb-2 rounded-xl bg-amber-50 px-3 py-1.5 text-center text-[12px] font-semibold text-amber-700">
-      Çevrimdışı — önbellekten gösteriliyor
+      Çevrimdışı — önbellekten gösteriliyor{at ? ` (${ago(at)})` : ""}
     </div>
   );
 }

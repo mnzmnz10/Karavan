@@ -31,3 +31,20 @@ test("logout temizliği son kullanıcı adını korur", () => {
   expect(cache.get("last_user")).toBe("karavan_admin");
   expect(cache.get("quotes")).toBeNull();
 });
+
+test("savedAt + ago", () => {
+  jest.resetModules();
+  jest.doMock("../api", () => ({}));
+  localStorage.clear();
+  cache.set("quotes", [1]);
+  const t = cache.savedAt("quotes");
+  expect(t).toBeGreaterThan(Date.now() - 5000);
+  expect(cache.savedAt("yok")).toBeNull();
+  const { ago } = require("../ui");
+  expect(ago(Date.now() - 30 * 1000)).toBe("az önce");
+  expect(ago(Date.now() - 5 * 60000)).toBe("5 dk önce");
+  expect(ago(Date.now() - 3 * 3600000)).toBe("3 saat önce");
+  expect(ago(Date.now() - 2 * 86400000)).toBe("2 gün önce");
+  cache.clearAll(["quotes"]);
+  expect(cache.savedAt("quotes")).toBe(t);
+});

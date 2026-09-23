@@ -104,7 +104,7 @@ export default function Dashboard({ go }) {
   return (
     <div className="flex h-full flex-col">
       <Header title="Özet" subtitle={`${greet}${s?.username ? ", " + s.username : ""}`} />
-      <OfflineBar show={offline} />
+      <OfflineBar show={offline} cacheKey="dashboard" />
       <RefreshScroll onRefresh={load} className="flex-1 pb-[calc(var(--m-tabbar-h)+env(safe-area-inset-bottom)+8px)]">
         {loading ? (
           <SkeletonList />
