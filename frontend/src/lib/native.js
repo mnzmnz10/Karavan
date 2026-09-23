@@ -36,6 +36,8 @@ export async function initNative() {
   try {
     const { App } = await import('@capacitor/app');
     App.addListener('backButton', ({ canGoBack }) => {
+      // Mobil arayüzde açık bir sheet varsa önce onu kapat (ui.jsx sheet yığını)
+      if (typeof window.__mzBack === 'function' && window.__mzBack()) return;
       if (canGoBack || window.history.length > 1) {
         window.history.back();
       } else {

@@ -526,3 +526,19 @@ test("servis düzenle: kaydedilmemiş değişiklikte kapatma onayı", async () =
   await click(xBtn());
   expect(asked).toBe(1); expect(closed).toBe(1); // reddedildi → açık kaldı
 });
+
+test("Android geri: en üstteki sheet kapanır, sheet yoksa false", async () => {
+  expect(window.__mzBack()).toBe(false);
+  await render(<Services />);
+  const row = Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
+  await click(row);
+  expect(text()).toContain("Servis Kaydı");
+  await click(btnWith("Tahsilat Ekle"));
+  expect(container.querySelector('input[placeholder="Tutar"]')).toBeTruthy(); // tahsilat sheet açık (üstte)
+  let handled;
+  await act(async () => { handled = window.__mzBack(); });
+  await act(() => new Promise((r) => setTimeout(r, 250)));
+  expect(handled).toBe(true);
+  expect(container.querySelector('input[placeholder="Tutar"]')).toBeNull(); // üstteki kapandı
+  expect(text()).toContain("Servis Kaydı"); // alttaki açık
+});

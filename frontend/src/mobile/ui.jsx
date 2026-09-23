@@ -136,8 +136,26 @@ export function SkeletonList({ rows = 6 }) {
 }
 
 // Alttan açılan sheet (detay/form)
+// Açık sheet yığını — Android geri tuşu (lib/native.js) önce en üstteki sheet'i kapatır
+const sheetStack = [];
+if (typeof window !== "undefined") {
+  window.__mzBack = () => {
+    const top = sheetStack[sheetStack.length - 1];
+    if (!top) return false;
+    top.current?.();
+    return true;
+  };
+}
+
 export function Sheet({ open, onClose, title, children, full = false }) {
   const [mounted, setMounted] = useState(open);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
+    if (!open) return;
+    sheetStack.push(closeRef);
+    return () => { const i = sheetStack.lastIndexOf(closeRef); if (i >= 0) sheetStack.splice(i, 1); };
+  }, [open]);
   useEffect(() => {
     if (open) { setMounted(true); return; }
     // Kapanış: çıkış animasyonu olmadığından zamanlayıcıyla unmount (X/backdrop hep kapatsın)
