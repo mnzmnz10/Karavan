@@ -79,8 +79,9 @@ export default function Dashboard({ go }) {
     let openBal = 0, openCnt = 0;
     services.forEach((x) => { const left = serviceNet(x) - collectedTRY(x); if (serviceNet(x) > 0 && left > 0.5) { openBal += left; openCnt++; } });
     const agreed = contracts.filter((c) => c.stage === "agreed").length;
+    const recentQ = [...quotes].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || ""))).slice(0, 3);
     const recent = [...services].sort((a, b) => String(b.arrival_date || b.created_at || "").localeCompare(String(a.arrival_date || a.created_at || ""))).slice(0, 4);
-    return { active, delivered, overdue, sTotal: services.length, qTotal: quotes.length, quotesMonth, quotesMonthSum, cTotal: contracts.length, agreed, recent, svcDone: doneMonth.length, svcNet, svcProfit: svcNet - svcCost, openBal, openCnt };
+    return { active, delivered, overdue, sTotal: services.length, qTotal: quotes.length, quotesMonth, quotesMonthSum, cTotal: contracts.length, agreed, recent, recentQ, svcDone: doneMonth.length, svcNet, svcProfit: svcNet - svcCost, openBal, openCnt };
   }, [data]);
 
   const hour = new Date().getHours();
@@ -143,6 +144,25 @@ export default function Dashboard({ go }) {
                         <div className="truncate text-[14px] font-semibold">{x.customer_name || "İsimsiz"}</div>
                         <div className="text-[12px] text-slate-400">{STATUS_LABEL[x.status] || "Geldi"} · {fmtDate(x.arrival_date || x.created_at)}</div>
                       </div>
+                    </Card>
+                  ))}
+                </div>
+              </>
+            )}
+            {stats.recentQ.length > 0 && (
+              <>
+                <div className="px-1 pb-1.5 pt-4 text-[12px] font-bold uppercase tracking-wide text-slate-400">Son Teklifler</div>
+                <div className="space-y-2">
+                  {stats.recentQ.map((q) => (
+                    <Card key={q.id} onClick={() => { cache.set("quote_open", q.id); go?.("quotes"); }} className="flex items-center gap-3 p-3">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" style={{ background: "#fff5e6" }}>
+                        <FileText className="h-5 w-5" style={{ color: "#d9820a" }} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-[14px] font-semibold">{q.name || "Teklif"}</div>
+                        <div className="text-[12px] text-slate-400">{q.customer_name || "—"} · {fmtDate(q.created_at)}</div>
+                      </div>
+                      <span className="m-tnum shrink-0 text-[13px] font-extrabold" style={{ color: "var(--m-primary)" }}>₺{money(q.total_net_price || 0)}</span>
                     </Card>
                   ))}
                 </div>

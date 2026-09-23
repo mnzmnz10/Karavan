@@ -624,6 +624,13 @@ export default function Quotes({ go }) {
   const [err, setErr] = useState(false);
   const [offline, setOffline] = useState(false);
   const [sel, setSel] = useState(null);
+  // Özet'ten yönlendirme: liste gelince o teklifi aç (mz:quote_open, tek seferlik)
+  useEffect(() => {
+    const id = cache.get("quote_open");
+    if (!id || !items.length) return;
+    const hit = items.find((x) => x.id === id);
+    if (hit) { cache.set("quote_open", null); setSel(hit); }
+  }, [items]);
 
   const reload = async () => {
     setErr(false);

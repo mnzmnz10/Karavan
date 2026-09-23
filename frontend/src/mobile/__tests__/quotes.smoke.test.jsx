@@ -190,3 +190,10 @@ test("liste: servise aktarılan teklifte 'Serviste' rozeti", async () => {
   await flush();
   expect(text()).toContain("Serviste");
 });
+
+test("Özet'ten teklif detayı deep-link", async () => {
+  localStorage.setItem("mz:quote_open", JSON.stringify("q1"));
+  await act(async () => { root.render(<Quotes go={() => {}} />); });
+  await flush();
+  expect(text()).toContain("Genel Toplam");
+});
