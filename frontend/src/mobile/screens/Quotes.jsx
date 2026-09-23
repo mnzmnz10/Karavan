@@ -582,7 +582,8 @@ export default function Quotes({ go }) {
   const filtered = useMemo(() => {
     const s = q.trim().toLocaleLowerCase("tr");
     const base = !s ? items : items.filter((x) =>
-      (x.name || "").toLocaleLowerCase("tr").includes(s) || (x.customer_name || "").toLocaleLowerCase("tr").includes(s)
+      (x.name || "").toLocaleLowerCase("tr").includes(s) || (x.customer_name || "").toLocaleLowerCase("tr").includes(s) ||
+      (x.products || []).some((p) => (p.name || "").toLocaleLowerCase("tr").includes(s))
     );
     return [...base].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || ""))); // en yeni üstte
   }, [items, q]);
@@ -590,7 +591,7 @@ export default function Quotes({ go }) {
   return (
     <div className="flex h-full flex-col">
       <Header title="Teklifler" subtitle={loading ? "Yükleniyor…" : `${items.length} teklif`} />
-      <SearchBar value={q} onChange={setQ} placeholder="Teklif veya müşteri" />
+      <SearchBar value={q} onChange={setQ} placeholder="Teklif, müşteri veya ürün" />
       <OfflineBar show={offline} />
       <RefreshScroll onRefresh={reload} className="flex-1 pb-[calc(var(--m-tabbar-h)+env(safe-area-inset-bottom)+8px)]">
         {loading ? (
