@@ -365,7 +365,7 @@ export default function Products() {
         ) : err ? (
           <ErrorState onRetry={() => fetchPage(q.trim(), cat, 1, false)} />
         ) : items.length === 0 ? (
-          <EmptyState icon={Boxes} title="Ürün bulunamadı" hint={q ? "Aramayı değiştir" : "Henüz ürün yok"} />
+          <EmptyState icon={cat === FAV ? Star : Boxes} title={cat === FAV ? "Favori yok" : "Ürün bulunamadı"} hint={q ? "Aramayı değiştir" : cat === FAV ? "Ürün detayındaki yıldıza dokun" : "Henüz ürün yok"} />
         ) : (
           <>
             <div className="space-y-2 px-4 pt-1">
