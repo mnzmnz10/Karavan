@@ -16,7 +16,7 @@ const STATUSES = [
 const today = () => new Date().toISOString().slice(0, 10);
 
 // Görsel sıkıştırma (base64 şişmesin): max kenar 1280, JPEG 0.7
-function compressImage(file, max = 1280, quality = 0.72) {
+export function compressImage(file, max = 1280, quality = 0.72) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const img = new Image();

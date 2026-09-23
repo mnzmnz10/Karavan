@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Wrench, Car, Phone, MessageCircle, Image as ImageIcon, Loader2, Plus, Pencil, Share2, Trash2, Eye, EyeOff, Wallet, X, FileText } from "lucide-react";
+import { Wrench, Car, Phone, MessageCircle, Image as ImageIcon, Loader2, Plus, Pencil, Share2, Trash2, Eye, EyeOff, Wallet, X, FileText, Camera } from "lucide-react";
 import { toast } from "sonner";
 import { services as servicesApi, rates as ratesApi, docUrl, openDoc } from "../api";
 import { useCatalog, catRate } from "../catalog";
 import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, Lightbox, RefreshScroll, OfflineBar } from "../ui";
 import { cache } from "../cache";
-import ServiceForm from "./ServiceForm";
+import ServiceForm, { compressImage } from "./ServiceForm";
 
 const STATUS = {
   received: { label: "Geldi", color: "amber" },
@@ -198,6 +198,24 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuo
   const [showProfit, setShowProfit] = useState(() => cache.get("svc_profit") === true);
   useEffect(() => { cache.set("svc_profit", showProfit); }, [showProfit]);
   const [collOpen, setCollOpen] = useState(false);
+  // Hızlı foto ekleme (düzenleme formuna girmeden): sıkıştır → photos'a ekle → PUT
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const addPhotos = async (files) => {
+    if (!files?.length || !s) return;
+    setPhotoBusy(true);
+    try {
+      const arr = [];
+      for (const f of Array.from(files)) { try { arr.push(await compressImage(f)); } catch {} }
+      if (!arr.length) return;
+      const photos = [...(s.photos || []), ...arr];
+      await servicesApi.update(s.id, { photos });
+      setS((prev) => ({ ...prev, photos }));
+      onChanged?.();
+      toast.success(`${arr.length} foto eklendi`);
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Foto eklenemedi");
+    } finally { setPhotoBusy(false); }
+  };
   const saveCollections = async (list, okMsg) => {
     try {
       // Eski avans listeye taşındı (baseCollections) → advance_amount sıfırlanır, çift sayım/geri gelme yok
@@ -415,6 +433,10 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuo
             );
           })()}
 
+          <label className="m-press mt-3 flex w-full cursor-pointer items-center justify-center gap-2 rounded-2xl bg-white py-3 text-[14px] font-bold" style={{ color: "var(--m-primary)" }}>
+            {photoBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />} Foto ekle
+            <input type="file" accept="image/*" multiple className="hidden" disabled={photoBusy} onChange={(e) => { addPhotos(e.target.files); e.target.value = ""; }} />
+          </label>
           {(s.photos || []).length > 0 && (
             <div className="mt-3">
               <div className="mb-1.5 flex items-center gap-1.5 px-1 text-[12px] font-bold uppercase tracking-wide text-slate-400">
