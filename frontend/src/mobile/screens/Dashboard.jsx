@@ -4,7 +4,7 @@ import http, { services as servicesApi, quotes as quotesApi } from "../api";
 import { Header, SearchBar, Card, SkeletonList, RefreshScroll, OfflineBar, money, ago, todayISO, fmtDate } from "../ui";
 import { useSession } from "../session";
 import { cache } from "../cache";
-import { serviceNet, collectedTRY } from "./Services";
+import { serviceNet, collectedTRY, isLaborItem } from "./Services";
 import { useCatalog } from "../catalog";
 import CollectionsReport, { collectionEntries, monthKey } from "../CollectionsReport";
 
@@ -68,6 +68,7 @@ export default function Dashboard({ go }) {
     const lineTRY = (it, field) => (parseFloat(it[field]) || 0) * (parseFloat(it.qty) || 1) * (it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || 1) : 1);
     const costLine = (it) => {
       if (it.unit_cost !== "" && it.unit_cost != null) return lineTRY(it, "unit_cost");
+      if (isLaborItem(it)) return 0;
       const pc = prodCost[String(it.name || "").trim().toLocaleLowerCase("tr")];
       return pc != null ? pc * (parseFloat(it.qty) || 1) : lineTRY(it, "unit_price");
     };

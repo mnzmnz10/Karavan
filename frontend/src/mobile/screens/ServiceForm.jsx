@@ -66,6 +66,9 @@ export function formatPlateTR(v) {
 }
 const inp = "w-full bg-transparent text-[15px] text-right placeholder:text-slate-300";
 
+// İşçilik kalemi: geliş girilmemişse maliyet 0 (tamamı kâr). Eski tekliften aktarımlarda unit_cost boş kalmıştı.
+export const isLaborItem = (it) => /işçilik|iscilik|işcilik/.test(String(it?.name || "").toLocaleLowerCase("tr"));
+
 export default function ServiceForm({ open, initial, onClose, onSaved, prodCost }) {
   const editing = !!initial?.id;
   const defaults = () => ({
@@ -165,6 +168,7 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
   };
   const costLineTRY = (it) => {
     if (it.unit_cost !== "" && it.unit_cost != null) return lineTRY(it, "unit_cost");
+    if (isLaborItem(it)) return 0;
     const pc = prodCostUnit(it.name);
     if (pc != null) return pc * (parseFloat(it.qty) || 1);
     return lineTRY(it, "unit_price");
@@ -181,7 +185,7 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
     const p = Math.min(100, Math.max(0, parseFloat(v) || 0));
     set("discount_amount", p > 0 && total > 0 ? String(Math.round(total * p) / 100) : "");
   };
-  const laborTotal = f.items.reduce((a, it) => a + (it.unit_cost !== "" && it.unit_cost != null && parseFloat(it.unit_cost) === 0 ? lineTRY(it, "unit_price") : 0), 0);
+  const laborTotal = f.items.reduce((a, it) => a + ((it.unit_cost !== "" && it.unit_cost != null ? parseFloat(it.unit_cost) === 0 : isLaborItem(it)) ? lineTRY(it, "unit_price") : 0), 0);
   // Tekrar gelen müşteri: eski servis kayıtlarından ad önerisi → telefon/araç/plaka doldur (sadece yeni kayıt)
   const [picked, setPicked] = useState(false);
   const suggestions = useMemo(() => {

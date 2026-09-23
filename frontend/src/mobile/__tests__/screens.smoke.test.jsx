@@ -743,3 +743,19 @@ test("tahsilat raporu: özet kartı gözle gizli, rapor ay toplamı + tür kır�
   expect(went).toBe("service");
   expect(JSON.parse(localStorage.getItem("mz:svc_open"))).toBe("s1");
 });
+
+test("eski aktarım: gelişi boş İşçilik kalemi maliyet sayılmaz (kâr = net − ürün gelişi)", async () => {
+  // Tekliften eski aktarım: unit_cost alanları hiç yok; ürün gelişi katalog adından, KDV satırı bilinmiyor → maliyet = satış
+  global.__SERVICE.items = [
+    { name: "Solar Panel 450W", qty: 1, unit_price: 14338, currency: "TRY" }, // katalog gelişi 7000
+    { name: "Yüzde 10 KDV", qty: 1, unit_price: 2000, currency: "TRY" },
+    { name: "İşçilik", qty: 1, unit_price: 5662, currency: "TRY" },
+  ];
+  global.__SERVICE.discount_amount = 0;
+  await render(<Services />);
+  await click(Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri"));
+  const eyes = container.querySelectorAll('button[aria-label="Göster/Gizle"]');
+  await click(eyes[eyes.length - 1]);
+  expect(text()).toContain(`Maliyet₺${money(7000 + 2000)}`);
+  expect(text()).toContain(`Kâr₺${money(22000 - 9000)}`);
+});

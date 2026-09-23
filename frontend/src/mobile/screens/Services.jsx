@@ -6,7 +6,7 @@ import { applyPending, onOutbox, pendingCount } from "../outbox";
 import { useCatalog, catRate } from "../catalog";
 import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, Lightbox, RefreshScroll, OfflineBar, todayISO, waNumber, fmtDate, CopyBtn } from "../ui";
 import { cache } from "../cache";
-import ServiceForm, { compressImage } from "./ServiceForm";
+import ServiceForm, { compressImage, isLaborItem } from "./ServiceForm";
 import CustomerSheet from "../CustomerSheet";
 
 const STATUS = {
@@ -132,6 +132,8 @@ const collTRY = (c) => {
   if (!c.currency || c.currency === "TRY") return a;
   return a * (parseFloat(c.rate) || 0);
 };
+export { isLaborItem };
+
 export const collectedTRY = (s) => {
   const colls = Array.isArray(s.collections) ? s.collections : [];
   if (colls.length > 0) return colls.reduce((a, c) => a + collTRY(c), 0);
@@ -313,11 +315,12 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuo
   };
   const costLineTRY = (it) => {
     if (it.unit_cost !== "" && it.unit_cost != null) return lineTRY(it, "unit_cost");
+    if (isLaborItem(it)) return 0;
     const pc = prodCostUnit(it.name);
     if (pc != null) return pc * (parseFloat(it.qty) || 1);
     return lineTRY(it, "unit_price"); // bilinmiyor → kâr 0
   };
-  const itemHasCost = (it) => (it.unit_cost !== "" && it.unit_cost != null) || prodCostUnit(it.name) != null;
+  const itemHasCost = (it) => (it.unit_cost !== "" && it.unit_cost != null) || isLaborItem(it) || prodCostUnit(it.name) != null;
   const gross = useMemo(() => {
     if (!s) return 0;
     if ((s.items || []).length === 0 && s.cost != null) return Number(s.cost) || 0;
