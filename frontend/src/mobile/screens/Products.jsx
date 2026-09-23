@@ -112,7 +112,7 @@ function priceTRY(p) {
   return { list, disc };
 }
 
-function Row({ p, onOpen, onAdd, qty, showDisc }) {
+function Row({ p, onOpen, onAdd, onDec, qty, showDisc }) {
   const pr = priceTRY(p);
   return (
     <Card onClick={() => onOpen(p)} className="p-3">
@@ -141,6 +141,15 @@ function Row({ p, onOpen, onAdd, qty, showDisc }) {
             )}
           </div>
         </div>
+        {qty > 0 && onDec && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onDec(p); }}
+            aria-label="Sepetten bir azalt"
+            className="m-press flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500"
+          >
+            <Minus className="h-5 w-5" strokeWidth={2.6} />
+          </button>
+        )}
         <button
           onClick={(e) => { e.stopPropagation(); onAdd(p); }}
           className="m-press relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
@@ -371,7 +380,7 @@ export default function Products() {
         ) : (
           <>
             <div className="space-y-2 px-4 pt-1">
-              {items.map((p) => <Row key={p.id} p={p} onOpen={setSel} onAdd={cart.add} qty={cart.items.get(p.id)?.qty || 0} showDisc={showDisc} />)}
+              {items.map((p) => <Row key={p.id} p={p} onOpen={setSel} onAdd={cart.add} onDec={(x) => cart.setQty(x.id, (cart.items.get(x.id)?.qty || 0) - 1)} qty={cart.items.get(p.id)?.qty || 0} showDisc={showDisc} />)}
             </div>
             {more && <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>}
           </>

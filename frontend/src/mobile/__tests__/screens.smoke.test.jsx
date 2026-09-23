@@ -639,3 +639,18 @@ test("Özet genel arama: ürün bul (liste fiyatı, geliş yok) → Ürünler ar
   expect(container.querySelector("input").value).toBe("Solar Panel 450W");
   expect(JSON.parse(localStorage.getItem("mz:prod_search"))).toBe(null);
 });
+
+test("ürün satırı: sepetteyse − ile azalt, 0'da buton kaybolur", async () => {
+  await render(<SessionCtx.Provider value={{ username: "t" }}><CartProvider><Products /></CartProvider></SessionCtx.Provider>);
+  await act(() => new Promise((r) => setTimeout(r, 600)));
+  const card = () => Array.from(container.querySelectorAll("div")).find((d) => d.className.includes("items-center gap-3") && d.textContent.includes("Solar Panel 450W"));
+  const dec = () => card().querySelector('button[aria-label="Sepetten bir azalt"]');
+  expect(dec()).toBeFalsy();
+  await click(card().querySelector('button[title="Teklife ekle"]'));
+  await click(card().querySelector('button[title="Teklife ekle"]'));
+  expect(card().querySelector('button[title="Teklife ekle"]').textContent).toBe("2");
+  await click(dec());
+  expect(card().querySelector('button[title="Teklife ekle"]').textContent).toBe("1");
+  await click(dec());
+  expect(dec()).toBeFalsy();
+});
