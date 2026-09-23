@@ -201,10 +201,10 @@ function Detail({ id, onClose, onEdit, onDeleted, prodCost }) {
                 <button
                   onClick={() => setShowProfit((v) => !v)}
                   title={showProfit ? "Kârı gizle" : "Kârı göster"}
-                  className="m-press flex h-7 w-7 items-center justify-center rounded-full"
-                  style={showProfit ? { background: "var(--m-primary-2)" } : { background: "rgba(148,163,184,.22)" }}
+                  className="m-press flex h-5 w-5 items-center justify-center"
+                  style={{ opacity: showProfit ? 0.9 : 0.28 }}
                 >
-                  {showProfit ? <EyeOff className="h-4 w-4 text-white" /> : <Eye className="h-4 w-4" style={{ color: "var(--m-ink-2)" }} />}
+                  {showProfit ? <EyeOff className="h-3.5 w-3.5" style={{ color: "var(--m-primary-2)" }} /> : <Eye className="h-3.5 w-3.5" style={{ color: "var(--m-ink-2)" }} />}
                 </button>
               </div>
               <span className="m-tnum text-[20px] font-extrabold" style={{ color: "var(--m-primary)" }}>₺{money(total)}</span>

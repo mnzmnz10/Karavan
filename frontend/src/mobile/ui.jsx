@@ -133,7 +133,10 @@ export function SkeletonList({ rows = 6 }) {
 export function Sheet({ open, onClose, title, children, full = false }) {
   const [mounted, setMounted] = useState(open);
   useEffect(() => {
-    if (open) setMounted(true);
+    if (open) { setMounted(true); return; }
+    // Kapanış: çıkış animasyonu olmadığından zamanlayıcıyla unmount (X/backdrop hep kapatsın)
+    const t = setTimeout(() => setMounted(false), 200);
+    return () => clearTimeout(t);
   }, [open]);
   if (!mounted && !open) return null;
   return (
@@ -141,7 +144,6 @@ export function Sheet({ open, onClose, title, children, full = false }) {
       <div className="m-backdrop-enter absolute inset-0 bg-black/40" onClick={onClose} />
       <div
         className={`m-sheet-enter relative w-full max-w-[560px] rounded-t-3xl bg-[var(--m-bg)] ${full ? "h-[92dvh]" : "max-h-[88dvh]"} flex flex-col`}
-        onAnimationEnd={() => { if (!open) setMounted(false); }}
       >
         <div className="flex items-center justify-center pt-2.5">
           <div className="h-1.5 w-10 rounded-full bg-slate-300" />
