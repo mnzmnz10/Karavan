@@ -4,7 +4,7 @@ import http, { services as servicesApi, quotes as quotesApi } from "../api";
 import { Header, SearchBar, Card, SkeletonList, RefreshScroll, OfflineBar, money, ago, todayISO, fmtDate } from "../ui";
 import { useSession } from "../session";
 import { cache } from "../cache";
-import { serviceNet, collectedTRY, warrantyEnd } from "./Services";
+import { serviceNet, collectedTRY } from "./Services";
 import { useCatalog } from "../catalog";
 
 const contractsApi = { list: () => http.get("/contracts").then((r) => r.data) };
@@ -102,18 +102,9 @@ export default function Dashboard({ go }) {
       .filter((u) => u.dd <= 7)
       .sort((a, b) => a.dd - b.dd)
       .slice(0, 5);
-    // Garantisi 30 gün içinde bitecek teslim edilmiş servisler (bakım/takip araması için)
-    const warrantySoon = services
-      .filter((x) => x.status === "delivered")
-      .map((x) => ({ x, w: warrantyEnd(x) }))
-      .filter((u) => u.w?.active)
-      .map((u) => ({ ...u, dd: dayDiff(u.w.end) }))
-      .filter((u) => u.dd <= 30)
-      .sort((a, b) => a.dd - b.dd)
-      .slice(0, 5);
     const recentQ = [...quotes].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || ""))).slice(0, 3);
     const recent = [...services].sort((a, b) => String(b.arrival_date || b.created_at || "").localeCompare(String(a.arrival_date || a.created_at || ""))).slice(0, 4);
-    return { active, delivered, overdue, dueToday, sTotal: services.length, qTotal: quotes.length, quotesMonth, quotesMonthSum, cTotal: contracts.length, agreed, recent, recentQ, upcoming, warrantySoon, months, svcDone: doneMonth.length, svcNet, svcProfit: svcNet - svcCost, openBal, openCnt };
+    return { active, delivered, overdue, dueToday, sTotal: services.length, qTotal: quotes.length, quotesMonth, quotesMonthSum, cTotal: contracts.length, agreed, recent, recentQ, upcoming, months, svcDone: doneMonth.length, svcNet, svcProfit: svcNet - svcCost, openBal, openCnt };
   }, [data]);
 
   // Genel arama: teklif / servis / sözleşme (müşteri, başlık, plaka, telefon rakamı) — en fazla 5'er sonuç
@@ -233,25 +224,6 @@ export default function Dashboard({ go }) {
                       </div>
                       <span className="shrink-0 rounded-full px-2.5 py-1 text-[12px] font-bold" style={dd < 0 ? { background: "#ffe4e6", color: "#e11d48" } : dd === 0 ? { background: "#fef0e8", color: "#e56a1f" } : { background: "#f1f5f9", color: "#64748b" }}>
                         {dd < 0 ? `${-dd} gün gecikti` : dd === 0 ? "Bugün" : dd === 1 ? "Yarın" : `${dd} gün`}
-                      </span>
-                    </Card>
-                  ))}
-                </div>
-              </>
-            )}
-
-            {stats.warrantySoon.length > 0 && (
-              <>
-                <div className="px-1 pb-1.5 pt-4 text-[12px] font-bold uppercase tracking-wide text-slate-400">Garantisi Bitiyor</div>
-                <div className="space-y-2">
-                  {stats.warrantySoon.map(({ x, w, dd }) => (
-                    <Card key={x.id} onClick={() => { cache.set("svc_open", x.id); go?.("service"); }} className="flex items-center gap-3 p-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-[14px] font-semibold">{x.customer_name || "İsimsiz"}</div>
-                        <div className="truncate text-[12px] text-slate-400">{[x.plate, `bitiş ${fmtDate(w.end)}`].filter(Boolean).join(" · ")}</div>
-                      </div>
-                      <span className="shrink-0 rounded-full px-2.5 py-1 text-[12px] font-bold" style={{ background: "#e8f0fb", color: "#1e73be" }}>
-                        {dd === 0 ? "Bugün bitiyor" : `${dd} gün kaldı`}
                       </span>
                     </Card>
                   ))}
