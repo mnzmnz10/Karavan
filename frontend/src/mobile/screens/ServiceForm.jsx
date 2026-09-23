@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Camera, Plus, Trash2, Loader2, X, Eye, EyeOff } from "lucide-react";
+import { Camera, Plus, Trash2, Loader2, X, Eye, EyeOff, Search } from "lucide-react";
+import { useCatalog, catRate } from "../catalog";
 import { services as servicesApi } from "../api";
 import { cache } from "../cache";
 import { Sheet, money } from "../ui";
@@ -104,6 +105,21 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
     [f.items]
   );
 
+  // Katalogdan kalem: satış = liste (TL), geliş = indirimli (yoksa liste) — masaüstü addServiceItemFromProduct ile aynı
+  const catalog = useCatalog(open);
+  const [catQ, setCatQ] = useState("");
+  const catResults = useMemo(() => {
+    const s = catQ.trim().toLocaleLowerCase("tr");
+    if (s.length < 2) return [];
+    return catalog.filter((p) => (p.name || "").toLocaleLowerCase("tr").includes(s)).slice(0, 12);
+  }, [catQ, catalog]);
+  const addFromCatalog = (p) => {
+    const rate = catRate(p);
+    const base = p.discounted_price > 0 ? p.discounted_price : p.list_price;
+    set("items", [...f.items, { name: p.name, qty: 1, unit_price: Math.round(p.list_price_try), unit_cost: Math.round(base * rate), currency: "TRY" }]);
+    setCatQ("");
+    toast.success(`${p.name} eklendi`);
+  };
   const addItem = () => set("items", [...f.items, { name: "", qty: 1, unit_price: "", unit_cost: "", currency: "TRY" }]);
   // Kâr = satış − maliyet. Maliyet boşsa ürünün indirimli fiyatından (prodCost) türet, o da yoksa kâr 0.
   const lineTRY = (it, field) => {
@@ -300,6 +316,22 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
             )}
           </div>
         ))}
+        <div className="border-t border-slate-100 px-3 pt-2.5">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input value={catQ} onChange={(e) => setCatQ(e.target.value)} placeholder="Katalogdan ürün ekle" className="w-full rounded-xl bg-slate-100 py-2 pl-9 pr-3 text-[14px] placeholder:text-slate-400" />
+          </div>
+          {catResults.length > 0 && (
+            <div className="mt-1 max-h-56 overflow-y-auto">
+              {catResults.map((p) => (
+                <button key={p.id} onClick={() => addFromCatalog(p)} className="m-press flex w-full items-center justify-between gap-2 border-b border-slate-50 px-1 py-2 text-left last:border-0">
+                  <span className="truncate text-[14px]">{p.name}</span>
+                  <span className="m-tnum shrink-0 text-[13px] font-semibold" style={{ color: "var(--m-primary)" }}>₺{money(p.list_price_try)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <button onClick={addItem} className="m-press flex w-full items-center justify-center gap-1.5 px-4 py-3 text-[14px] font-semibold" style={{ color: "var(--m-primary-2)" }}>
           <Plus className="h-4 w-4" /> Kalem Ekle
         </button>

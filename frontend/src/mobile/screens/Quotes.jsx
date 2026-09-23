@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { FileText, User, Calendar, Share2, Trash2, Loader2, Pencil, Eye, EyeOff, Minus, Plus, Search, ListPlus, Wrench, Copy } from "lucide-react";
 import ServiceForm from "./ServiceForm";
+import { useCatalog, catRate } from "../catalog";
 import { toast } from "sonner";
-import { quotes as quotesApi, products as productsApi, docUrl, openDoc } from "../api";
+import { quotes as quotesApi, docUrl, openDoc } from "../api";
 import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, RefreshScroll, OfflineBar } from "../ui";
 import { cache } from "../cache";
 
@@ -211,28 +212,6 @@ function QuoteEditSheet({ q, open, onClose, onSaved }) {
   );
 }
 
-// Katalog (id → ürün) — kalem editörü için; offline'da önbellekten
-let catalogFetchedAt = 0; // oturum içi: 5 dk'da bir tazele (her detay açılışında ~200KB çekme)
-function useCatalog(open) {
-  const [cat, setCat] = useState(() => cache.get("catalog_min") || []);
-  useEffect(() => {
-    if (!open) return;
-    const cached = cache.get("catalog_min");
-    if (cached?.length && Date.now() - catalogFetchedAt < 5 * 60 * 1000) { setCat(cached); return; }
-    productsApi.list({ limit: 2000 }).then((data) => {
-      catalogFetchedAt = Date.now();
-      const arr = (Array.isArray(data) ? data : data?.products || []).map((p) => ({
-        id: p.id, name: p.name, currency: p.currency || "TRY",
-        list_price: Number(p.list_price) || 0, list_price_try: Number(p.list_price_try) || 0,
-        discounted_price: Number(p.discounted_price) || 0,
-      }));
-      if (arr.length) { setCat(arr); cache.set("catalog_min", arr); }
-    }).catch(() => {});
-  }, [open]);
-  return cat;
-}
-
-const catRate = (p) => (p.currency === "TRY" ? 1 : (p.list_price > 0 ? p.list_price_try / p.list_price : 0));
 
 // Teklif kalemlerini POST/PUT products payload'una çevir (kopyalama için).
 // Katalogdan kalkmış / eski format ürün → TL manuel kalem (fiyat + geliş korunur).

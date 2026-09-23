@@ -203,3 +203,15 @@ test("yeni servis: eski kayıttan müşteri önerisi → telefon/plaka dolar", a
   expect(container.querySelector('input[inputmode="tel"]').value).toBe("05551112233");
   expect(btnWith("59 AB 123")).toBeFalsy(); // öneri kapandı
 });
+
+test("servis formu: katalogdan ekle → satış liste, geliş indirimli", async () => {
+  await render(<ServiceForm open initial={{ id: "s9", customer_name: "X", items: [] }} onClose={() => {}} onSaved={() => {}} prodCost={{}} />);
+  await setVal(container.querySelector('input[placeholder="Katalogdan ürün ekle"]'), "sola");
+  await click(btnWith("Solar Panel 450W"));
+  const names = Array.from(container.querySelectorAll('input[placeholder="Parça/işlem"]')).map((i) => i.value);
+  expect(names).toEqual(["Solar Panel 450W"]);
+  const api = require("../api");
+  await click(btnWith("Kaydet"));
+  const it = api.__calls.svcUpdate.at(-1).items[0];
+  expect(it).toMatchObject({ unit_price: 10000, unit_cost: 7000, qty: 1 });
+});
