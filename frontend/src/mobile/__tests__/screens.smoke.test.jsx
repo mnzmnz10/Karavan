@@ -23,12 +23,16 @@ const PRODUCTS = [
 ];
 
 jest.mock("../api", () => {
-  const calls = { svcUpdate: [], svcCreate: [] };
+  const calls = { svcUpdate: [], svcCreate: [], qCreate: [], qUpdate: [] };
   const ok = (v) => () => Promise.resolve(v);
   return {
     __esModule: true,
     __calls: calls,
-    quotes: { list: ok([]), create: ok({}), update: ok({}) },
+    quotes: {
+      list: ok([]),
+      create: (p) => { calls.qCreate.push(p); return Promise.resolve({ id: "qn", total_discounted_price: 11000 }); }, // sunucu güncel kur tabanı
+      update: (id, p) => { calls.qUpdate.push(p); return Promise.resolve({}); },
+    },
     products: { list: () => Promise.resolve(global.__PRODUCTS) },
     categories: { list: ok([{ id: "c1", name: "Solar" }]) },
     companies: { list: ok([]) },
@@ -140,4 +144,23 @@ test("ürünler: liste fiyatı görünür, göz indirimliyi açar, yazısız", a
 test("sözleşme listesi render", async () => {
   await render(<Contracts />);
   expect(text()).toContain("IVECO Karavan");
+});
+
+test("sepet: hedef net sunucu tabanıyla uzlaştırılır (eski kurlu sepet)", async () => {
+  await render(
+    <SessionCtx.Provider value={{ username: "t" }}>
+      <CartProvider><Products /><CartBar /></CartProvider>
+    </SessionCtx.Provider>
+  );
+  await act(() => new Promise((r) => setTimeout(r, 600)));
+  await click(container.querySelector('button[title="Teklife ekle"]'));
+  await click(btnWith("Teklif Oluştur"));
+  await setVal(container.querySelector('input[placeholder="Teklif adı *"]'), "Sepet Test");
+  await setVal(container.querySelector('input[placeholder^="Net toplamı ayarla"]'), "9000");
+  const createBtn = Array.from(container.querySelectorAll("button")).filter((b) => b.textContent.includes("Teklif Oluştur")).at(-1);
+  await click(createBtn);
+  const api = require("../api");
+  expect(api.__calls.qCreate.length).toBe(1);
+  const pct = api.__calls.qUpdate.at(-1).discount_percentage;
+  expect(11000 * (1 - pct / 100)).toBeCloseTo(9000, 6); // sunucu tabanında tam 9.000
 });

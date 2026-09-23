@@ -83,6 +83,7 @@ function CartSheet({ open, onClose }) {
   const [discount, setDiscount] = useState(""); // %
   const [discTL, setDiscTL] = useState("");     // ₺ (yüzde ile senkron)
   const [targetNet, setTargetNet] = useState(""); // hedef net toplam
+  const [discMode, setDiscMode] = useState("pct"); // son düzenlenen: pct | tl | net
   const [labor, setLabor] = useState("");
   const [notes, setNotes] = useState("");
   const [manualItems, setManualItems] = useState([]); // elle girilen kalemler
@@ -96,16 +97,19 @@ function CartSheet({ open, onClose }) {
 
   // İndirim çift yön: % girilince ₺ hesaplanır, ₺ girilince % hesaplanır. Net hedefi indirimi tam ayarlar.
   const onPct = (v) => {
+    setDiscMode("pct");
     setDiscount(v); setTargetNet("");
     const pct = Math.min(100, Math.max(0, parseFloat(v) || 0));
     setDiscTL(pct > 0 && subtotal > 0 ? String(Math.round(subtotal * pct / 100)) : "");
   };
   const onTL = (v) => {
+    setDiscMode("tl");
     setDiscTL(v); setTargetNet("");
     const tl = Math.max(0, parseFloat(v) || 0);
     setDiscount(tl > 0 && subtotal > 0 ? String(Math.min(100, tl / subtotal * 100)) : ""); // tam, yuvarlama yok
   };
   const onTargetNet = (v) => {
+    setDiscMode("net");
     setTargetNet(v);
     const target = parseFloat(v);
     if (isNaN(target)) { setDiscount(""); setDiscTL(""); return; }
@@ -129,7 +133,7 @@ function CartSheet({ open, onClose }) {
     if (!name.trim()) { toast.error("Teklif adı girin"); return; }
     setBusy(true);
     try {
-      await quotesApi.create({
+      const doc = await quotesApi.create({
         name: name.trim(),
         customer_name: (customer.trim() || name.trim()),
         discount_percentage: discPct,
@@ -147,9 +151,21 @@ function CartSheet({ open, onClose }) {
           })),
         ],
       });
+      // Sepetteki TL fiyatlar eklendiği anın kuruyla; sunucu güncel kurla fiyatlar. Kullanıcı ₺ indirim ya da
+      // hedef net girdiyse yüzdeyi sunucunun gerçek tabanıyla yeniden hesapla → net/indirim TAM tutar.
+      const base = Number(doc?.total_discounted_price) || 0;
+      let wantPct = null;
+      if (discMode === "net" && Number.isFinite(parseFloat(targetNet)) && base > 0) {
+        wantPct = Math.min(100, Math.max(0, (base + laborTL - parseFloat(targetNet)) / base * 100));
+      } else if (discMode === "tl" && parseFloat(discTL) > 0 && base > 0) {
+        wantPct = Math.min(100, parseFloat(discTL) / base * 100);
+      }
+      if (wantPct != null && doc?.id && Math.abs(wantPct - discPct) > 1e-9) {
+        try { await quotesApi.update(doc.id, { discount_percentage: wantPct }); } catch {}
+      }
       toast.success("Teklif oluşturuldu");
       cart.clear();
-      setName(""); setCustomer(""); setDiscount(""); setDiscTL(""); setTargetNet(""); setLabor(""); setNotes(""); setManualItems([]);
+      setName(""); setCustomer(""); setDiscount(""); setDiscTL(""); setTargetNet(""); setDiscMode("pct"); setLabor(""); setNotes(""); setManualItems([]);
       onClose();
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Teklif oluşturulamadı");
