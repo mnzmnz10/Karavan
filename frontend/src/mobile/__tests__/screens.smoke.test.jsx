@@ -5,7 +5,7 @@ import { act } from "react";
 import Services from "../screens/Services";
 import ServiceForm from "../screens/ServiceForm";
 import Products from "../screens/Products";
-import Contracts from "../screens/Contracts";
+import Contracts, { contractStatementText } from "../screens/Contracts";
 import Dashboard from "../screens/Dashboard";
 import { CartProvider, CartBar } from "../Cart";
 import { SessionCtx } from "../session";
@@ -653,4 +653,17 @@ test("ürün satırı: sepetteyse − ile azalt, 0'da buton kaybolur", async () 
   expect(card().querySelector('button[title="Teklife ekle"]').textContent).toBe("1");
   await click(dec());
   expect(dec()).toBeFalsy();
+});
+
+test("sözleşme ödeme özeti: toplam + tahsilatlar (döviz sembolü) + TL tahsil, kalan yok", () => {
+  const t = contractStatementText({ title: "IVECO Karavan", customer_name: "Ali Veli", data: { grandTotal: 1000000, collections: [
+    { date: "2026-09-01", description: "KAPORA", amount: "100000", currency: "TRY" },
+    { date: "2026-09-10", description: "ARA ÖDEME", amount: "2000", currency: "EUR", rate: "50" },
+  ] } });
+  expect(t).toContain("Merhaba Ali Veli,");
+  expect(t).toContain(`Sözleşme toplamı: ₺${money(1000000)}`);
+  expect(t).toContain(`KAPORA: ₺${money(100000)}`);
+  expect(t).toContain(`ARA ÖDEME: €${money(2000)}`);
+  expect(t).toContain(`Tahsil edilen: ₺${money(200000)}`);
+  expect(t).not.toMatch(/Kalan/i);
 });

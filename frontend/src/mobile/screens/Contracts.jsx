@@ -31,6 +31,25 @@ export const isValidTC = (v) => {
 };
 const custName = (c) => c?.customer_name || c?.data?.customer_name || "";
 const custPhone = (c) => c?.customer_phone || c?.data?.customer_phone || "";
+
+// Müşteriye tahsilat özeti — yalnız kesin bilgiler (kalan hesaplanmaz: EUR/fatura farkı/ilaveler PDF'te)
+export function contractStatementText(c) {
+  const d = c?.data || {};
+  const sym = (x) => (x === "TRY" ? "₺" : x === "USD" ? "$" : "€");
+  const colls = Array.isArray(d.collections) ? d.collections : [];
+  const tl = colls.reduce((s, x) => s + (parseFloat(x.amount) || 0) * (x.currency === "TRY" ? 1 : (parseFloat(x.rate) || 1)), 0);
+  const name = custName(c);
+  return [
+    `Merhaba${name ? " " + name : ""},`,
+    `${c?.title ? c.title + " " : ""}sözleşmenize ait ödeme özeti:`,
+    grand(c) > 0 ? `Sözleşme toplamı: ₺${money(grand(c))}` : null,
+    "",
+    ...colls.map((x) => `• ${x.date ? fmtDate(x.date) + " " : ""}${x.description || "Tahsilat"}: ${sym(x.currency)}${money(parseFloat(x.amount) || 0)}`),
+    `Tahsil edilen: ₺${money(tl)}`,
+    "",
+    "Çorlu Karavan",
+  ].filter((l) => l !== null).join("\n");
+}
 const custTc = (c) => c?.customer_tc || c?.data?.customer_tc || "";
 
 function Row({ c, onOpen }) {
@@ -194,6 +213,11 @@ function Detail({ c, onClose, onStage, staging, onDeleted, onEditItems, onCopy, 
               <span className="text-[13px] font-semibold" style={{ color: "var(--m-ink-2)" }}>Tahsil Edilen Toplam</span>
               <span className="m-tnum text-[15px] font-extrabold" style={{ color: "var(--m-primary-2)" }}>₺{money(tahsilToplam)}</span>
             </div>
+            {waNumber(custPhone(c)) && (
+              <a href={`https://wa.me/${waNumber(custPhone(c))}?text=${encodeURIComponent(contractStatementText(c))}`} target="_blank" rel="noreferrer" className="m-press mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl py-2.5 text-[14px] font-bold text-white" style={{ background: "#25d366" }}>
+                <MessageCircle className="h-4 w-4" /> Ödeme özetini gönder
+              </a>
+            )}
           </>
         )}
       </div>
