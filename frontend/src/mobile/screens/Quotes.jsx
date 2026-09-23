@@ -599,7 +599,7 @@ function Detail({ q, onClose, onDeleted, onSaved, onCopied, go }) {
 
       {q.notes && (
         <div className="mt-3 rounded-2xl bg-white p-4">
-          <div className="mb-1 text-[12px] font-bold uppercase tracking-wide text-slate-400">Notlar</div>
+          <div className="mb-1 text-[12px] font-bold uppercase tracking-wide text-slate-400">Teklif Notları</div>
           <div className="whitespace-pre-wrap text-[14px] leading-relaxed">{q.notes}</div>
         </div>
       )}
