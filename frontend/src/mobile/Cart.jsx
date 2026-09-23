@@ -302,7 +302,11 @@ function CartSheet({ open, onClose }) {
         })}
       </div>
 
-      <button onClick={() => { if (window.confirm("Sepet temizlensin mi?")) cart.clear(); }} className="m-press mt-3 flex w-full items-center justify-center gap-1.5 py-2 text-[13px] font-semibold text-rose-500">
+      <button onClick={() => {
+        if (!window.confirm("Sepet ve teklif formu temizlensin mi?")) return;
+        cart.clear();
+        setName(""); setCustomer(""); setDiscount(""); setDiscTL(""); setTargetNet(""); setDiscMode("pct"); setLabor(""); setNotes(""); setManualItems([]);
+      }} className="m-press mt-3 flex w-full items-center justify-center gap-1.5 py-2 text-[13px] font-semibold text-rose-500">
         <Trash2 className="h-4 w-4" /> Sepeti Temizle
       </button>
 
