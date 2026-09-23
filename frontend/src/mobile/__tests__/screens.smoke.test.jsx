@@ -240,3 +240,15 @@ test("servis tahsilat: kalan hesap, USD tahsilat ekle (kur), sil", async () => {
   await click(container.querySelector('button[aria-label="Tahsilatı sil"]'));
   expect(api.__calls.svcUpdate.at(-1).collections.map((c) => c.id)).not.toContain("c1");
 });
+
+test("servis formu: garanti/ödeme hesabı payload", async () => {
+  await render(<ServiceForm open initial={{ ...global.__SERVICE, warranty_months: 6 }} onClose={() => {}} onSaved={() => {}} prodCost={{}} />);
+  const w = container.querySelector('input[placeholder="Kapsam…"]');
+  await setVal(w, "Akü 2 yıl");
+  const api = require("../api");
+  await click(btnWith("Kaydet"));
+  const p = api.__calls.svcUpdate.at(-1);
+  expect(p.warranty_months).toBe(6);
+  expect(p.warranty_note).toBe("Akü 2 yıl");
+  expect(p.payment_account).toBeNull();
+});

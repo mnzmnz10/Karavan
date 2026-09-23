@@ -406,6 +406,12 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, prodCost }) {
             </div>
           )}
 
+          {(s.warranty_months != null || s.warranty_note) && (
+            <div className="mt-3 rounded-2xl bg-white p-4">
+              <div className="mb-1 text-[12px] font-bold uppercase tracking-wide text-slate-400">Garanti</div>
+              <div className="text-[14px]">{s.warranty_months != null ? s.warranty_months + ' ay' : ''}{s.warranty_months != null && s.warranty_note ? ' · ' : ''}{s.warranty_note || ''}</div>
+            </div>
+          )}
           {s.notes && (
             <div className="mt-3 rounded-2xl bg-white p-4">
               <div className="mb-1 text-[12px] font-bold uppercase tracking-wide text-slate-400">Notlar</div>

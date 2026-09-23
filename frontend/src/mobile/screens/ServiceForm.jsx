@@ -69,6 +69,9 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
     photos: [...(initial?.photos || [])],
     notes: initial?.notes || "",
     discount_amount: Number(initial?.discount_amount) > 0 ? String(initial.discount_amount) : "",
+    warranty_months: initial?.warranty_months != null ? String(initial.warranty_months) : "",
+    warranty_note: initial?.warranty_note || "",
+    payment_account: initial?.payment_account || "",
   });
   const [showProfit, setShowProfit] = useState(() => cache.get("svc_profit") === true);
   useEffect(() => { cache.set("svc_profit", showProfit); }, [showProfit]);
@@ -207,6 +210,10 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
         ...rest,
         discount_amount: discount,
         discount_percent: Math.round(discPct * 100) / 100,
+        // Masaüstü ile aynı: boş → null (backend None = dokunma)
+        warranty_months: f.warranty_months !== "" && f.warranty_months != null ? Math.max(0, parseInt(f.warranty_months, 10) || 0) : null,
+        warranty_note: (f.warranty_note || "").trim() || null,
+        payment_account: (f.payment_account || "").trim() || null,
         customer_name: f.customer_name.trim(),
         plate: f.is_trailer ? "" : f.plate,
         items: f.items
@@ -396,6 +403,12 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
           </div>
           <input ref={fileRef} type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={(e) => { onFiles(e.target.files); e.target.value = ""; }} />
         </div>
+      </Group>
+
+      <Group title="Garanti & Ödeme">
+        <Field label="Garanti (ay)"><input type="number" min="0" inputMode="numeric" className={inp} value={f.warranty_months} onChange={(e) => set("warranty_months", e.target.value)} placeholder="—" /></Field>
+        <Field label="Garanti notu"><input className={inp} value={f.warranty_note} onChange={(e) => set("warranty_note", e.target.value)} placeholder="Kapsam…" /></Field>
+        <Field label="Ödeme hesabı" last><input className={inp} value={f.payment_account} onChange={(e) => set("payment_account", e.target.value)} placeholder="IBAN / not (PDF'te yok)" /></Field>
       </Group>
 
       <Group title="Notlar">
