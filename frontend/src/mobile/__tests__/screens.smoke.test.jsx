@@ -454,3 +454,18 @@ test("servis formu: foto alanı olmayan kayıt düzenlenince photos gönderilmez
   const api = require("../api");
   expect("photos" in api.__calls.svcUpdate.at(-1)).toBe(false);
 });
+
+test("Teklifler '+': boş sepetle sadece manuel kalemli teklif", async () => {
+  const Quotes = require("../screens/Quotes").default;
+  await render(<CartProvider><Quotes go={() => {}} /></CartProvider>);
+  await click(container.querySelector('button[aria-label="Yeni teklif"]'));
+  await click(btnWith("Elle Kalem Ekle"));
+  await setVal(container.querySelector('input[placeholder="Kalem adı"]'), "Montaj");
+  await setVal(container.querySelector('input[placeholder="Satış ₺"]'), "3000");
+  await setVal(container.querySelector('input[placeholder="Teklif adı *"]'), "Sadece Manuel");
+  await click(Array.from(container.querySelectorAll("button")).filter((b) => b.textContent.includes("Teklif Oluştur")).at(-1));
+  const api = require("../api");
+  const p = api.__calls.qCreate.at(-1);
+  expect(p.name).toBe("Sadece Manuel");
+  expect(p.products).toEqual([expect.objectContaining({ manual: true, name: "Montaj", price: 3000 })]);
+});

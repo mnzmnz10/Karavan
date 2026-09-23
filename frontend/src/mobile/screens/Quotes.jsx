@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { quotes as quotesApi, docUrl, openDoc } from "../api";
 import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, RefreshScroll, OfflineBar } from "../ui";
 import { cache, customerNames } from "../cache";
+import { useCart } from "../Cart";
 
 const fmtDate = (s) => {
   if (!s) return "";
@@ -621,6 +622,7 @@ function Detail({ q, onClose, onDeleted, onSaved, onCopied, go }) {
 }
 
 export default function Quotes({ go }) {
+  const cart = useCart(); // "+" → sepet/teklif formu (manuel kalemle de teklif açılabilsin)
   const [items, setItems] = useState(() => cache.get("quotes") || []);
   // Servisten yönlendirme: tek seferlik arama (mz:quote_search)
   const [q, setQ] = useState(() => { const v = cache.get("quote_search"); if (v) cache.set("quote_search", null); return v || ""; });
@@ -681,7 +683,15 @@ export default function Quotes({ go }) {
 
   return (
     <div className="flex h-full flex-col">
-      <Header title="Teklifler" subtitle={loading ? "Yükleniyor…" : `${items.length} teklif`} />
+      <Header
+        title="Teklifler"
+        subtitle={loading ? "Yükleniyor…" : `${items.length} teklif`}
+        right={cart ? (
+          <button onClick={cart.openSheet} aria-label="Yeni teklif" className="m-press flex h-9 w-9 items-center justify-center rounded-full" style={{ background: "var(--m-primary)" }}>
+            <Plus className="h-5 w-5 text-white" strokeWidth={2.6} />
+          </button>
+        ) : null}
+      />
       <SearchBar value={q} onChange={setQ} placeholder="Teklif, müşteri veya ürün" />
       <div className="flex gap-2 overflow-x-auto px-4 pb-2" style={{ scrollbarWidth: "none" }}>
         {[["", "Tümü", items.length], ["month", "Bu ay", qCounts.month], ["service", "Serviste", qCounts.service], ["open", "Bekleyen", items.length - qCounts.service]].map(([id, label, n]) => {
