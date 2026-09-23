@@ -686,3 +686,18 @@ test("Özet teslim takvimi: yarın / gecikmiş etiketi, dokun → servis detayı
   await render(<Dashboard go={() => {}} />);
   expect(text()).toContain("3 gün gecikti");
 });
+
+test("tahsilat: 'Kalanın tamamı' tutarı doldurur (₺ ve €/kur), açıklama çipi", async () => {
+  global.__SERVICE.collections = [{ id: "c1", date: "2026-09-23", description: "EFT", amount: 30000, currency: "TRY", rate: null }];
+  await render(<Services />);
+  await click(Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri"));
+  await click(btnWith("Tahsilat Ekle"));
+  await click(btnWith("Kalanın tamamı"));
+  expect(container.querySelector('input[placeholder="Tutar"]').value).toBe("40000");
+  const sel = container.querySelector("select");
+  await act(async () => { sel.value = "EUR"; sel.dispatchEvent(new Event("change", { bubbles: true })); });
+  await click(btnWith("Kalanın tamamı"));
+  expect(container.querySelector('input[placeholder="Tutar"]').value).toBe(String(Math.round((40000 / 55.9) * 100) / 100));
+  await click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim() === "Nakit"));
+  expect(container.querySelector('input[placeholder^="Açıklama"]').value).toBe("Nakit");
+});

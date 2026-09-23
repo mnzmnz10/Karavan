@@ -144,7 +144,7 @@ const baseCollections = (s) => {
   return colls;
 };
 
-function CollectionSheet({ open, onClose, onAdd }) {
+function CollectionSheet({ open, onClose, onAdd, remaining = 0 }) {
   const [desc, setDesc] = useState("");
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState("TRY");
@@ -175,12 +175,22 @@ function CollectionSheet({ open, onClose, onAdd }) {
     <Sheet open={open} onClose={onClose} title="Tahsilat Ekle">
       <div className="space-y-2 rounded-2xl bg-white p-3">
         <input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Açıklama (Nakit, EFT, Kart…)" className={field} />
+        <div className="flex gap-1.5">
+          {["Nakit", "EFT", "Kart"].map((t) => (
+            <button key={t} type="button" onClick={() => setDesc(t)} className="m-press rounded-full px-3 py-1 text-[12px] font-bold" style={desc === t ? { background: "var(--m-primary-2)", color: "#fff" } : { background: "#f1f5f9", color: "#64748b" }}>{t}</button>
+          ))}
+        </div>
         <div className="flex gap-2">
           <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" placeholder="Tutar" className={`${field} flex-1`} />
           <select value={currency} onChange={(e) => onCur(e.target.value)} className="rounded-xl bg-slate-100 px-3 text-[15px]">
             <option value="TRY">₺</option><option value="EUR">€</option><option value="USD">$</option>
           </select>
         </div>
+        {remaining > 0.5 && (currency === "TRY" || r > 0) && (
+          <button type="button" onClick={() => setAmount(String(Math.round((currency === "TRY" ? remaining : remaining / r) * 100) / 100))} className="m-press rounded-full px-3 py-1 text-[12px] font-bold" style={{ background: "#fff1f2", color: "#e11d48" }}>
+            Kalanın tamamı · ₺{money(remaining)}
+          </button>
+        )}
         {currency !== "TRY" && (
           <div className="flex items-center gap-2">
             <span className="shrink-0 text-[13px] text-slate-500">Kur (1 {CUR_SYM[currency]} = ₺)</span>
@@ -468,7 +478,7 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuo
                     <MessageCircle className="h-4 w-4" /> Hesap özeti gönder
                   </a>
                 )}
-                <CollectionSheet open={collOpen} onClose={() => setCollOpen(false)} onAdd={addCollection} />
+                <CollectionSheet open={collOpen} onClose={() => setCollOpen(false)} onAdd={addCollection} remaining={left} />
               </div>
             );
           })()}
