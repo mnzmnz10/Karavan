@@ -3163,6 +3163,12 @@ class PDFQuoteGenerator:
         story.append(self._create_totals_section_full(quote_data))
         story.append(Spacer(1, 14))
 
+        # 3b) Teklife yazılan proje notu (varsa) — tam metin, kırpma yok
+        note_sec = self._create_customer_note_section(quote_data)
+        if note_sec is not None:
+            story.append(note_sec)
+            story.append(Spacer(1, 14))
+
         # 4) Notlar & şartlar + imza (tam genişlik yatay bant)
         story.append(self._create_notes_section_full())
 
@@ -3338,6 +3344,27 @@ class PDFQuoteGenerator:
             ('LEFTPADDING', (0,0), (-1,-1), 14), ('RIGHTPADDING', (0,0), (-1,-1), 14),
         ]))
         return KeepTogether([band, card])
+
+    def _create_customer_note_section(self, quote_data: Dict):
+        """Teklife yazılan müşteri/proje notu — tam genişlik, kırpma YOK (kutudaki 'Proje Notları' özeti kısa; bu tam metin)."""
+        import html as _html
+        from reportlab.platypus import Table as PDFTable
+        raw = (quote_data.get('notes') or '').strip()
+        if not raw:
+            return None
+        band = self._create_section_band("PROJE NOTLARI")
+        txt = _html.escape(raw).replace('\n', '<br/>')
+        st = ParagraphStyle('QNoteFull', parent=self.styles['Normal'],
+            fontName=self.get_font_name(), fontSize=9, textColor=colors.HexColor('#2D3748'), leading=13)
+        box = PDFTable([[Paragraph(txt, st)]], colWidths=[16*cm])
+        box.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor(self.PROP_LIGHT)),
+            ('BOX', (0,0), (-1,-1), 0.6, colors.HexColor(self.PROP_BORDER)),
+            ('TOPPADDING', (0,0), (-1,-1), 10), ('BOTTOMPADDING', (0,0), (-1,-1), 10),
+            ('LEFTPADDING', (0,0), (-1,-1), 14), ('RIGHTPADDING', (0,0), (-1,-1), 14),
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ]))
+        return KeepTogether([band, box])
 
     def _create_proposal_products_table(self, products: List[Dict]):
         """ITEM/Ürün/Adet/Birim/Birim(TL)/Tutar/Tutar(TL) — şeritli kurumsal tablo."""
