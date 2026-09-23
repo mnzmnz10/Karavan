@@ -90,7 +90,7 @@ test("kalem editörü: + adet → güncel kurla yeni net önizleme, kaydet paylo
   const newNet = 948 * 47 * 3 + 5000 + 1000;
   expect(text()).toContain(`₺${money(newNet)}`);
   const api = require("../api");
-  const saveBtns = Array.from(container.querySelectorAll("button")).filter((b) => b.textContent.trim() === "Kaydet");
+  const saveBtns = Array.from(container.querySelectorAll("button")).filter((b) => b.textContent.trim().startsWith("Kaydet"));
   await click(saveBtns[saveBtns.length - 1]);
   const p = api.__calls.update.at(-1).products;
   expect(p).toEqual([
@@ -157,7 +157,7 @@ test("kalem editörü: birim fiyatı TL düzenle → custom_price güncel kurla"
   const inp = container.querySelectorAll('input[aria-label="Birim fiyat"]')[0];
   await act(async () => { setter.call(inp, "47000"); inp.dispatchEvent(new Event("input", { bubbles: true })); });
   expect(text()).toContain(`₺${money(47000 * 2 + 5000 + 1000)}`);
-  const saveBtns = Array.from(container.querySelectorAll("button")).filter((b) => b.textContent.trim() === "Kaydet");
+  const saveBtns = Array.from(container.querySelectorAll("button")).filter((b) => b.textContent.trim().startsWith("Kaydet"));
   await click(saveBtns.at(-1));
   const api = require("../api");
   expect(api.__calls.update.at(-1).products[0]).toEqual({ id: "pUSD", quantity: 2, custom_price: 1000 }); // 47000 / 47
