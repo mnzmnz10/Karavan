@@ -6,6 +6,7 @@ import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, m
 import { cache } from "../cache";
 import { useCart } from "../Cart";
 import { useSession } from "../session";
+import { bioLabel, bioSaved, bioDelete } from "../biometric";
 
 // Yüklü bundle hash'i (main.<hash>.js) — "eski sürüm mü?" kontrolü için
 function appVersion() {
@@ -19,6 +20,11 @@ function appVersion() {
 function AccountButton() {
   const s = useSession();
   const [open, setOpen] = useState(false);
+  const [bio, setBio] = useState(null); // hesap panelinde biyometri durumu: { label, saved }
+  useEffect(() => {
+    if (!open) return;
+    (async () => { const label = await bioLabel(); setBio(label ? { label, saved: await bioSaved() } : null); })();
+  }, [open]);
   return (
     <>
       <button onClick={() => setOpen(true)} aria-label="Hesap" className="m-press flex h-9 w-9 items-center justify-center rounded-full bg-slate-200/70">
@@ -65,6 +71,19 @@ function AccountButton() {
             Önbelleği temizle ve yenile
           </button>
         </div>
+        {bio?.saved && (
+          <button
+            onClick={async () => {
+              if (!window.confirm(`${bio.label} ile giriş kapatılsın mı? Kayıtlı şifre bu cihazdan silinir.`)) return;
+              await bioDelete(); cache.set("bio_declined", true); setBio({ ...bio, saved: false });
+              toast.success(`${bio.label} kapatıldı`);
+            }}
+            className="m-press mt-3 w-full rounded-2xl bg-white py-3 text-[14px] font-semibold"
+            style={{ color: "var(--m-ink-2)" }}
+          >
+            {bio.label} ile girişi kapat
+          </button>
+        )}
         <button onClick={() => { if (window.confirm("Çıkış yapmak istediğinize emin misiniz?")) { setOpen(false); s?.logout?.(); } }} className="m-press mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-white py-3.5 text-[15px] font-bold text-rose-500">
           <LogOut className="h-5 w-5" /> Çıkış Yap
         </button>

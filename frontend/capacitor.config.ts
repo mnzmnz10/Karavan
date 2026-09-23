@@ -12,7 +12,7 @@ const config: CapacitorConfig = {
     CapacitorCookies: { enabled: true },
     SplashScreen: {
       launchShowDuration: 700,
-      backgroundColor: '#0f172a',
+      backgroundColor: '#04284E',
       showSpinner: false,
       androidScaleType: 'CENTER_CROP',
     },

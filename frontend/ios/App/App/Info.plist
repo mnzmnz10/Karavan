@@ -6,6 +6,8 @@
 	<string>$(CAPACITOR_DEBUG)</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Uygulamaya şifre yazmadan hızlı ve güvenli giriş için Face ID kullanılır.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Servis kaydına araç fotoğrafı eklemek için kamera kullanılır.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

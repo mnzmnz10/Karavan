@@ -1,14 +1,52 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { toast } from "../toast";
-import { Loader2, Eye, EyeOff } from "lucide-react";
+import { Loader2, Eye, EyeOff, ScanFace } from "lucide-react";
 import { auth } from "../api";
 import { cache } from "../cache";
+import { bioLabel, bioSaved, bioSave, bioGet, bioDelete } from "../biometric";
 
 export default function Login({ onDone }) {
   const [u, setU] = useState(() => cache.get("last_user") || ""); // şifre saklanmaz, sadece kullanıcı adı
   const [p, setP] = useState("");
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [bio, setBio] = useState(null); // "Face ID" | "Touch ID" | null (cihazda yoksa / web)
+  const [bioReady, setBioReady] = useState(false); // kayıtlı kimlik var mı
+  useEffect(() => {
+    let alive = true;
+    (async () => { const l = await bioLabel(); if (!alive || !l) return; setBio(l); setBioReady(await bioSaved()); })();
+    return () => { alive = false; };
+  }, []);
+
+  // Şifreyle başarılı girişten sonra: biyometri teklif et (reddedilirse bir daha sorma), kayıtlıysa şifreyi tazele
+  const offerBio = async (user, pass) => {
+    if (!bio) return;
+    try {
+      if (bioReady) { await bioSave(user, pass); return; }
+      if (cache.get("bio_declined") === true) return;
+      if (window.confirm(`Sonraki girişlerde ${bio} kullanılsın mı?`)) { await bioSave(user, pass); toast.success(`${bio} açıldı`); }
+      else cache.set("bio_declined", true);
+    } catch { /* kullanıcı iptal etti / kaydedilemedi — şifreyle giriş zaten tamam */ }
+  };
+
+  const bioLogin = async () => {
+    if (busy) return;
+    let cred;
+    try { cred = await bioGet(); } catch { return; } // iptal
+    setBusy(true);
+    try {
+      await auth.login(cred.username, cred.password, true);
+      cache.set("last_user", cred.username);
+      onDone();
+    } catch (err) {
+      if (err?.response?.status === 401) {
+        await bioDelete(); setBioReady(false);
+        toast.error(`Kayıtlı şifre geçersiz; şifreyle giriş yapın, ${bio} yeniden kurulur`);
+      } else toast.error(err?.response?.data?.detail || "Giriş başarısız");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const submit = async (e) => {
     e?.preventDefault();
@@ -17,6 +55,7 @@ export default function Login({ onDone }) {
     try {
       await auth.login(u.trim(), p, true);
       cache.set("last_user", u.trim());
+      await offerBio(u.trim(), p);
       onDone();
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Giriş başarısız");
@@ -70,6 +109,11 @@ export default function Login({ onDone }) {
           {busy && <Loader2 className="h-5 w-5 animate-spin" />}
           {busy ? "Giriş yapılıyor…" : "Giriş Yap"}
         </button>
+        {bio && bioReady && (
+          <button type="button" onClick={bioLogin} disabled={busy} className="m-press flex w-full items-center justify-center gap-2 rounded-2xl bg-white/15 py-3.5 text-[16px] font-bold text-white disabled:opacity-60">
+            <ScanFace className="h-5 w-5" /> {bio} ile giriş
+          </button>
+        )}
       </form>
 
       <div className="m-safe-bottom mt-8 text-[12px] text-white/45">Oturum açık kalır</div>
