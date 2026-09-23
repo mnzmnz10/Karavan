@@ -123,6 +123,14 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
     setCatQ("");
     toast.success(`${p.name} eklendi`);
   };
+  // Kalem adı önerileri: eski servis kalemleri (işçilik vb.) + katalog ürün adları
+  const itemNames = useMemo(() => {
+    const seen = new Map();
+    const add = (n) => { const v = String(n || "").trim(); if (v && !seen.has(v.toLocaleLowerCase("tr"))) seen.set(v.toLocaleLowerCase("tr"), v); };
+    (cache.get("services") || cache.get("dashboard")?.services || []).forEach((x) => (x.items || []).forEach((it) => add(it.name)));
+    catalog.forEach((p) => add(p.name));
+    return Array.from(seen.values()).slice(0, 600);
+  }, [catalog]);
   const addItem = () => set("items", [...f.items, { name: "", qty: 1, unit_price: "", unit_cost: "", currency: "TRY" }]);
   // Kâr = satış − maliyet. Maliyet boşsa ürünün indirimli fiyatından (prodCost) türet, o da yoksa kâr 0.
   const lineTRY = (it, field) => {
@@ -293,12 +301,13 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
           value={f.operations} onChange={(e) => set("operations", e.target.value)} placeholder="Solar montaj, akü değişimi…" />
       </Group>
 
+      <datalist id="mz-item-names">{itemNames.map((n) => <option key={n} value={n} />)}</datalist>
       <Group title="Parça / İşlem Kalemleri">
         {f.items.length === 0 && <div className="px-4 py-3 text-[13px] text-slate-400">Kalem yok</div>}
         {f.items.map((it, i) => (
           <div key={i} className="border-b border-slate-100 px-3 py-2 last:border-0">
             <div className="flex items-center gap-2">
-              <input className="min-w-0 flex-1 bg-transparent text-[14px] placeholder:text-slate-300" value={it.name} onChange={(e) => updItem(i, "name", e.target.value)} placeholder="Parça/işlem" />
+              <input className="min-w-0 flex-1 bg-transparent text-[14px] placeholder:text-slate-300" value={it.name} onChange={(e) => updItem(i, "name", e.target.value)} placeholder="Parça/işlem" list="mz-item-names" />
               <button onClick={() => delItem(i)} className="m-press shrink-0 text-rose-400"><Trash2 className="h-4 w-4" /></button>
             </div>
             <div className="mt-1 flex items-center gap-2">
