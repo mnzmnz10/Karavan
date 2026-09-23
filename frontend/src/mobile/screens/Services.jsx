@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Wrench, Car, Phone, MessageCircle, Image as ImageIcon, Loader2, Plus, Pencil, Share2, Trash2, Eye, EyeOff } from "lucide-react";
+import { Wrench, Car, Phone, MessageCircle, Image as ImageIcon, Loader2, Plus, Pencil, Share2, Trash2, Eye, EyeOff, Wallet, X } from "lucide-react";
 import { toast } from "sonner";
-import { services as servicesApi, docUrl, openDoc } from "../api";
+import { services as servicesApi, rates as ratesApi, docUrl, openDoc } from "../api";
 import { useCatalog, catRate } from "../catalog";
 import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, Lightbox, RefreshScroll, OfflineBar } from "../ui";
 import { cache } from "../cache";
@@ -94,13 +94,110 @@ function Row({ s, onOpen, onCycle, busy }) {
   );
 }
 
-function Detail({ id, onClose, onEdit, onDeleted, prodCost }) {
+// ---- Tahsilat (masaüstü serviceCollectedTotalTRY ile aynı): collections doluysa SADECE onlar, yoksa eski advance_amount
+const CUR_SYM = { TRY: "₺", EUR: "€", USD: "$" };
+const collTRY = (c) => {
+  const a = parseFloat(c.amount); if (isNaN(a)) return 0;
+  if (!c.currency || c.currency === "TRY") return a;
+  return a * (parseFloat(c.rate) || 0);
+};
+const collectedTRY = (s) => {
+  const colls = Array.isArray(s.collections) ? s.collections : [];
+  if (colls.length > 0) return colls.reduce((a, c) => a + collTRY(c), 0);
+  return parseFloat(s.advance_amount) || 0;
+};
+// Eski avans → tahsilat satırı (masaüstü edit migrasyonu ile aynı), yoksa mevcut liste
+const baseCollections = (s) => {
+  const colls = Array.isArray(s.collections) ? s.collections.map((c) => ({ ...c })) : [];
+  if (colls.length === 0 && parseFloat(s.advance_amount) > 0) {
+    return [{ id: "avans", date: s.arrival_date || "", description: "Avans", amount: parseFloat(s.advance_amount), currency: "TRY", rate: null }];
+  }
+  return colls;
+};
+
+function CollectionSheet({ open, onClose, onAdd }) {
+  const [desc, setDesc] = useState("");
+  const [amount, setAmount] = useState("");
+  const [currency, setCurrency] = useState("TRY");
+  const [rate, setRate] = useState("");
+  const [live, setLive] = useState(() => cache.get("rates") || {});
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    setDesc(""); setAmount(""); setCurrency("TRY"); setRate(""); setDate(new Date().toISOString().slice(0, 10));
+    ratesApi.get().then((r) => { if (r && r.EUR) { setLive(r); cache.set("rates", r); } }).catch(() => {});
+  }, [open]);
+  // Döviz değişince kur DAİMA o dövizin güncel kuruna (masaüstü ile aynı); kullanıcı ezebilir
+  const onCur = (c) => { setCurrency(c); setRate(c === "TRY" ? "" : (Number(live[c]) > 0 ? Number(live[c]).toFixed(2) : "")); };
+  const amt = parseFloat(amount) || 0;
+  const r = parseFloat(rate) || 0;
+  const save = async () => {
+    if (amt <= 0) { toast.error("Tutar girin"); return; }
+    if (currency !== "TRY" && r <= 0) { toast.error("Kur girin"); return; }
+    setBusy(true);
+    try {
+      const ok = await onAdd({ id: Math.random().toString(36).slice(2, 10), date, description: desc.trim() || null, amount: amt, currency, rate: currency === "TRY" ? null : r });
+      if (ok) onClose();
+    } finally { setBusy(false); }
+  };
+  const field = "w-full rounded-xl bg-slate-100 px-3 py-2.5 text-[15px] placeholder:text-slate-400";
+  return (
+    <Sheet open={open} onClose={onClose} title="Tahsilat Ekle">
+      <div className="space-y-2 rounded-2xl bg-white p-3">
+        <input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Açıklama (Nakit, EFT, Kart…)" className={field} />
+        <div className="flex gap-2">
+          <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" placeholder="Tutar" className={`${field} flex-1`} />
+          <select value={currency} onChange={(e) => onCur(e.target.value)} className="rounded-xl bg-slate-100 px-3 text-[15px]">
+            <option value="TRY">₺</option><option value="EUR">€</option><option value="USD">$</option>
+          </select>
+        </div>
+        {currency !== "TRY" && (
+          <div className="flex items-center gap-2">
+            <span className="shrink-0 text-[13px] text-slate-500">Kur (1 {CUR_SYM[currency]} = ₺)</span>
+            <input value={rate} onChange={(e) => setRate(e.target.value)} inputMode="decimal" placeholder="kur" className={`${field} flex-1 text-right`} />
+          </div>
+        )}
+        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={field} />
+      </div>
+      {currency !== "TRY" && amt > 0 && r > 0 && (
+        <div className="mt-2 px-1 text-[12px]" style={{ color: "var(--m-ink-2)" }}>≈ ₺{money(amt * r)}</div>
+      )}
+      <button onClick={save} disabled={busy} className="m-press mt-3 flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-[15px] font-bold text-white disabled:opacity-60" style={{ background: "var(--m-primary-2)" }}>
+        {busy && <Loader2 className="h-5 w-5 animate-spin" />} Kaydet
+      </button>
+    </Sheet>
+  );
+}
+
+function Detail({ id, onClose, onEdit, onDeleted, onChanged, prodCost }) {
   const [s, setS] = useState(null);
   const [loading, setLoading] = useState(true);
   const [lb, setLb] = useState(null);
   const [del, setDel] = useState(false);
   const [showProfit, setShowProfit] = useState(() => cache.get("svc_profit") === true);
   useEffect(() => { cache.set("svc_profit", showProfit); }, [showProfit]);
+  const [collOpen, setCollOpen] = useState(false);
+  const saveCollections = async (list, okMsg) => {
+    try {
+      // Eski avans listeye taşındı (baseCollections) → advance_amount sıfırlanır, çift sayım/geri gelme yok
+      const patch = { collections: list };
+      if (parseFloat(s.advance_amount) > 0) patch.advance_amount = 0;
+      await servicesApi.update(s.id, patch);
+      setS((prev) => ({ ...prev, ...patch }));
+      onChanged?.();
+      toast.success(okMsg);
+      return true;
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Kaydedilemedi");
+      return false;
+    }
+  };
+  const addCollection = (c) => saveCollections([...baseCollections(s), c], "Tahsilat eklendi");
+  const removeCollection = (id) => {
+    if (!window.confirm("Bu tahsilat silinsin mi?")) return;
+    saveCollections(baseCollections(s).filter((c) => c.id !== id), "Tahsilat silindi");
+  };
   const remove = async () => {
     if (!s || del) return;
     if (!window.confirm(`"${s.customer_name || "Bu kayıt"}" servis kaydı silinsin mi?`)) return;
@@ -256,6 +353,43 @@ function Detail({ id, onClose, onEdit, onDeleted, prodCost }) {
             )}
           </div>
 
+          {(() => {
+            const colls = baseCollections(s);
+            const got = collectedTRY(s);
+            const left = total - got;
+            return (
+              <div className="mt-3 rounded-2xl bg-white p-4">
+                <div className="mb-2 flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-wide text-slate-400">
+                  <Wallet className="h-3.5 w-3.5" /> Tahsilatlar
+                </div>
+                {colls.map((c, i) => (
+                  <div key={c.id || i} className="flex items-center gap-2 border-b border-slate-50 py-2 last:border-0">
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[14px] font-medium">{c.description || "Tahsilat"}</div>
+                      <div className="text-[12px] text-slate-400">{fmtDate(c.date)}{c.currency && c.currency !== "TRY" ? ` · ${CUR_SYM[c.currency] || c.currency}${money(c.amount)} × ${c.rate}` : ""}</div>
+                    </div>
+                    <span className="m-tnum text-[14px] font-semibold">₺{money(collTRY(c))}</span>
+                    {c.id && <button onClick={() => removeCollection(c.id)} aria-label="Tahsilatı sil" className="m-press flex h-7 w-7 items-center justify-center text-rose-400"><X className="h-4 w-4" /></button>}
+                  </div>
+                ))}
+                {colls.length === 0 && <div className="py-1 text-[13px] text-slate-400">Henüz tahsilat yok</div>}
+                <div className="mt-2 space-y-1 border-t border-slate-100 pt-2 text-[13px]">
+                  <div className="flex justify-between"><span style={{ color: "var(--m-ink-2)" }}>Tahsil edilen</span><span className="m-tnum font-semibold">₺{money(got)}</span></div>
+                  <div className="flex justify-between">
+                    <span className="font-semibold" style={{ color: "var(--m-ink-2)" }}>{left < -0.5 ? "Fazla ödeme" : "Kalan"}</span>
+                    <span className="m-tnum text-[15px] font-extrabold" style={{ color: Math.abs(left) <= 0.5 ? "var(--m-primary-2)" : left > 0 ? "#e11d48" : "#d9820a" }}>
+                      {Math.abs(left) <= 0.5 ? "Ödendi" : `₺${money(Math.abs(left))}`}
+                    </span>
+                  </div>
+                </div>
+                <button onClick={() => setCollOpen(true)} className="m-press mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl bg-slate-100 py-2.5 text-[14px] font-bold" style={{ color: "var(--m-primary-2)" }}>
+                  <Plus className="h-4 w-4" /> Tahsilat Ekle
+                </button>
+                <CollectionSheet open={collOpen} onClose={() => setCollOpen(false)} onAdd={addCollection} />
+              </div>
+            );
+          })()}
+
           {(s.photos || []).length > 0 && (
             <div className="mt-3">
               <div className="mb-1.5 flex items-center gap-1.5 px-1 text-[12px] font-bold uppercase tracking-wide text-slate-400">
@@ -397,7 +531,7 @@ export default function Services() {
           <div className="space-y-2 px-4 pt-1">{filtered.map((x) => <Row key={x.id} s={x} onOpen={(r) => setSelId(r.id)} onCycle={cycleStatus} busy={busyId === x.id} />)}</div>
         )}
       </RefreshScroll>
-      <Detail id={selId} onClose={() => setSelId(null)} onEdit={openEdit} onDeleted={() => { setSelId(null); reload(); }} prodCost={prodCost} />
+      <Detail id={selId} onClose={() => setSelId(null)} onEdit={openEdit} onDeleted={() => { setSelId(null); reload(); }} onChanged={reload} prodCost={prodCost} />
       <ServiceForm key={formInitial?.id || "new"} open={formOpen} initial={formInitial} onClose={() => setFormOpen(false)} onSaved={reload} prodCost={prodCost} />
     </div>
   );

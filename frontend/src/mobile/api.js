@@ -23,6 +23,10 @@ export const products = {
   toggleFavorite: (id) => http.post(`/products/${id}/toggle-favorite`).then((r) => r.data),
 };
 
+export const rates = {
+  get: () => http.get("/exchange-rates").then((r) => r.data?.rates || {}),
+};
+
 export const companies = {
   list: () => http.get("/companies").then((r) => r.data),
 };

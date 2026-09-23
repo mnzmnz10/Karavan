@@ -41,6 +41,7 @@ jest.mock("../api", () => {
     },
     categories: { list: ok([{ id: "c1", name: "Solar" }]) },
     companies: { list: ok([]) },
+    rates: { get: ok({ TRY: 1, EUR: 55.9, USD: 48.838 }) },
     services: {
       list: () => Promise.resolve([global.__SERVICE]),
       get: () => Promise.resolve(global.__SERVICE),
@@ -214,4 +215,28 @@ test("servis formu: katalogdan ekle → satış liste, geliş indirimli", async 
   await click(btnWith("Kaydet"));
   const it = api.__calls.svcUpdate.at(-1).items[0];
   expect(it).toMatchObject({ unit_price: 10000, unit_cost: 7000, qty: 1 });
+});
+
+test("servis tahsilat: kalan hesap, USD tahsilat ekle (kur), sil", async () => {
+  global.__SERVICE.collections = [{ id: "c1", date: "2026-09-23", description: "EFT", amount: 30000, currency: "TRY", rate: null }];
+  global.confirm = () => true;
+  await render(<Services />);
+  const row = Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
+  await click(row);
+  expect(text()).toContain(`Tahsil edilen₺${money(30000)}`);
+  expect(text()).toContain(`Kalan₺${money(40000)}`);
+  await click(btnWith("Tahsilat Ekle"));
+  await setVal(container.querySelector('input[placeholder="Tutar"]'), "500");
+  const sel = container.querySelector("select");
+  await act(async () => { sel.value = "USD"; sel.dispatchEvent(new Event("change", { bubbles: true })); });
+  expect(container.querySelector('input[placeholder="kur"]').value).toBe("48.84");
+  const saves = Array.from(container.querySelectorAll("button")).filter((b) => b.textContent.trim() === "Kaydet");
+  await click(saves.at(-1));
+  const api = require("../api");
+  const p = api.__calls.svcUpdate.at(-1);
+  expect(p.collections.length).toBe(2);
+  expect(p.collections[1]).toMatchObject({ amount: 500, currency: "USD", rate: 48.84 });
+  expect(text()).toContain(`Kalan₺${money(40000 - 500 * 48.84)}`);
+  await click(container.querySelector('button[aria-label="Tahsilatı sil"]'));
+  expect(api.__calls.svcUpdate.at(-1).collections.map((c) => c.id)).not.toContain("c1");
 });
