@@ -19,6 +19,8 @@ export const products = {
     http
       .get("/products", { params: { search, page, limit, company_id, category_id } })
       .then((r) => r.data),
+  favorites: () => http.get("/products/favorites").then((r) => r.data),
+  toggleFavorite: (id) => http.post(`/products/${id}/toggle-favorite`).then((r) => r.data),
 };
 
 export const companies = {

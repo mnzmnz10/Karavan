@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Package, Boxes, Plus, Minus, User, LogOut, Loader2, Eye, EyeOff } from "lucide-react";
+import { Package, Boxes, Plus, Minus, User, LogOut, Loader2, Eye, EyeOff, Star } from "lucide-react";
+import { toast } from "sonner";
 import { products as productsApi, categories as categoriesApi } from "../api";
 import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, RefreshScroll, Lightbox, OfflineBar } from "../ui";
 import { cache } from "../cache";
@@ -46,6 +47,8 @@ function AccountButton() {
   );
 }
 
+const FAV = "__fav"; // sanal kategori: favori ürünler
+
 function CategoryCards({ cats, sel, onSel }) {
   if (!cats.length) return null;
   const Tile = ({ id, label, icon: Icon }) => {
@@ -69,6 +72,7 @@ function CategoryCards({ cats, sel, onSel }) {
   return (
     <div className="flex gap-2 overflow-x-auto px-4 pb-2 pt-1" style={{ scrollbarWidth: "none" }}>
       <Tile id="" label="Tümü" icon={Boxes} />
+      <Tile id={FAV} label="Favoriler" icon={Star} />
       {cats.map((c) => <Tile key={c.id} id={c.id} label={c.name} icon={Package} />)}
     </div>
   );
@@ -95,7 +99,10 @@ function Row({ p, onOpen, onAdd, qty, showDisc }) {
           </div>
         )}
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[15px] font-semibold leading-tight" style={{ color: "var(--m-ink)" }}>{p.name}</div>
+          <div className="flex items-center gap-1">
+            {p.is_favorite && <Star className="h-3 w-3 shrink-0" style={{ color: "#f5a524", fill: "#f5a524" }} />}
+            <div className="truncate text-[15px] font-semibold leading-tight" style={{ color: "var(--m-ink)" }}>{p.name}</div>
+          </div>
           {p.brand && <div className="mt-0.5 truncate text-[12px] font-bold uppercase tracking-wide" style={{ color: "var(--m-ink-2)" }}>{p.brand}</div>}
           <div className="mt-1 flex items-baseline gap-1.5">
             {showDisc && pr.disc != null ? (
@@ -124,7 +131,7 @@ function Row({ p, onOpen, onAdd, qty, showDisc }) {
   );
 }
 
-function Detail({ p, onClose, onAdd, showDisc }) {
+function Detail({ p, onClose, onAdd, showDisc, onFav }) {
   const [lb, setLb] = useState(false);
   const [qty, setQty] = useState(1);
   useEffect(() => { if (p) setQty(1); }, [p]);
@@ -139,7 +146,12 @@ function Detail({ p, onClose, onAdd, showDisc }) {
       )}
       <Lightbox src={lb ? p.image_url : null} onClose={() => setLb(false)} />
       <div className="rounded-2xl bg-white p-4">
-        <div className="text-[19px] font-bold leading-snug">{p.name}</div>
+        <div className="flex items-start gap-2">
+          <div className="flex-1 text-[19px] font-bold leading-snug">{p.name}</div>
+          <button onClick={() => onFav?.(p)} aria-label="Favori" className="m-press -mr-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full">
+            <Star className="h-5 w-5" style={p.is_favorite ? { color: "#f5a524", fill: "#f5a524" } : { color: "var(--m-ink-2)", opacity: 0.45 }} />
+          </button>
+        </div>
         {p.brand && <div className="mt-1"><Pill color="slate">{p.brand}</Pill></div>}
         <div className="mt-3 flex items-baseline gap-2">
           {showDisc && pr.disc != null ? (
@@ -202,6 +214,14 @@ export default function Products() {
     if (append) setMore(true);
     else { setErr(false); if (!(home && cache.get("products_home"))) setLoading(true); }
     try {
+      if (category_id === FAV) {
+        // Favoriler tek istekte gelir (sayfalama yok) → arama yerelde
+        const all = await productsApi.favorites();
+        const s = (search || "").toLocaleLowerCase("tr");
+        const arr = (Array.isArray(all) ? all : []).filter((p) => !s || `${p.name} ${p.brand || ""}`.toLocaleLowerCase("tr").includes(s));
+        setItems(arr); setHasMore(false); setPage(1); setOffline(false);
+        return;
+      }
       const data = await productsApi.list({ search, category_id: category_id || undefined, page: pg, limit: LIMIT });
       const arr = Array.isArray(data) ? data : data?.products || [];
       setItems((prev) => (append ? [...prev, ...arr] : arr));
@@ -227,6 +247,23 @@ export default function Products() {
     debRef.current = setTimeout(() => fetchPage(q.trim(), cat, 1, false), 300);
     return () => clearTimeout(debRef.current);
   }, [q, cat, fetchPage]);
+
+  const toggleFav = async (p) => {
+    const next = !p.is_favorite;
+    const apply = (v) => {
+      setSel((s) => (s && s.id === p.id ? { ...s, is_favorite: v } : s));
+      setItems((prev) => (cat === FAV && !v ? prev.filter((x) => x.id !== p.id) : prev.map((x) => (x.id === p.id ? { ...x, is_favorite: v } : x))));
+    };
+    apply(next); // optimistic
+    try {
+      const r = await productsApi.toggleFavorite(p.id);
+      if (typeof r?.is_favorite === "boolean" && r.is_favorite !== next) apply(r.is_favorite);
+      toast.success(next ? "Favorilere eklendi" : "Favorilerden çıkarıldı");
+    } catch {
+      apply(!next);
+      toast.error("Favori güncellenemedi");
+    }
+  };
 
   const onScroll = (e) => {
     const el = e.currentTarget;
@@ -273,7 +310,7 @@ export default function Products() {
           </>
         )}
       </RefreshScroll>
-      <Detail p={sel} onClose={() => setSel(null)} onAdd={cart.add} showDisc={showDisc} />
+      <Detail p={sel} onClose={() => setSel(null)} onAdd={cart.add} showDisc={showDisc} onFav={toggleFav} />
     </div>
   );
 }

@@ -19,11 +19,12 @@ const SERVICE = {
   ],
 };
 const PRODUCTS = [
+  { id: "p2", name: "Favori Akü", is_favorite: true, currency: "TRY", list_price: 5000, list_price_try: 5000, discounted_price: 4000, discounted_price_try: 4000 },
   { id: "p1", name: "Solar Panel 450W", currency: "TRY", list_price: 10000, list_price_try: 10000, discounted_price: 7000, discounted_price_try: 7000 },
 ];
 
 jest.mock("../api", () => {
-  const calls = { svcUpdate: [], svcCreate: [], qCreate: [], qUpdate: [] };
+  const calls = { svcUpdate: [], svcCreate: [], qCreate: [], qUpdate: [], fav: [] };
   const ok = (v) => () => Promise.resolve(v);
   return {
     __esModule: true,
@@ -33,7 +34,11 @@ jest.mock("../api", () => {
       create: (p) => { calls.qCreate.push(p); return Promise.resolve({ id: "qn", total_discounted_price: 11000 }); }, // sunucu güncel kur tabanı
       update: (id, p) => { calls.qUpdate.push(p); return Promise.resolve({}); },
     },
-    products: { list: () => Promise.resolve(global.__PRODUCTS) },
+    products: {
+      list: () => Promise.resolve(global.__PRODUCTS),
+      favorites: () => Promise.resolve(global.__PRODUCTS.filter((p) => p.is_favorite)),
+      toggleFavorite: (id) => { calls.fav.push(id); return Promise.resolve({ success: true, is_favorite: true }); },
+    },
     categories: { list: ok([{ id: "c1", name: "Solar" }]) },
     companies: { list: ok([]) },
     services: {
@@ -163,4 +168,25 @@ test("sepet: hedef net sunucu tabanıyla uzlaştırılır (eski kurlu sepet)", a
   expect(api.__calls.qCreate.length).toBe(1);
   const pct = api.__calls.qUpdate.at(-1).discount_percentage;
   expect(11000 * (1 - pct / 100)).toBeCloseTo(9000, 6); // sunucu tabanında tam 9.000
+});
+
+test("ürünler: favoriler kartı + detayda yıldız toggle", async () => {
+  await render(
+    <SessionCtx.Provider value={{ username: "t" }}>
+      <CartProvider><Products /></CartProvider>
+    </SessionCtx.Provider>
+  );
+  await act(() => new Promise((r) => setTimeout(r, 600)));
+  await click(btnWith("Favoriler"));
+  await act(() => new Promise((r) => setTimeout(r, 600)));
+  expect(text()).toContain("Favori Akü");
+  expect(text()).not.toContain("Solar Panel 450W");
+  await click(btnWith("Tümü"));
+  await act(() => new Promise((r) => setTimeout(r, 600)));
+  const row = Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Solar Panel 450W");
+  await click(row);
+  await click(container.querySelector('button[aria-label="Favori"]'));
+  const api = require("../api");
+  expect(api.__calls.fav).toEqual(["p1"]);
+  expect(container.querySelector('button[aria-label="Favori"] svg').getAttribute("style")).toContain("fill");
 });
