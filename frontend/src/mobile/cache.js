@@ -44,3 +44,11 @@ export function customerNames() {
   (cache.get("services") || cache.get("dashboard")?.services || []).forEach((x) => add(x.customer_name));
   return Array.from(seen.values()).sort((a, b) => a.localeCompare(b, "tr"));
 }
+
+// Aynı adlı (büyük/küçük harf duyarsız) eski servis kaydındaki telefon — yoksa ""
+export function phoneForCustomer(name) {
+  const n = String(name || "").trim().toLocaleLowerCase("tr");
+  if (!n) return "";
+  const svcs = cache.get("services") || cache.get("dashboard")?.services || [];
+  return svcs.find((x) => (x.customer_name || "").trim().toLocaleLowerCase("tr") === n && x.phone)?.phone || "";
+}

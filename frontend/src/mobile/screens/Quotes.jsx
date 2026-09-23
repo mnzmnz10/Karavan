@@ -5,7 +5,7 @@ import { useCatalog, catRate } from "../catalog";
 import { toast } from "sonner";
 import { quotes as quotesApi, docUrl, openDoc } from "../api";
 import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, RefreshScroll, OfflineBar, waNumber } from "../ui";
-import { cache, customerNames } from "../cache";
+import { cache, customerNames, phoneForCustomer } from "../cache";
 import { useCart } from "../Cart";
 
 const fmtDate = (s) => {
@@ -507,12 +507,7 @@ function Detail({ q, onClose, onDeleted, onSaved, onCopied, go }) {
   const byId = useMemo(() => new Map(catalog.map((p) => [p.id, p])), [catalog]);
   const [copying, setCopying] = useState(false);
   // Müşterinin telefonu (aynı adlı eski servis kaydından) — WhatsApp özeti doğrudan ona gider
-  const custPhone = useMemo(() => {
-    const n = (q?.customer_name || "").trim().toLocaleLowerCase("tr");
-    if (!n) return "";
-    const svcs = cache.get("services") || cache.get("dashboard")?.services || [];
-    return svcs.find((x) => (x.customer_name || "").trim().toLocaleLowerCase("tr") === n && x.phone)?.phone || "";
-  }, [q]);
+  const custPhone = useMemo(() => phoneForCustomer(q?.customer_name), [q]);
   // Daha önce servise aktarıldı mı? (aktarım notuna "[Teklif: ad]" yazılır; önbellekteki servislerde ara)
   const transferred = useMemo(() => {
     if (!q?.name) return null;

@@ -3,7 +3,7 @@ import { ScrollText, User, Share2, Loader2, CheckCircle2, Trash2, Plus, Pencil, 
 import { toast } from "sonner";
 import http, { docUrl, openDoc } from "../api";
 import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, RefreshScroll, OfflineBar, todayISO, waNumber } from "../ui";
-import { cache, customerNames } from "../cache";
+import { cache, customerNames, phoneForCustomer } from "../cache";
 import { formatPhoneTR } from "./ServiceForm";
 
 const contractsApi = {
@@ -428,11 +428,7 @@ function CreateSheet({ open, onClose, onCreated }) {
             const v = e.target.value;
             setName(v);
             // Bilinen müşteri seçildiyse (eski servis kaydı) telefonu doldur — boşsa
-            if (!phone) {
-              const svcs = cache.get("services") || cache.get("dashboard")?.services || [];
-              const hit = svcs.find((x) => (x.customer_name || "").trim().toLocaleLowerCase("tr") === v.trim().toLocaleLowerCase("tr") && x.phone);
-              if (hit) setPhone(formatPhoneTR(hit.phone));
-            }
+            if (!phone) { const ph = phoneForCustomer(v); if (ph) setPhone(formatPhoneTR(ph)); }
           }}
           placeholder="Müşteri adı"
           list="mz-customers-c"
