@@ -114,6 +114,7 @@ function Row({ s, onOpen, onCycle, busy }) {
             {s.order_no && <span className="font-bold">{s.order_no}</span>}
             <span>{fmtDate(s.arrival_date || s.created_at)}</span>
             {(() => { const b = dueBadge(s); return b ? <Pill color={b.color}>{b.label}</Pill> : null; })()}
+            {!dueBadge(s) && daysIn(s) >= 3 && <Pill color="slate">{daysIn(s)} gün</Pill>}
             {(() => { const left = serviceNet(s) - collectedTRY(s); return left > 0.5 && serviceNet(s) > 0 ? <Pill color="red">Kalan ₺{money(left)}</Pill> : null; })()}
             {serviceNet(s) > 0 && <span className="m-tnum ml-auto shrink-0 text-[13px] font-extrabold" style={{ color: "var(--m-primary)" }}>₺{money(serviceNet(s))}</span>}
           </div>
