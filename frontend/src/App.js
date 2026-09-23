@@ -10117,7 +10117,7 @@ function App() {
                     {/* Manuel kalem ekleme — sistemde kayıtlı olmayan ürün/hizmeti elle gir */}
                     <div className="mt-3 rounded-xl border border-dashed border-emerald-300 bg-emerald-50/40 p-3">
                       <div className="text-[10px] font-black text-emerald-800 uppercase tracking-widest mb-2">Manuel Kalem Ekle</div>
-                      <div className="flex flex-wrap gap-2 items-center">
+                      <div className="flex flex-wrap gap-2 items-center" onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addManualQuoteItem(); } }}>
                         <input
                           value={manualItem.name}
                           onChange={(e) => setManualItem(s => ({ ...s, name: e.target.value }))}
