@@ -190,7 +190,7 @@ function CollectionSheet({ open, onClose, onAdd }) {
   );
 }
 
-function Detail({ id, onClose, onEdit, onDeleted, onChanged, prodCost }) {
+function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, prodCost }) {
   const [s, setS] = useState(null);
   const [loading, setLoading] = useState(true);
   const [lb, setLb] = useState(null);
@@ -442,6 +442,9 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, prodCost }) {
               <div className="whitespace-pre-wrap text-[14px] leading-relaxed">{s.notes}</div>
             </div>
           )}
+          <button onClick={() => onRepeat?.(s)} className="m-press mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-white py-3 text-[14px] font-bold" style={{ color: "var(--m-primary)" }}>
+            <Plus className="h-4 w-4" /> Aynı müşteriyle yeni kayıt
+          </button>
           <button onClick={remove} disabled={del} className="m-press mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-white py-3 text-[14px] font-bold text-rose-500 disabled:opacity-60">
             {del ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Servis Kaydını Sil
           </button>
@@ -534,6 +537,17 @@ export default function Services() {
   const unpaidCnt = useMemo(() => items.filter((x) => serviceNet(x) > 0 && serviceNet(x) - collectedTRY(x) > 0.5).length, [items]);
   const openNew = () => { setFormInitial(null); setFormOpen(true); };
   const openEdit = (rec) => { setSelId(null); setFormInitial(rec); setFormOpen(true); };
+  // Tekrar gelen müşteri: müşteri + araç dolu yeni kayıt (taslak kullanılmaz — fromQuote ile aynı davranış)
+  const openRepeat = (rec) => {
+    setSelId(null);
+    setFormInitial({
+      fromQuote: true, key: `r-${rec.id}-${Date.now()}`,
+      customer_name: rec.customer_name || "", phone: rec.phone || "",
+      vehicle_brand: rec.vehicle_brand || "", vehicle_model: rec.vehicle_model || "",
+      plate: rec.plate || "", is_trailer: !!rec.is_trailer, status: "received",
+    });
+    setFormOpen(true);
+  };
 
   return (
     <div className="flex h-full flex-col">
@@ -570,8 +584,8 @@ export default function Services() {
           <div className="space-y-2 px-4 pt-1">{filtered.map((x) => <Row key={x.id} s={x} onOpen={(r) => setSelId(r.id)} onCycle={cycleStatus} busy={busyId === x.id} />)}</div>
         )}
       </RefreshScroll>
-      <Detail id={selId} onClose={() => setSelId(null)} onEdit={openEdit} onDeleted={() => { setSelId(null); reload(); }} onChanged={reload} prodCost={prodCost} />
-      <ServiceForm key={formInitial?.id || "new"} open={formOpen} initial={formInitial} onClose={() => setFormOpen(false)} onSaved={reload} prodCost={prodCost} />
+      <Detail id={selId} onClose={() => setSelId(null)} onEdit={openEdit} onDeleted={() => { setSelId(null); reload(); }} onChanged={reload} onRepeat={openRepeat} prodCost={prodCost} />
+      <ServiceForm key={formInitial?.id || formInitial?.key || "new"} open={formOpen} initial={formInitial} onClose={() => setFormOpen(false)} onSaved={reload} prodCost={prodCost} />
     </div>
   );
 }

@@ -367,3 +367,17 @@ test("ürün WhatsApp paylaşımı: liste fiyatı var, alış yok", async () => 
   expect(msg).toContain(`Fiyat: ₺${money(10000)}`);
   expect(msg).not.toContain(money(7000));
 });
+
+test("aynı müşteriyle yeni servis: müşteri/araç dolu, kalem boş", async () => {
+  global.__SERVICE.phone = "05551112233";
+  global.__SERVICE.plate = "59 AB 1";
+  await render(<Services />);
+  const row = Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
+  await click(row);
+  await click(btnWith("Aynı müşteriyle yeni kayıt"));
+  await act(() => new Promise((r) => setTimeout(r, 250)));
+  expect(text()).toContain("Yeni Servis");
+  expect(container.querySelector('input[placeholder="Zorunlu"]').value).toBe("Test Müşteri");
+  expect(container.querySelector('input[inputmode="tel"]').value).toBe("05551112233");
+  expect(container.querySelectorAll('input[placeholder="Parça/işlem"]').length).toBe(0);
+});
