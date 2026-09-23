@@ -218,7 +218,7 @@ function CartSheet({ open, onClose }) {
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] font-semibold text-emerald-700">Net ₺</span>
           <input value={targetNet} onChange={(e) => onTargetNet(e.target.value)} inputMode="decimal" placeholder="Net toplamı ayarla (indirim otomatik)" className={`${field.replace("bg-slate-100", "bg-emerald-50")} pl-16`} />
         </div>
-        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Not (opsiyonel)" rows={2} className={`${field} resize-none`} />
+        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Teklif notları (opsiyonel, PDF'e basılır)" rows={4} className={`${field} resize-none`} />
       </div>
 
       {/* Elle kalem */}
