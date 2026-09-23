@@ -83,8 +83,20 @@ export default function MobileApp() {
     return () => { try { sub?.remove?.(); } catch {} };
   }, []);
 
+  // Çevrimdışı açılış: ağ hatasında (yanıt yok) son başarılı oturum hatırlanır → önbellekle çalışmaya devam.
+  // Sunucu yanıtı (401 / authenticated:false) gelirse giriş ekranı. Çıkışta clearAll işareti de siler.
   const refreshAuth = () =>
-    auth.check().then((d) => { setAuthed(!!d?.authenticated); setUsername(d?.username || ""); }).catch(() => setAuthed(false));
+    auth.check()
+      .then((d) => {
+        const ok = !!d?.authenticated;
+        setAuthed(ok); setUsername(d?.username || "");
+        cache.set("was_authed", ok ? { username: d?.username || "" } : null);
+      })
+      .catch((e) => {
+        const prev = cache.get("was_authed");
+        if (e?.response?.status === 0 && prev) { setAuthed(true); setUsername(prev.username || ""); }
+        else setAuthed(false);
+      });
 
   useEffect(() => { refreshAuth(); }, []);
 
@@ -107,7 +119,7 @@ export default function MobileApp() {
   if (!authed) {
     return (
       <div id="mobile-root">
-        <Login onDone={() => setAuthed(true)} />
+        <Login onDone={() => { setAuthed(true); refreshAuth(); }} />
         <Toaster position="top-center" richColors />
       </div>
     );

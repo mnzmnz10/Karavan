@@ -7,6 +7,17 @@ export const API = `${BACKEND_URL}/api`;
 
 const http = axios.create({ baseURL: API, withCredentials: true, timeout: 30000 });
 
+// Ağ hatası / zaman aşımı → ekranların gösterdiği `detail` alanına anlaşılır mesaj
+// (sunucu yanıtı olan hatalara dokunulmaz; detail'leri aynen gösterilir)
+http.interceptors.response.use(undefined, (err) => {
+  if (err && !err.response) {
+    const offline = typeof navigator !== "undefined" && navigator.onLine === false;
+    const msg = offline ? "İnternet bağlantısı yok" : err.code === "ECONNABORTED" ? "Sunucu yanıt vermedi (zaman aşımı)" : "Sunucuya ulaşılamadı";
+    err.response = { status: 0, data: { detail: msg } };
+  }
+  return Promise.reject(err);
+});
+
 export const auth = {
   check: () => http.get("/auth/check").then((r) => r.data),
   login: (username, password, remember_me = true) =>
