@@ -74,14 +74,15 @@ function CategoryCards({ cats, sel, onSel }) {
   );
 }
 
+// Varsayılan: liste fiyatı gösterilir (müşteriye açık). Göz açıkken indirimli (alış) fiyatı da açılır.
 function priceTRY(p) {
-  const disc = Number(p.discounted_price_try);
-  const list = Number(p.list_price_try);
-  if (disc > 0 && disc < list) return { main: disc, old: list };
-  return { main: list || 0, old: null };
+  const list = Number(p.list_price_try) || 0;
+  const discRaw = Number(p.discounted_price_try);
+  const disc = discRaw > 0 ? discRaw : null;
+  return { list, disc };
 }
 
-function Row({ p, onOpen, onAdd, qty, hide }) {
+function Row({ p, onOpen, onAdd, qty, showDisc }) {
   const pr = priceTRY(p);
   return (
     <Card onClick={() => onOpen(p)} className="p-3">
@@ -97,13 +98,13 @@ function Row({ p, onOpen, onAdd, qty, hide }) {
           <div className="truncate text-[15px] font-semibold leading-tight" style={{ color: "var(--m-ink)" }}>{p.name}</div>
           {p.brand && <div className="mt-0.5 truncate text-[12px] font-bold uppercase tracking-wide" style={{ color: "var(--m-ink-2)" }}>{p.brand}</div>}
           <div className="mt-1 flex items-baseline gap-1.5">
-            {hide ? (
-              <span className="m-tnum text-[15px] font-extrabold tracking-widest" style={{ color: "var(--m-ink-2)" }}>₺•••</span>
-            ) : (
+            {showDisc && pr.disc != null ? (
               <>
-                <span className="m-tnum text-[15px] font-extrabold" style={{ color: "var(--m-primary-2)" }}>₺{money(pr.main)}</span>
-                {pr.old && <span className="m-tnum text-[12px] text-slate-400 line-through">₺{money(pr.old)}</span>}
+                <span className="m-tnum text-[15px] font-extrabold" style={{ color: "var(--m-primary-2)" }}>₺{money(pr.disc)}</span>
+                <span className="m-tnum text-[12px] text-slate-400 line-through">₺{money(pr.list)}</span>
               </>
+            ) : (
+              <span className="m-tnum text-[15px] font-extrabold" style={{ color: "var(--m-ink)" }}>₺{money(pr.list)}</span>
             )}
           </div>
         </div>
@@ -123,7 +124,7 @@ function Row({ p, onOpen, onAdd, qty, hide }) {
   );
 }
 
-function Detail({ p, onClose, onAdd, hide }) {
+function Detail({ p, onClose, onAdd, showDisc }) {
   const [lb, setLb] = useState(false);
   const [qty, setQty] = useState(1);
   useEffect(() => { if (p) setQty(1); }, [p]);
@@ -141,13 +142,14 @@ function Detail({ p, onClose, onAdd, hide }) {
         <div className="text-[19px] font-bold leading-snug">{p.name}</div>
         {p.brand && <div className="mt-1"><Pill color="slate">{p.brand}</Pill></div>}
         <div className="mt-3 flex items-baseline gap-2">
-          {hide ? (
-            <span className="m-tnum text-[24px] font-extrabold tracking-widest" style={{ color: "var(--m-ink-2)" }}>₺••••</span>
-          ) : (
+          {showDisc && pr.disc != null ? (
             <>
-              <span className="m-tnum text-[24px] font-extrabold" style={{ color: "var(--m-primary-2)" }}>₺{money(pr.main)}</span>
-              {pr.old && <span className="m-tnum text-[14px] text-slate-400 line-through">₺{money(pr.old)}</span>}
+              <span className="m-tnum text-[24px] font-extrabold" style={{ color: "var(--m-primary-2)" }}>₺{money(pr.disc)}</span>
+              <span className="m-tnum text-[14px] text-slate-400 line-through">₺{money(pr.list)}</span>
+              <span className="ml-1 rounded-full px-2 py-0.5 text-[11px] font-bold" style={{ background: "#e7f3ee", color: "var(--m-primary-2)" }}>alış</span>
             </>
+          ) : (
+            <span className="m-tnum text-[24px] font-extrabold" style={{ color: "var(--m-ink)" }}>₺{money(pr.list)}</span>
           )}
         </div>
         <div className="mt-3 flex items-center gap-3">
@@ -189,12 +191,12 @@ export default function Products() {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [sel, setSel] = useState(null);
-  const [hidePrice, setHidePrice] = useState(() => cache.get("price_hidden") === true);
+  const [showDisc, setShowDisc] = useState(() => cache.get("show_disc") === true);
   const debRef = useRef();
   const cart = useCart();
   const LIMIT = 40;
 
-  useEffect(() => { cache.set("price_hidden", hidePrice); }, [hidePrice]);
+  useEffect(() => { cache.set("show_disc", showDisc); }, [showDisc]);
 
   const fetchPage = useCallback(async (search, category_id, pg, append) => {
     const home = !search && !category_id && pg === 1;
@@ -238,16 +240,16 @@ export default function Products() {
     <div className="flex h-full flex-col">
       <Header
         title="Ürünler"
-        subtitle={loading ? "Yükleniyor…" : hidePrice ? `${items.length} ürün · fiyatlar gizli` : `${items.length} ürün`}
+        subtitle={loading ? "Yükleniyor…" : showDisc ? `${items.length} ürün · indirimli görünür` : `${items.length} ürün`}
         right={
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setHidePrice((h) => !h)}
-              title={hidePrice ? "Fiyatları göster" : "Fiyatları gizle (müşteri modu)"}
+              onClick={() => setShowDisc((v) => !v)}
+              title={showDisc ? "İndirimli fiyatı gizle" : "İndirimli (alış) fiyatı göster"}
               className="m-press flex h-9 w-9 items-center justify-center rounded-full"
-              style={hidePrice ? { background: "var(--m-primary)" } : { background: "rgba(148,163,184,.28)" }}
+              style={showDisc ? { background: "var(--m-primary-2)" } : { background: "rgba(148,163,184,.28)" }}
             >
-              {hidePrice ? <EyeOff className="h-5 w-5 text-white" /> : <Eye className="h-5 w-5" style={{ color: "var(--m-ink-2)" }} />}
+              {showDisc ? <EyeOff className="h-5 w-5 text-white" /> : <Eye className="h-5 w-5" style={{ color: "var(--m-ink-2)" }} />}
             </button>
             <AccountButton />
           </div>
@@ -266,13 +268,13 @@ export default function Products() {
         ) : (
           <>
             <div className="space-y-2 px-4 pt-1">
-              {items.map((p) => <Row key={p.id} p={p} onOpen={setSel} onAdd={cart.add} qty={cart.items.get(p.id)?.qty || 0} hide={hidePrice} />)}
+              {items.map((p) => <Row key={p.id} p={p} onOpen={setSel} onAdd={cart.add} qty={cart.items.get(p.id)?.qty || 0} showDisc={showDisc} />)}
             </div>
             {more && <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>}
           </>
         )}
       </RefreshScroll>
-      <Detail p={sel} onClose={() => setSel(null)} onAdd={cart.add} hide={hidePrice} />
+      <Detail p={sel} onClose={() => setSel(null)} onAdd={cart.add} showDisc={showDisc} />
     </div>
   );
 }
