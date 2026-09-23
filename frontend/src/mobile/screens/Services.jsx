@@ -354,7 +354,7 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuo
                     <div className="shrink-0 text-right">
                       <div className="m-tnum text-[14px] font-semibold">₺{money(up * q * rate)}</div>
                       {showProfit && itemHasCost(it) && (
-                        <div className="m-tnum text-[11px] text-slate-400">mlyt ₺{money(costLineTRY(it))}</div>
+                        <div className="m-tnum text-[11px] text-slate-400">geliş ₺{money(costLineTRY(it))}</div>
                       )}
                     </div>
                   </div>
