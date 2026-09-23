@@ -297,7 +297,7 @@ function QuoteItemsSheet({ q, open, onClose, onSaved, showCost }) {
   useEffect(() => {
     if (!open || !q) return;
     setSearch(""); setMan({ name: "", price: "", qty: "1", cost: "" });
-    setRows((q.products || []).map((it, i) => {
+    const init = (q.products || []).map((it, i) => {
       const qty = qtyOf(it);
       if (it.manual) {
         return { key: it.id || `m${i}`, kind: "manual", id: it.id, name: it.name || "Kalem", qty,
@@ -307,7 +307,9 @@ function QuoteItemsSheet({ q, open, onClose, onSaved, showCost }) {
       }
       return { key: it.id || `c${i}`, kind: "cat", id: it.id, name: it.name || "Ürün", qty,
         custom_price: num(it.custom_price), snapSale: lineSaleTRY(it) / qty, snapCost: lineCostTRY(it) / qty };
-    }));
+    });
+    setRows(init);
+    setSnap(JSON.stringify(init));
   }, [open, q]);
 
   const results = useMemo(() => {
@@ -315,6 +317,12 @@ function QuoteItemsSheet({ q, open, onClose, onSaved, showCost }) {
     if (s.length < 2) return [];
     return catalog.filter((p) => (p.name || "").toLocaleLowerCase("tr").includes(s)).slice(0, 15);
   }, [search, catalog]);
+  // Kaydedilmemiş kalem değişikliği varsa kapatmadan önce sor
+  const [snap, setSnap] = useState("");
+  const guardedClose = () => {
+    if (!busy && snap && JSON.stringify(rows) !== snap && !window.confirm("Kaydedilmemiş kalem değişiklikleri silinsin mi?")) return;
+    onClose();
+  };
 
   if (!q) return null;
   const missing =(r) => r.kind === "cat" && catalog.length > 0 && !byId.has(r.id);
@@ -394,7 +402,7 @@ function QuoteItemsSheet({ q, open, onClose, onSaved, showCost }) {
 
   const field = "w-full rounded-xl bg-slate-100 px-3 py-2.5 text-[15px] placeholder:text-slate-400";
   return (
-    <Sheet open={open} onClose={onClose} title="Kalemleri Düzenle" full>
+    <Sheet open={open} onClose={guardedClose} title="Kalemleri Düzenle" full>
       <div className="rounded-2xl bg-white p-2">
         {rows.map((r) => (
           <div key={r.key} className="flex items-center gap-2 border-b border-slate-50 px-2 py-2.5 last:border-0">

@@ -208,3 +208,19 @@ test("teklif filtreleri: Serviste / Bekleyen", async () => {
   await click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim().startsWith("Serviste")));
   expect(container.textContent).toContain("Test Teklif");
 });
+
+test("kalem editörü: değişiklik varsa kapatma onayı, yoksa yok", async () => {
+  let asked = 0;
+  global.confirm = () => { asked++; return false; };
+  await openDetail();
+  const xBtns = () => Array.from(container.querySelectorAll("button")).filter((b) => b.className.includes("ml-auto flex h-8 w-8"));
+  await click(btnWith("Kalemleri düzenle"));
+  await click(xBtns().at(-1));
+  expect(asked).toBe(0);
+  await act(() => new Promise((r) => setTimeout(r, 250)));
+  await click(btnWith("Kalemleri düzenle"));
+  await click(container.querySelector('button[aria-label="Artır"]'));
+  await click(xBtns().at(-1));
+  expect(asked).toBe(1);
+  expect(container.textContent).toContain("Kalemleri Düzenle");
+});
