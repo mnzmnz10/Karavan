@@ -162,8 +162,8 @@ if (typeof window !== "undefined") {
   });
 }
 
-export function Sheet({ open, onClose, title, children, full = false }) {
-  const [mounted, setMounted] = useState(open);
+// Açıkken geri tuşu/kaydırma ile kapanan katman (Sheet, Lightbox)
+export function useBackClose(open, onClose) {
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   useEffect(() => {
@@ -179,6 +179,11 @@ export function Sheet({ open, onClose, title, children, full = false }) {
       }
     };
   }, [open]);
+}
+
+export function Sheet({ open, onClose, title, children, full = false }) {
+  const [mounted, setMounted] = useState(open);
+  useBackClose(open, onClose);
   useEffect(() => {
     if (open) { setMounted(true); return; }
     // Kapanış: çıkış animasyonu olmadığından zamanlayıcıyla unmount (X/backdrop hep kapatsın)
@@ -209,6 +214,7 @@ export function Sheet({ open, onClose, title, children, full = false }) {
 
 // Tam ekran görsel (tıkla-kapat)
 export function Lightbox({ src, onClose }) {
+  useBackClose(!!src, onClose);
   if (!src) return null;
   return (
     <div className="m-backdrop-enter fixed inset-0 z-[60] flex items-center justify-center bg-black" onClick={onClose}>
