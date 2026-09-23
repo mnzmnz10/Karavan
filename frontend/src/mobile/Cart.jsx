@@ -8,17 +8,20 @@ import { Sheet, money } from "./ui";
 const CartCtx = createContext(null);
 export const useCart = () => useContext(CartCtx);
 
+// Satış = LİSTE fiyatı (backend teklifi list_price_try'den hesaplar; indirimli = alış, müşteriye gösterilmez)
 function priceTRY(p) {
-  const disc = Number(p.discounted_price_try);
-  const list = Number(p.list_price_try);
-  return disc > 0 && disc < list ? disc : list || 0;
+  return Number(p.list_price_try) || 0;
 }
+// Ürünün TL kuru (1 birim döviz = ? ₺) — özel fiyatı ürün para birimine çevirmek için
+const rateOf = (p) => ((p.currency || "TRY") === "TRY" ? 1 : (Number(p.list_price) > 0 ? Number(p.list_price_try) / Number(p.list_price) : 0));
+// Satır birim satış (TL): özel fiyat girildiyse o, yoksa liste
+const unitTRY = (x) => (x.price != null && x.price !== "" ? Number(x.price) || 0 : priceTRY(x.product));
 
 export function CartProvider({ children }) {
   const [items, setItems] = useState(() => {
     const saved = cache.get("cart"); // [{product, qty}]
     const m = new Map();
-    if (Array.isArray(saved)) saved.forEach((x) => { if (x?.product?.id) m.set(x.product.id, { product: x.product, qty: x.qty || 1 }); });
+    if (Array.isArray(saved)) saved.forEach((x) => { if (x?.product?.id) m.set(x.product.id, { product: x.product, qty: x.qty || 1, price: x.price ?? null }); });
     return m;
   });
   const [sheet, setSheet] = useState(false);
@@ -30,7 +33,7 @@ export function CartProvider({ children }) {
     setItems((prev) => {
       const n = new Map(prev);
       const cur = n.get(product.id);
-      n.set(product.id, { product, qty: (cur?.qty || 0) + qty });
+      n.set(product.id, { product, qty: (cur?.qty || 0) + qty, price: cur?.price ?? null });
       return n;
     });
     toast.success("Teklife eklendi", { duration: 1200 });
@@ -42,12 +45,18 @@ export function CartProvider({ children }) {
     return n;
   });
   const remove = (id) => setQty(id, 0);
+  // Özel satış fiyatı (TL); boş → listeye döner
+  const setPrice = (id, price) => setItems((prev) => {
+    const n = new Map(prev);
+    if (n.has(id)) n.set(id, { ...n.get(id), price: price === "" || price == null ? null : price });
+    return n;
+  });
   const clear = () => setItems(new Map());
 
   const count = useMemo(() => Array.from(items.values()).reduce((a, x) => a + x.qty, 0), [items]);
-  const total = useMemo(() => Array.from(items.values()).reduce((a, x) => a + priceTRY(x.product) * x.qty, 0), [items]);
+  const total = useMemo(() => Array.from(items.values()).reduce((a, x) => a + unitTRY(x) * x.qty, 0), [items]);
 
-  const value = { items, add, setQty, remove, clear, count, total, openSheet: () => setSheet(true) };
+  const value = { items, add, setQty, setPrice, remove, clear, count, total, openSheet: () => setSheet(true) };
   return (
     <CartCtx.Provider value={value}>
       {children}
@@ -140,7 +149,12 @@ function CartSheet({ open, onClose }) {
         labor_cost: laborTL,
         notes: notes.trim() || undefined,
         products: [
-          ...rows.map((x) => ({ id: x.product.id, quantity: x.qty })),
+          ...rows.map((x) => {
+            const o = { id: x.product.id, quantity: x.qty };
+            // Özel fiyat ürün para biriminde gönderilir (backend custom_price × güncel kur)
+            if (x.price != null && x.price !== "" && rateOf(x.product) > 0) o.custom_price = (Number(x.price) || 0) / rateOf(x.product);
+            return o;
+          }),
           ...validManual.map((m) => ({
             manual: true,
             name: m.name.trim(),
@@ -258,7 +272,19 @@ function CartSheet({ open, onClose }) {
               )}
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[14px] font-semibold">{p.name}</div>
-                <div className="m-tnum text-[13px] font-bold" style={{ color: "var(--m-primary-2)" }}>₺{money(priceTRY(p))}</div>
+                <div className="mt-0.5 flex items-center gap-1">
+                  <span className="text-[13px] text-slate-400">₺</span>
+                  <input
+                    value={x.price != null ? x.price : ""}
+                    onChange={(e) => cart.setPrice(p.id, e.target.value)}
+                    inputMode="decimal"
+                    placeholder={String(Math.round(priceTRY(p)))}
+                    aria-label="Birim fiyat"
+                    className="m-tnum w-24 rounded-lg bg-slate-100 px-2 py-0.5 text-[13px] font-bold placeholder:text-[var(--m-primary-2)]"
+                    style={{ color: x.price != null ? "#d9820a" : "var(--m-primary-2)" }}
+                  />
+                  {x.price != null && <span className="text-[11px] text-slate-400 line-through m-tnum">₺{money(priceTRY(p))}</span>}
+                </div>
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <button onClick={() => cart.setQty(p.id, x.qty - 1)} className="m-press flex h-7 w-7 items-center justify-center rounded-full bg-slate-100"><Minus className="h-4 w-4" /></button>

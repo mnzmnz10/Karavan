@@ -277,3 +277,24 @@ test("durum Teslim'e geçince teslim tarihi bugün", async () => {
   expect(p.status).toBe("delivered");
   expect(p.delivery_date).toBe(new Date().toISOString().slice(0, 10));
 });
+
+test("sepet: liste fiyatı (alış gizli) + özel fiyat custom_price olarak gider", async () => {
+  await render(
+    <SessionCtx.Provider value={{ username: "t" }}>
+      <CartProvider><Products /><CartBar /></CartProvider>
+    </SessionCtx.Provider>
+  );
+  await act(() => new Promise((r) => setTimeout(r, 600)));
+  const addBtns = container.querySelectorAll('button[title="Teklife ekle"]');
+  await click(addBtns[addBtns.length - 1]); // Solar Panel 450W (liste 10.000, alış 7.000)
+  expect(btnWith("Teklif Oluştur").textContent).toContain(money(10000));
+  await click(btnWith("Teklif Oluştur"));
+  expect(text()).not.toContain(money(7000));
+  await setVal(container.querySelector('input[aria-label="Birim fiyat"]'), "9500");
+  await setVal(container.querySelector('input[placeholder="Teklif adı *"]'), "Özel Fiyat");
+  const createBtn = Array.from(container.querySelectorAll("button")).filter((b) => b.textContent.includes("Teklif Oluştur")).at(-1);
+  expect(createBtn.textContent).toContain(money(9500));
+  await click(createBtn);
+  const api = require("../api");
+  expect(api.__calls.qCreate.at(-1).products[0]).toEqual({ id: "p1", quantity: 1, custom_price: 9500 });
+});
