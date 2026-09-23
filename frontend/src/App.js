@@ -4042,6 +4042,16 @@ function App() {
     toast.success(`"${name}" teklife eklendi`);
   };
 
+  // Kalem geliş (maliyet) birim fiyatı — MANUEL kalemde 0 geçerli maliyettir (boşsa listeye düşer),
+  // katalog üründe eski davranış: discounted yoksa/0 ise liste.
+  const quoteItemCostUnit = (product) => {
+    const dp = product.discounted_price;
+    if (product.manual) {
+      return (dp !== null && dp !== undefined && dp !== '') ? (parseFloat(dp) || 0) : (parseFloat(product.list_price) || 0);
+    }
+    return parseFloat(dp) || parseFloat(product.list_price) || 0;
+  };
+
   // Manuel kalemi (selectedProductsData) satır-içi güncelle — ad/geliş
   const updateManualQuoteItem = (id, patch) => {
     setSelectedProductsData(prev => {
@@ -5174,7 +5184,7 @@ function App() {
       const unitPrice = customPrice !== undefined && customPrice !== null ? parseFloat(customPrice) : (parseFloat(p.list_price) || 0);
       
       // Maliyet (Geliş) Fiyatı belirlenmesi
-      const discountedUnitPrice = parseFloat(p.discounted_price) || parseFloat(p.list_price) || 0;
+      const discountedUnitPrice = quoteItemCostUnit(p);
       
       if (currency === 'USD') {
         totalUSD += unitPrice * quantity;
@@ -9814,7 +9824,7 @@ function App() {
                               const lineTotalTRY = unitPriceTRY * quantity;
 
                               // Calculate Cost (Geliş) TL values
-                              const discountedPrice = parseFloat(product.discounted_price) || parseFloat(product.list_price) || 0;
+                              const discountedPrice = quoteItemCostUnit(product);
                               let discountedPriceTRY = discountedPrice;
                               if (product.currency === 'USD') {
                                 discountedPriceTRY = discountedPrice * (exchangeRates.USD || 34.0);
@@ -9953,7 +9963,7 @@ function App() {
                                       )}
                                       {showQuoteDiscountedPrices && (
                                         <div className="text-[10px] text-purple-600 font-extrabold mt-1">
-                                          Geliş: {getCurrencySymbol(product.currency)} {formatPrice(product.discounted_price || product.list_price || 0)}
+                                          Geliş: {getCurrencySymbol(product.currency)} {formatPrice(quoteItemCostUnit(product))}
                                         </div>
                                       )}
                                     </div>
@@ -9989,7 +9999,7 @@ function App() {
                                       )}
                                       {showQuoteDiscountedPrices && (
                                         <div className="text-[10px] text-purple-500 font-bold mt-1">
-                                          Geliş: {getCurrencySymbol(product.currency)} {formatPrice((parseFloat(product.discounted_price) || parseFloat(product.list_price) || 0) * quantity)}
+                                          Geliş: {getCurrencySymbol(product.currency)} {formatPrice(quoteItemCostUnit(product) * quantity)}
                                         </div>
                                       )}
                                     </div>
