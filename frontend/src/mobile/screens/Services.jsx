@@ -3,7 +3,7 @@ import { Wrench, Car, Phone, MessageCircle, Image as ImageIcon, Loader2, Plus, P
 import { toast } from "sonner";
 import { services as servicesApi, rates as ratesApi, docUrl, openDoc } from "../api";
 import { useCatalog, catRate } from "../catalog";
-import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, Lightbox, RefreshScroll, OfflineBar, todayISO, waNumber } from "../ui";
+import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, Lightbox, RefreshScroll, OfflineBar, todayISO, waNumber, fmtDate } from "../ui";
 import { cache } from "../cache";
 import ServiceForm, { compressImage } from "./ServiceForm";
 
@@ -14,11 +14,6 @@ const STATUS = {
 };
 const STATUS_CYCLE = ["received", "in_progress", "delivered"];
 const nextStatus = (s) => STATUS_CYCLE[(STATUS_CYCLE.indexOf(s) + 1) % STATUS_CYCLE.length];
-const fmtDate = (s) => {
-  if (!s) return "";
-  const d = new Date(s);
-  return isNaN(d) ? s : d.toLocaleDateString("tr-TR");
-};
 const vehicleLine = (s) => [s.vehicle_brand, s.vehicle_model].filter(Boolean).join(" ") || (s.is_trailer ? "Çekme karavan" : "");
 // Teslim uyarısı: teslim edilmemiş + teslim tarihi bugün/geçmiş
 const dueBadge = (s) => {

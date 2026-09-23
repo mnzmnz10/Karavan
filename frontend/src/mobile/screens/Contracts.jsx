@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { ScrollText, User, Share2, Loader2, CheckCircle2, Trash2, Plus, Pencil, X, Copy, Phone, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 import http, { docUrl, openDoc } from "../api";
-import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, RefreshScroll, OfflineBar, todayISO, waNumber } from "../ui";
+import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, RefreshScroll, OfflineBar, todayISO, waNumber, fmtDate } from "../ui";
 import { cache, customerNames, phoneForCustomer } from "../cache";
 import { formatPhoneTR } from "./ServiceForm";
 
@@ -17,7 +17,6 @@ const STAGE = {
   proposal: { label: "Teklif", color: "amber" },
   agreed: { label: "Anlaşıldı", color: "green" },
 };
-const fmtDate = (s) => { if (!s) return ""; const d = new Date(s); return isNaN(d) ? s : d.toLocaleDateString("tr-TR"); };
 const grand = (c) => Number(c?.data?.grandTotal || c?.grandTotal || 0);
 const custName = (c) => c?.customer_name || c?.data?.customer_name || "";
 const custPhone = (c) => c?.customer_phone || c?.data?.customer_phone || "";

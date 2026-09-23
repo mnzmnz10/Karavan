@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Wrench, FileText, ScrollText, Clock, CheckCircle2, TrendingUp, Eye, EyeOff } from "lucide-react";
 import http, { services as servicesApi, quotes as quotesApi } from "../api";
-import { Header, Card, SkeletonList, RefreshScroll, OfflineBar, money, ago, todayISO } from "../ui";
+import { Header, Card, SkeletonList, RefreshScroll, OfflineBar, money, ago, todayISO, fmtDate } from "../ui";
 import { useSession } from "../session";
 import { cache } from "../cache";
 import { serviceNet, collectedTRY } from "./Services";
@@ -9,7 +9,6 @@ import { serviceNet, collectedTRY } from "./Services";
 const contractsApi = { list: () => http.get("/contracts").then((r) => r.data) };
 
 const STATUS_LABEL = { received: "Geldi", in_progress: "İşlemde", delivered: "Teslim" };
-const fmtDate = (s) => { if (!s) return ""; const d = new Date(s); return isNaN(d) ? "" : d.toLocaleDateString("tr-TR"); };
 const sameMonth = (iso) => { if (!iso) return false; const d = new Date(iso); const n = new Date(); return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth(); };
 
 function Stat({ icon: Icon, tint, value, label, sub, onClick }) {

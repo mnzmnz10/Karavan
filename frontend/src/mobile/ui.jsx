@@ -108,6 +108,13 @@ export function ErrorState({ onRetry, title = "Bağlantı hatası", hint = "Veri
 }
 
 // Çevrimdışı bandı (önbellekten gösterim)
+// Tarih → "24.09.2026" (geçersizse ham değer)
+export const fmtDate = (v) => {
+  if (!v) return "";
+  const d = new Date(v);
+  return isNaN(d) ? v : d.toLocaleDateString("tr-TR");
+};
+
 // TR telefon → wa.me formatı (0'sız, 10 haneye 90 öneki)
 export const waNumber = (phone) => {
   let d = String(phone || "").replace(/\D/g, "");

@@ -4,15 +4,10 @@ import ServiceForm from "./ServiceForm";
 import { useCatalog, catRate } from "../catalog";
 import { toast } from "sonner";
 import { quotes as quotesApi, docUrl, openDoc } from "../api";
-import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, RefreshScroll, OfflineBar, waNumber } from "../ui";
+import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, RefreshScroll, OfflineBar, waNumber, fmtDate } from "../ui";
 import { cache, customerNames, phoneForCustomer } from "../cache";
 import { useCart } from "../Cart";
 
-const fmtDate = (s) => {
-  if (!s) return "";
-  const d = new Date(s);
-  return isNaN(d) ? s : d.toLocaleDateString("tr-TR");
-};
 
 // Liste (en yeni üstte sıralı) → ay grupları: "Eylül 2026" + adet + net toplam
 function groupByMonth(list) {
