@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Wrench, Car, Phone, MessageCircle, Image as ImageIcon, Loader2, Plus, Pencil, Share2, Trash2, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
-import { services as servicesApi, products as productsApi, docUrl, openDoc } from "../api";
+import { services as servicesApi, docUrl, openDoc } from "../api";
+import { useCatalog, catRate } from "../catalog";
 import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, Lightbox, RefreshScroll, OfflineBar } from "../ui";
 import { cache } from "../cache";
 import ServiceForm from "./ServiceForm";
@@ -297,22 +298,19 @@ export default function Services() {
   const [formInitial, setFormInitial] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [statusF, setStatusF] = useState("");
-  const [prodCost, setProdCost] = useState(() => cache.get("prodcost") || {});
-
-  // Ürün adı → indirimli fiyat (TL) haritası — servis kaleminde maliyet boşsa kâr bundan türetilir.
-  useEffect(() => {
-    productsApi.list({ limit: 2000 }).then((data) => {
-      const arr = Array.isArray(data) ? data : data?.products || [];
-      const map = {};
-      arr.forEach((p) => {
-        const name = String(p.name || "").trim().toLocaleLowerCase("tr");
-        if (!name) return;
-        const c = Number(p.discounted_price_try) > 0 ? Number(p.discounted_price_try) : Number(p.list_price_try);
-        if (c > 0) map[name] = c;
-      });
-      if (Object.keys(map).length) { setProdCost(map); cache.set("prodcost", map); }
-    }).catch(() => {});
-  }, []);
+  // Ürün adı → geliş (indirimli, yoksa liste) TL haritası — kalem maliyeti boşsa kâr bundan türetilir.
+  // Ortak katalog önbelleğinden (ayrı 2000'lik istek yok); Özet ekranı için "prodcost" önbelleği de yazılır.
+  const catalog = useCatalog(true);
+  const prodCost = useMemo(() => {
+    const map = {};
+    catalog.forEach((p) => {
+      const name = String(p.name || "").trim().toLocaleLowerCase("tr");
+      const c = (p.discounted_price > 0 ? p.discounted_price : p.list_price) * catRate(p);
+      if (name && c > 0) map[name] = c;
+    });
+    return Object.keys(map).length ? map : cache.get("prodcost") || {};
+  }, [catalog]);
+  useEffect(() => { if (catalog.length) cache.set("prodcost", prodCost); }, [catalog, prodCost]);
 
   const reload = async () => {
     setErr(false);
