@@ -496,3 +496,11 @@ test("todayISO yerel tarih", () => {
   const d = new Date();
   expect(todayISO()).toBe(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
 });
+
+test("sepet: satırdan ürün çıkar", async () => {
+  localStorage.setItem("mz:cart", JSON.stringify([{ product: global.__PRODUCTS[1], qty: 3 }]));
+  await render(<CartProvider><CartBar /></CartProvider>);
+  await click(btnWith("Teklif Oluştur"));
+  await click(container.querySelector('button[aria-label="Sepetten çıkar"]'));
+  expect(JSON.parse(localStorage.getItem("mz:cart"))).toEqual([]);
+});

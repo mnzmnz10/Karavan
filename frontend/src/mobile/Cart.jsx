@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { ShoppingCart, Minus, Plus, Trash2, Loader2, Package, Eye, EyeOff } from "lucide-react";
+import { ShoppingCart, Minus, Plus, Trash2, Loader2, Package, Eye, EyeOff, X } from "lucide-react";
 import { quotes as quotesApi } from "./api";
 import { cache, customerNames } from "./cache";
 import { Sheet, money } from "./ui";
@@ -296,6 +296,7 @@ function CartSheet({ open, onClose }) {
                 <button onClick={() => cart.setQty(p.id, x.qty - 1)} className="m-press flex h-7 w-7 items-center justify-center rounded-full bg-slate-100"><Minus className="h-4 w-4" /></button>
                 <span className="m-tnum w-5 text-center text-[15px] font-bold">{x.qty}</span>
                 <button onClick={() => cart.setQty(p.id, x.qty + 1)} className="m-press flex h-7 w-7 items-center justify-center rounded-full bg-slate-100"><Plus className="h-4 w-4" /></button>
+                <button onClick={() => cart.remove(p.id)} aria-label="Sepetten çıkar" className="m-press ml-1 flex h-7 w-7 items-center justify-center text-rose-400"><X className="h-4 w-4" /></button>
               </div>
             </div>
           );
