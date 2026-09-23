@@ -11496,6 +11496,12 @@ function App() {
                         const costTotal = (serviceForm.items || []).length > 0 ? serviceItemsCostTotal(serviceForm.items) : 0;
                         const svcProfit = total - costTotal;
                         const svcMargin = total > 0 ? Math.round(svcProfit / total * 100) : 0;
+                        // İşçilik = maliyeti 0 olan kalemler (tamamı kâr)
+                        const laborTotal = (serviceForm.items || []).reduce((a, it) => {
+                          const uc = it.unit_cost;
+                          const isZeroCost = uc !== '' && uc != null && parseFloat(uc) === 0;
+                          return isZeroCost ? a + serviceItemLineTRY(it) : a;
+                        }, 0);
                         const adv = parseFloat(serviceForm.advance_amount) || 0;
                         const collected = adv + serviceCollectedTRY(serviceForm.collections);
                         const remaining = total - collected;
@@ -11509,9 +11515,16 @@ function App() {
                               <span className="tabular-nums font-semibold">₺ {formatPrice(grossTotal)}</span>
                             </div>
                             {showServiceProfit && (serviceForm.items || []).length > 0 && (
-                              <div className="flex items-center justify-between text-sm rounded-lg bg-white/10 px-2 py-1.5">
-                                <span className="text-emerald-200 font-semibold flex items-center gap-1.5"><TrendingUp className="w-3.5 h-3.5" /> Kâr (maliyet ₺{formatPrice(costTotal)})</span>
-                                <span className="tabular-nums font-extrabold text-emerald-200">₺ {formatPrice(svcProfit)} · %{svcMargin}</span>
+                              <div className="rounded-lg bg-white/10 px-3 py-2 space-y-1 text-sm">
+                                <div className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider text-purple-200"><TrendingUp className="w-3.5 h-3.5" /> Bana Geliş / Kâr (gizli)</div>
+                                <div className="flex items-center justify-between text-white/80"><span>Geliş (Maliyet) Toplamı</span><span className="tabular-nums font-semibold">₺ {formatPrice(costTotal)}</span></div>
+                                {laborTotal > 0 && (
+                                  <div className="flex items-center justify-between text-emerald-200"><span>İşçilik (tamamı kâr)</span><span className="tabular-nums font-semibold">+ ₺ {formatPrice(laborTotal)}</span></div>
+                                )}
+                                {discount > 0 && (
+                                  <div className="flex items-center justify-between text-rose-200"><span>İndirim (müşteriye)</span><span className="tabular-nums font-semibold">− ₺ {formatPrice(discount)}</span></div>
+                                )}
+                                <div className="flex items-center justify-between border-t border-white/15 pt-1 font-black text-emerald-200"><span>BRÜT KAZANÇ (KÂR)</span><span className="tabular-nums">₺ {formatPrice(svcProfit)} · %{svcMargin}</span></div>
                               </div>
                             )}
                             {/* İndirim: % veya ₺ — biri girilince diğeri otomatik hesaplanır */}
