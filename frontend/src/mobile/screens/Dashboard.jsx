@@ -79,9 +79,22 @@ export default function Dashboard({ go }) {
     let openBal = 0, openCnt = 0;
     services.forEach((x) => { const left = serviceNet(x) - collectedTRY(x); if (serviceNet(x) > 0 && left > 0.5) { openBal += left; openCnt++; } });
     const agreed = contracts.filter((c) => c.stage === "agreed").length;
+    // Son 6 ay teslim cirosu (servis net) — mini çubuk grafik
+    const now = new Date();
+    const months = Array.from({ length: 6 }, (_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
+      return { y: d.getFullYear(), m: d.getMonth(), label: d.toLocaleDateString("tr-TR", { month: "short" }), total: 0 };
+    });
+    services.forEach((x) => {
+      if (x.status !== "delivered") return;
+      const d = new Date(x.delivery_date || x.arrival_date || x.created_at);
+      if (isNaN(d)) return;
+      const b = months.find((mm) => mm.y === d.getFullYear() && mm.m === d.getMonth());
+      if (b) b.total += serviceNet(x);
+    });
     const recentQ = [...quotes].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || ""))).slice(0, 3);
     const recent = [...services].sort((a, b) => String(b.arrival_date || b.created_at || "").localeCompare(String(a.arrival_date || a.created_at || ""))).slice(0, 4);
-    return { active, delivered, overdue, sTotal: services.length, qTotal: quotes.length, quotesMonth, quotesMonthSum, cTotal: contracts.length, agreed, recent, recentQ, svcDone: doneMonth.length, svcNet, svcProfit: svcNet - svcCost, openBal, openCnt };
+    return { active, delivered, overdue, sTotal: services.length, qTotal: quotes.length, quotesMonth, quotesMonthSum, cTotal: contracts.length, agreed, recent, recentQ, months, svcDone: doneMonth.length, svcNet, svcProfit: svcNet - svcCost, openBal, openCnt };
   }, [data]);
 
   const hour = new Date().getHours();
@@ -120,6 +133,24 @@ export default function Dashboard({ go }) {
                 </div>
               )}
             </Card>
+
+            {stats.months.some((mm) => mm.total > 0) && (() => {
+              const max = Math.max(...stats.months.map((mm) => mm.total), 1);
+              return (
+                <Card className="mt-2 p-3.5">
+                  <div className="text-[12.5px] font-semibold" style={{ color: "var(--m-ink-2)" }}>Son 6 ay teslim cirosu</div>
+                  <div className="mt-3 flex h-24 items-end gap-2">
+                    {stats.months.map((mm) => (
+                      <div key={`${mm.y}-${mm.m}`} className="flex flex-1 flex-col items-center gap-1">
+                        <div className="m-tnum text-[9px] text-slate-400">{mm.total > 0 ? `${Math.round(mm.total / 1000)}b` : ""}</div>
+                        <div className="w-full rounded-t-md" style={{ height: `${Math.max(2, (mm.total / max) * 64)}px`, background: "var(--m-primary)", opacity: mm.total > 0 ? 0.85 : 0.15 }} />
+                        <div className="text-[10px] text-slate-400">{mm.label}</div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              );
+            })()}
 
             {stats.openCnt > 0 && (
               <Card onClick={() => { cache.set("svc_filter", "unpaid"); go?.("service"); }} className="mt-2 flex items-center justify-between p-3.5">

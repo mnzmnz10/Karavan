@@ -197,3 +197,4 @@ test("Özet'ten teklif detayı deep-link", async () => {
   await flush();
   expect(text()).toContain("Genel Toplam");
 });
+

@@ -6,6 +6,7 @@ import Services from "../screens/Services";
 import ServiceForm from "../screens/ServiceForm";
 import Products from "../screens/Products";
 import Contracts from "../screens/Contracts";
+import Dashboard from "../screens/Dashboard";
 import { CartProvider, CartBar } from "../Cart";
 import { SessionCtx } from "../session";
 
@@ -410,4 +411,13 @@ test("servis detay: foto sil (onaylı)", async () => {
   const api = require("../api");
   expect(api.__calls.svcUpdate.at(-1)).toEqual({ photos: ["data:image/jpeg;base64,BBB"] });
   expect(container.querySelectorAll('button[aria-label="Fotoğrafı sil"]').length).toBe(1);
+});
+
+test("dashboard: son 6 ay ciro grafiği", async () => {
+  const d = new Date();
+  global.__SERVICE.status = "delivered";
+  global.__SERVICE.delivery_date = new Date(d.getFullYear(), d.getMonth(), 5, 12).toISOString().slice(0, 10);
+  await render(<Dashboard go={() => {}} />);
+  expect(text()).toContain("Son 6 ay teslim cirosu");
+  expect(text()).toContain("70b"); // net 70.000
 });
