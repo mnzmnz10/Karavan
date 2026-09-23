@@ -56,7 +56,7 @@ function AccountButton() {
           <button
             onClick={() => {
               if (!window.confirm("Yerel önbellek (liste, sepet, taslaklar) silinip uygulama yenilensin mi? Oturum açık kalır.")) return;
-              cache.clearAll(["theme"]);
+              cache.clearAll(["theme", "was_authed"]);
               window.location.reload();
             }}
             className="m-press mt-2 w-full rounded-xl bg-slate-100 py-2.5 text-[14px] font-semibold"
