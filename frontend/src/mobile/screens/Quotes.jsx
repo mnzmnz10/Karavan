@@ -13,6 +13,23 @@ const fmtDate = (s) => {
   return isNaN(d) ? s : d.toLocaleDateString("tr-TR");
 };
 
+// Liste (en yeni üstte sıralı) → ay grupları: "Eylül 2026" + adet + net toplam
+function groupByMonth(list) {
+  const groups = [];
+  for (const q of list) {
+    const d = new Date(q.created_at);
+    const key = isNaN(d) ? "?" : `${d.getFullYear()}-${d.getMonth()}`;
+    let g = groups[groups.length - 1];
+    if (!g || g.key !== key) {
+      g = { key, label: isNaN(d) ? "Tarihsiz" : d.toLocaleDateString("tr-TR", { month: "long", year: "numeric" }), items: [], total: 0 };
+      groups.push(g);
+    }
+    g.items.push(q);
+    g.total += Number(q.total_net_price || q.total_discounted_price || q.total_list_price || 0);
+  }
+  return groups;
+}
+
 function Row({ q, onOpen }) {
   const total = Number(q.total_net_price || q.total_discounted_price || q.total_list_price || 0);
   return (
@@ -583,7 +600,17 @@ export default function Quotes({ go }) {
         ) : filtered.length === 0 ? (
           <EmptyState icon={FileText} title="Teklif bulunamadı" hint={q ? "Aramayı değiştir" : "Henüz teklif yok"} />
         ) : (
-          <div className="space-y-2 px-4 pt-1">{filtered.map((x) => <Row key={x.id} q={x} onOpen={setSel} />)}</div>
+          <div className="px-4 pt-1">
+            {groupByMonth(filtered).map((g) => (
+              <div key={g.key} className="mb-3">
+                <div className="flex items-baseline justify-between px-1 pb-1.5 text-[12px] font-bold uppercase tracking-wide text-slate-400">
+                  <span>{g.label}</span>
+                  <span className="m-tnum normal-case">{g.items.length} teklif · ₺{money(g.total)}</span>
+                </div>
+                <div className="space-y-2">{g.items.map((x) => <Row key={x.id} q={x} onOpen={setSel} />)}</div>
+              </div>
+            ))}
+          </div>
         )}
       </RefreshScroll>
       <Detail

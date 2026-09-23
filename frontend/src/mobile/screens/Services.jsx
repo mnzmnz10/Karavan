@@ -28,6 +28,15 @@ const dueBadge = (s) => {
   if (dd === today) return { label: "Bugün teslim", color: "amber" };
   return null;
 };
+// WhatsApp hazır mesaj (duruma göre; gönderilmeden önce kullanıcı düzenleyebilir)
+const waText = (s) => {
+  const ad = (s.customer_name || "").trim();
+  const hi = ad ? `Merhaba ${ad}, ` : "Merhaba, ";
+  const arac = vehicleLine(s) || (s.plate ? s.plate : "aracınız");
+  if (s.status === "delivered") return `${hi}Çorlu Karavan'ı tercih ettiğiniz için teşekkür ederiz.`;
+  if (s.status === "in_progress") return `${hi}${arac} için servis işlemleriniz devam ediyor.`;
+  return `${hi}${arac} servisimize ulaştı.`;
+};
 // TR telefon → wa.me formatı (10 haneyi 90 ile önekle)
 const waNumber = (phone) => {
   let d = String(phone || "").replace(/\D/g, "");
@@ -170,7 +179,7 @@ function Detail({ id, onClose, onEdit, onDeleted, prodCost }) {
                 <a href={`tel:${s.phone}`} className="m-press flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2.5 text-[14px] font-bold text-white" style={{ background: "var(--m-primary)" }}>
                   <Phone className="h-4 w-4" /> Ara
                 </a>
-                <a href={`https://wa.me/${waNumber(s.phone)}`} target="_blank" rel="noreferrer" className="m-press flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2.5 text-[14px] font-bold text-white" style={{ background: "#25d366" }}>
+                <a href={`https://wa.me/${waNumber(s.phone)}?text=${encodeURIComponent(waText(s))}`} target="_blank" rel="noreferrer" className="m-press flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2.5 text-[14px] font-bold text-white" style={{ background: "#25d366" }}>
                   <MessageCircle className="h-4 w-4" /> WhatsApp
                 </a>
               </div>
