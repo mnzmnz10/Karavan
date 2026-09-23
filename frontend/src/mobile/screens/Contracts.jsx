@@ -509,7 +509,7 @@ export default function Contracts() {
         title="Sözleşmeler"
         subtitle={loading ? "Yükleniyor…" : `${items.length} sözleşme`}
         right={
-          <button onClick={() => setCreateOpen(true)} className="m-press flex h-9 w-9 items-center justify-center rounded-full" style={{ background: "var(--m-primary)" }}>
+          <button onClick={() => setCreateOpen(true)} aria-label="Yeni sözleşme" className="m-press flex h-9 w-9 items-center justify-center rounded-full" style={{ background: "var(--m-primary)" }}>
             <Plus className="h-5 w-5 text-white" strokeWidth={2.6} />
           </button>
         }

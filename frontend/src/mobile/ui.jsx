@@ -230,7 +230,7 @@ export function Sheet({ open, onClose, title, children, full = false }) {
         </div>
         <div className="flex items-center px-4 py-2">
           <div className="text-[17px] font-bold">{title}</div>
-          <button onClick={onClose} className="m-press ml-auto flex h-8 w-8 items-center justify-center rounded-full bg-slate-200/70">
+          <button onClick={onClose} aria-label="Kapat" className="m-press ml-auto flex h-8 w-8 items-center justify-center rounded-full bg-slate-200/70">
             <X className="h-4 w-4" style={{ color: "var(--m-ink-2)" }} />
           </button>
         </div>

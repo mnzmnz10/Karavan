@@ -634,7 +634,7 @@ export default function Services({ go }) {
         title="Servis"
         subtitle={loading ? "Yükleniyor…" : `${items.length} kayıt`}
         right={
-          <button onClick={openNew} className="m-press flex h-9 w-9 items-center justify-center rounded-full" style={{ background: "var(--m-primary)" }}>
+          <button onClick={openNew} aria-label="Yeni servis" className="m-press flex h-9 w-9 items-center justify-center rounded-full" style={{ background: "var(--m-primary)" }}>
             <Plus className="h-5 w-5 text-white" strokeWidth={2.6} />
           </button>
         }

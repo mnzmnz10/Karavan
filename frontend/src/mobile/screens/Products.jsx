@@ -21,7 +21,7 @@ function AccountButton() {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button onClick={() => setOpen(true)} className="m-press flex h-9 w-9 items-center justify-center rounded-full bg-slate-200/70">
+      <button onClick={() => setOpen(true)} aria-label="Hesap" className="m-press flex h-9 w-9 items-center justify-center rounded-full bg-slate-200/70">
         <User className="h-5 w-5" style={{ color: "var(--m-ink-2)" }} />
       </button>
       <Sheet open={open} onClose={() => setOpen(false)} title="Hesap">
