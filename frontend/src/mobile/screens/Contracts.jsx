@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { ScrollText, User, Share2, Loader2, CheckCircle2, Trash2, Plus, Pencil, X, Copy, Phone, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 import http, { docUrl, openDoc } from "../api";
-import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, RefreshScroll, OfflineBar, todayISO } from "../ui";
+import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, RefreshScroll, OfflineBar, todayISO, waNumber } from "../ui";
 import { cache, customerNames } from "../cache";
 import { formatPhoneTR } from "./ServiceForm";
 
@@ -22,7 +22,6 @@ const grand = (c) => Number(c?.data?.grandTotal || c?.grandTotal || 0);
 const custName = (c) => c?.customer_name || c?.data?.customer_name || "";
 const custPhone = (c) => c?.customer_phone || c?.data?.customer_phone || "";
 const custTc = (c) => c?.customer_tc || c?.data?.customer_tc || "";
-const waNumber = (phone) => { let d = String(phone || "").replace(/\D/g, ""); if (d.startsWith("0")) d = d.slice(1); if (d.length === 10) d = "90" + d; return d; };
 
 function Row({ c, onOpen }) {
   const st = STAGE[c.stage] || STAGE.proposal;

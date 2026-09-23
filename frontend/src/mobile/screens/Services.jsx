@@ -3,7 +3,7 @@ import { Wrench, Car, Phone, MessageCircle, Image as ImageIcon, Loader2, Plus, P
 import { toast } from "sonner";
 import { services as servicesApi, rates as ratesApi, docUrl, openDoc } from "../api";
 import { useCatalog, catRate } from "../catalog";
-import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, Lightbox, RefreshScroll, OfflineBar, todayISO } from "../ui";
+import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, Lightbox, RefreshScroll, OfflineBar, todayISO, waNumber } from "../ui";
 import { cache } from "../cache";
 import ServiceForm, { compressImage } from "./ServiceForm";
 
@@ -65,13 +65,6 @@ const statementText = (s) => {
   L.push(left > 0.5 ? `*Kalan: ₺${money(left)}*` : "Ödeme tamamlandı, teşekkür ederiz.");
   L.push("", "Çorlu Karavan");
   return L.join("\n");
-};
-// TR telefon → wa.me formatı (10 haneyi 90 ile önekle)
-const waNumber = (phone) => {
-  let d = String(phone || "").replace(/\D/g, "");
-  if (d.startsWith("0")) d = d.slice(1);
-  if (d.length === 10) d = "90" + d;
-  return d;
 };
 
 // Liste satırı için net tutar (Detail ile aynı: kalemler TL − iskonto; kalemsiz eski kayıt → cost)

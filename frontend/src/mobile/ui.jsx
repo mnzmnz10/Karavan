@@ -108,6 +108,14 @@ export function ErrorState({ onRetry, title = "Bağlantı hatası", hint = "Veri
 }
 
 // Çevrimdışı bandı (önbellekten gösterim)
+// TR telefon → wa.me formatı (0'sız, 10 haneye 90 öneki)
+export const waNumber = (phone) => {
+  let d = String(phone || "").replace(/\D/g, "");
+  if (d.startsWith("0")) d = d.slice(1);
+  if (d.length === 10) d = "90" + d;
+  return d;
+};
+
 // "3 dk önce" / "2 saat önce" / "5 gün önce"
 export const ago = (ms) => {
   if (!ms) return "";

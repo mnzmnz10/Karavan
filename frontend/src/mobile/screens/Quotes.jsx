@@ -4,7 +4,7 @@ import ServiceForm from "./ServiceForm";
 import { useCatalog, catRate } from "../catalog";
 import { toast } from "sonner";
 import { quotes as quotesApi, docUrl, openDoc } from "../api";
-import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, RefreshScroll, OfflineBar } from "../ui";
+import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, RefreshScroll, OfflineBar, waNumber } from "../ui";
 import { cache, customerNames } from "../cache";
 import { useCart } from "../Cart";
 
@@ -481,13 +481,6 @@ function QuoteItemsSheet({ q, open, onClose, onSaved, showCost }) {
 }
 
 // Müşteriye WhatsApp özeti: kalemler + net (maliyet/kâr YOK)
-// TR telefon → wa.me (0'sız, 90 önekli)
-const waNum = (phone) => {
-  let d = String(phone || "").replace(/\D/g, "");
-  if (d.startsWith("0")) d = d.slice(1);
-  if (d.length === 10) d = "90" + d;
-  return d;
-};
 
 function quoteSummaryText(q) {
   const lines = [`*${q.name || "Teklif"}*`];
@@ -562,7 +555,7 @@ function Detail({ q, onClose, onDeleted, onSaved, onCopied, go }) {
         <button onClick={() => setEditOpen(true)} className="m-press flex flex-1 items-center justify-center gap-1.5 rounded-2xl bg-white py-3 text-[15px] font-bold" style={{ color: "var(--m-primary)" }}>
           <Pencil className="h-4 w-4" /> Düzenle
         </button>
-        <a href={`https://wa.me/${custPhone ? waNum(custPhone) : ""}?text=${encodeURIComponent(quoteSummaryText(q))}`} target="_blank" rel="noreferrer" aria-label="WhatsApp" className="m-press flex w-12 items-center justify-center rounded-2xl text-white" style={{ background: "#25d366" }}>
+        <a href={`https://wa.me/${custPhone ? waNumber(custPhone) : ""}?text=${encodeURIComponent(quoteSummaryText(q))}`} target="_blank" rel="noreferrer" aria-label="WhatsApp" className="m-press flex w-12 items-center justify-center rounded-2xl text-white" style={{ background: "#25d366" }}>
           <MessageCircle className="h-5 w-5" />
         </a>
         <button onClick={() => openDoc(docUrl.quote(q.id))} className="m-press flex flex-1 items-center justify-center gap-2 rounded-2xl py-3 text-[15px] font-bold text-white" style={{ background: "var(--m-primary)" }}>
