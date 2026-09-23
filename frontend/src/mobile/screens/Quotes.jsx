@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { FileText, User, Calendar, Share2, Trash2, Loader2, Pencil, Eye, EyeOff, Minus, Plus, Search, ListPlus, Wrench, Copy, MessageCircle } from "lucide-react";
 import ServiceForm from "./ServiceForm";
+import CustomerSheet from "../CustomerSheet";
 import { useCatalog, catRate } from "../catalog";
 import { toast } from "sonner";
 import { quotes as quotesApi, docUrl, openDoc } from "../api";
@@ -501,6 +502,7 @@ function Detail({ q, onClose, onDeleted, onSaved, onCopied, go }) {
   const catalog = useCatalog(!!q);
   const byId = useMemo(() => new Map(catalog.map((p) => [p.id, p])), [catalog]);
   const [copying, setCopying] = useState(false);
+  const [custOpen, setCustOpen] = useState(false);
   // Müşterinin telefonu (aynı adlı eski servis kaydından) — WhatsApp özeti doğrudan ona gider
   const custPhone = useMemo(() => phoneForCustomer(q?.customer_name), [q]);
   // Daha önce servise aktarıldı mı? (aktarım notuna "[Teklif: ad]" yazılır; önbellekteki servislerde ara)
@@ -553,6 +555,7 @@ function Detail({ q, onClose, onDeleted, onSaved, onCopied, go }) {
         </button>
       </div>
       <QuoteEditSheet q={q} open={editOpen} onClose={() => setEditOpen(false)} onSaved={onSaved} />
+      <CustomerSheet name={q.customer_name} open={custOpen} onClose={() => setCustOpen(false)} go={(t) => { onClose(); go?.(t); }} />
       <QuoteItemsSheet q={q} open={itemsOpen} onClose={() => setItemsOpen(false)} onSaved={onSaved} showCost={showProfit} />
       {svcInit && (
         <ServiceForm key={svcInit.key} open={!!svcInit} initial={svcInit} onClose={() => setSvcInit(null)}
@@ -562,7 +565,7 @@ function Detail({ q, onClose, onDeleted, onSaved, onCopied, go }) {
         <div className="text-[19px] font-bold leading-snug">{q.name || "Teklif"}</div>
         {transferred && <div className="mt-1"><Pill color="green">Servise aktarıldı</Pill></div>}
         <div className="mt-2 space-y-1 text-[13px]" style={{ color: "var(--m-ink-2)" }}>
-          <div className="flex items-center gap-2"><User className="h-4 w-4" /> {q.customer_name || "—"}{custPhone && <a href={`tel:${custPhone}`} className="ml-1 font-semibold" style={{ color: "var(--m-primary)" }}>{custPhone}</a>}</div>
+          <div className="flex items-center gap-2"><User className="h-4 w-4" /> {q.customer_name ? <button onClick={() => setCustOpen(true)} className="m-press underline decoration-dotted decoration-slate-300 underline-offset-4">{q.customer_name}</button> : "—"}{custPhone && <a href={`tel:${custPhone}`} className="ml-1 font-semibold" style={{ color: "var(--m-primary)" }}>{custPhone}</a>}</div>
           <div className="flex items-center gap-2"><Calendar className="h-4 w-4" /> {fmtDate(q.created_at)}</div>
         </div>
       </div>

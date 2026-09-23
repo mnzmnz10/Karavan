@@ -6,6 +6,7 @@ import { useCatalog, catRate } from "../catalog";
 import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, Lightbox, RefreshScroll, OfflineBar, todayISO, waNumber, fmtDate } from "../ui";
 import { cache } from "../cache";
 import ServiceForm, { compressImage } from "./ServiceForm";
+import CustomerSheet from "../CustomerSheet";
 
 const STATUS = {
   received: { label: "Geldi", color: "amber" },
@@ -198,7 +199,8 @@ function CollectionSheet({ open, onClose, onAdd }) {
   );
 }
 
-function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuote, prodCost }) {
+function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuote, prodCost, go }) {
+  const [custOpen, setCustOpen] = useState(false);
   const [s, setS] = useState(null);
   const [loading, setLoading] = useState(true);
   const [lb, setLb] = useState(null);
@@ -337,7 +339,8 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuo
           </div>
           <div className="rounded-2xl bg-white p-4">
             <div className="flex items-center gap-2">
-              <div className="text-[19px] font-bold">{s.customer_name || "İsimsiz"}</div>
+              <button onClick={() => s.customer_name && setCustOpen(true)} className="m-press text-left text-[19px] font-bold underline decoration-dotted decoration-slate-300 underline-offset-4">{s.customer_name || "İsimsiz"}</button>
+              <CustomerSheet name={s.customer_name} open={custOpen} onClose={() => setCustOpen(false)} go={go} />
               {st && <span className="ml-auto"><Pill color={st.color}>{st.label}</Pill></span>}
             </div>
             <div className="mt-2 space-y-1 text-[13px]" style={{ color: "var(--m-ink-2)" }}>
@@ -694,7 +697,7 @@ export default function Services({ go }) {
           <div className="space-y-2 px-4 pt-1">{filtered.map((x) => <Row key={x.id} s={x} onOpen={(r) => setSelId(r.id)} onCycle={cycleStatus} busy={busyId === x.id} />)}</div>
         )}
       </RefreshScroll>
-      <Detail id={selId} onClose={() => setSelId(null)} onEdit={openEdit} onDeleted={() => { setSelId(null); reload(); }} onChanged={reload} onRepeat={openRepeat} onOpenQuote={(name) => { cache.set("quote_search", name); setSelId(null); go?.("quotes"); }} prodCost={prodCost} />
+      <Detail id={selId} onClose={() => setSelId(null)} onEdit={openEdit} onDeleted={() => { setSelId(null); reload(); }} onChanged={reload} onRepeat={openRepeat} onOpenQuote={(name) => { cache.set("quote_search", name); setSelId(null); go?.("quotes"); }} prodCost={prodCost} go={(t) => { setSelId(null); go?.(t); }} />
       <ServiceForm key={formInitial?.id || formInitial?.key || "new"} open={formOpen} initial={formInitial} onClose={() => setFormOpen(false)} onSaved={reload} prodCost={prodCost} />
     </div>
   );

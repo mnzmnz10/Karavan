@@ -597,3 +597,18 @@ test("servis araması: telefon ve plaka boşluksuz", async () => {
   await setVal(input, "5559999");
   expect(text()).not.toContain("Test Müşteri");
 });
+
+test("müşteri özeti: servis detayından aç, sayılar + açık bakiye, teklife geç", async () => {
+  localStorage.setItem("mz:quotes", JSON.stringify([{ id: "qa", name: "Solar Teklifi", customer_name: "test müşteri", created_at: "2026-09-01", total_net_price: 50000, products: [] }]));
+  let went = null;
+  await render(<Services go={(t) => { went = t; }} />);
+  const row = Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
+  await click(row);
+  await click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim() === "Test Müşteri"));
+  expect(text()).toContain("Müşteri");
+  expect(text()).toContain("Solar Teklifi");
+  expect(text()).toContain(`Açık bakiye₺${money(70000)}`);
+  await click(Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim().startsWith("Solar Teklifi") && d.className.includes("min-w-0")));
+  expect(went).toBe("quotes");
+  expect(JSON.parse(localStorage.getItem("mz:quote_open"))).toBe("qa");
+});
