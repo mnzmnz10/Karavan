@@ -136,15 +136,30 @@ export function SkeletonList({ rows = 6 }) {
 }
 
 // Alttan açılan sheet (detay/form)
-// Açık sheet yığını — Android geri tuşu (lib/native.js) önce en üstteki sheet'i kapatır
+// Açık sheet yığını — geri tuşu/geri kaydırma önce en üstteki sheet'i kapatır.
+// Web: her açık sheet history'ye kimlikli bir kayıt ekler ({mzSheet:id}). popstate'te inilen kaydın
+// kimliğinin ÜSTÜNDEKİ tüm sheet'ler kapanır (sayaç yok → kaçan popstate birikmez).
+// UI'dan kapanınca eklenen kayıt history.back() ile geri alınır; inilen kayıt yeni tepeye ait → etkisiz.
+// Native: lib/native.js backButton → window.__mzBack().
 const sheetStack = [];
+let sheetSeq = 0;
 if (typeof window !== "undefined") {
   window.__mzBack = () => {
     const top = sheetStack[sheetStack.length - 1];
     if (!top) return false;
-    top.current?.();
+    top.close.current?.();
     return true;
   };
+  window.addEventListener("popstate", (e) => {
+    const landing = e.state && e.state.mzSheet;
+    // İnilen kayıt yığında yoksa (taban) hepsi; varsa onun üstündekiler kapanır
+    const keep = sheetStack.findIndex((x) => x.id === landing);
+    for (let i = sheetStack.length - 1; i > keep; i--) {
+      const x = sheetStack[i];
+      x.popped = true; // kaydı tarayıcı zaten geri aldı
+      x.close.current?.();
+    }
+  });
 }
 
 export function Sheet({ open, onClose, title, children, full = false }) {
@@ -153,8 +168,16 @@ export function Sheet({ open, onClose, title, children, full = false }) {
   closeRef.current = onClose;
   useEffect(() => {
     if (!open) return;
-    sheetStack.push(closeRef);
-    return () => { const i = sheetStack.lastIndexOf(closeRef); if (i >= 0) sheetStack.splice(i, 1); };
+    const entry = { id: ++sheetSeq, close: closeRef, popped: false };
+    sheetStack.push(entry);
+    try { window.history.pushState({ mzSheet: entry.id }, ""); } catch {}
+    return () => {
+      const i = sheetStack.lastIndexOf(entry);
+      if (i >= 0) sheetStack.splice(i, 1);
+      if (!entry.popped && window.history.state && window.history.state.mzSheet === entry.id) {
+        try { window.history.back(); } catch {}
+      }
+    };
   }, [open]);
   useEffect(() => {
     if (open) { setMounted(true); return; }

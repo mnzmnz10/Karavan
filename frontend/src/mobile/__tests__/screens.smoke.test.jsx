@@ -542,3 +542,26 @@ test("Android geri: en üstteki sheet kapanır, sheet yoksa false", async () => 
   expect(container.querySelector('input[placeholder="Tutar"]')).toBeNull(); // üstteki kapandı
   expect(text()).toContain("Servis Kaydı"); // alttaki açık
 });
+
+test("web geri (popstate): üstteki sheet kapanır; UI'dan kapatınca history geri alınır", async () => {
+  await render(<Services />);
+  const row = Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
+  await click(row);
+  expect(window.history.state?.mzSheet).toBeGreaterThan(0);
+  await act(async () => { window.dispatchEvent(new PopStateEvent("popstate", { state: null })); });
+  await act(() => new Promise((r) => setTimeout(r, 250)));
+  expect(text()).not.toContain("Servis Kaydı");
+});
+
+test("web geri iç içe: sadece üstteki sheet kapanır", async () => {
+  await render(<Services />);
+  const row = Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
+  await click(row);
+  const detailId = window.history.state.mzSheet;
+  await click(btnWith("Tahsilat Ekle"));
+  expect(container.querySelector('input[placeholder="Tutar"]')).toBeTruthy();
+  await act(async () => { window.dispatchEvent(new PopStateEvent("popstate", { state: { mzSheet: detailId } })); });
+  await act(() => new Promise((r) => setTimeout(r, 250)));
+  expect(container.querySelector('input[placeholder="Tutar"]')).toBeNull();
+  expect(text()).toContain("Servis Kaydı");
+});
