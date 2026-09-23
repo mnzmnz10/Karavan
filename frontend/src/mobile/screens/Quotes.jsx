@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { FileText, User, Calendar, Share2, Trash2, Loader2, Pencil, Eye, EyeOff, Minus, Plus, Search, ListPlus, Wrench } from "lucide-react";
+import { FileText, User, Calendar, Share2, Trash2, Loader2, Pencil, Eye, EyeOff, Minus, Plus, Search, ListPlus, Wrench, Copy } from "lucide-react";
 import ServiceForm from "./ServiceForm";
 import { toast } from "sonner";
 import { quotes as quotesApi, products as productsApi, docUrl, openDoc } from "../api";
@@ -230,6 +230,24 @@ function useCatalog(open) {
 
 const catRate = (p) => (p.currency === "TRY" ? 1 : (p.list_price > 0 ? p.list_price_try / p.list_price : 0));
 
+// Teklif kalemlerini POST/PUT products payload'una çevir (kopyalama için).
+// Katalogdan kalkmış / eski format ürün → TL manuel kalem (fiyat + geliş korunur).
+function productsPayloadFromQuote(q, byId) {
+  return (q.products || []).map((it) => {
+    const qty = qtyOf(it);
+    if (it.manual) {
+      const dp = num(it.discounted_price);
+      return { manual: true, name: it.name || "Kalem", price: num(it.list_price) ?? 0, quantity: qty, currency: it.currency || "TRY", cost: dp == null ? undefined : dp };
+    }
+    if (!byId.has(it.id)) {
+      return { manual: true, name: it.name || "Ürün", price: Math.round((lineSaleTRY(it) / qty) * 100) / 100, quantity: qty, currency: "TRY", cost: Math.round((lineCostTRY(it) / qty) * 100) / 100 };
+    }
+    const o = { id: it.id, quantity: qty };
+    if (num(it.custom_price) != null) o.custom_price = num(it.custom_price);
+    return o;
+  });
+}
+
 // Teklif → servis formu (masaüstü sendQuoteToService ile aynı kural):
 // kalemler liste (teklif anı TL) fiyatıyla, maliyet katalogdaki güncel geliş; işçilik ayrı kalem (maliyet 0);
 // indirim tek tutar: kalemler brüt − teklif net → servis net = teklif net.
@@ -423,13 +441,32 @@ function QuoteItemsSheet({ q, open, onClose, onSaved, showCost }) {
   );
 }
 
-function Detail({ q, onClose, onDeleted, onSaved, go }) {
+function Detail({ q, onClose, onDeleted, onSaved, onCopied, go }) {
   const [del, setDel] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [itemsOpen, setItemsOpen] = useState(false);
   const [svcInit, setSvcInit] = useState(null);
   const catalog = useCatalog(!!q);
   const byId = useMemo(() => new Map(catalog.map((p) => [p.id, p])), [catalog]);
+  const [copying, setCopying] = useState(false);
+  const copy = async () => {
+    if (copying || !q) return;
+    setCopying(true);
+    try {
+      const doc = await quotesApi.create({
+        name: `${q.name || "Teklif"} (Kopya)`,
+        customer_name: q.customer_name || "",
+        discount_percentage: Number(q.discount_percentage || 0),
+        labor_cost: Number(q.labor_cost || 0),
+        notes: q.notes || "",
+        products: productsPayloadFromQuote(q, byId),
+      });
+      toast.success("Teklif kopyalandı (güncel kurla)");
+      onCopied?.(doc);
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Kopyalanamadı");
+    } finally { setCopying(false); }
+  };
   const [showProfit, setShowProfit] = useState(() => cache.get("quote_profit") === true);
   useEffect(() => { cache.set("quote_profit", showProfit); }, [showProfit]);
   if (!q) return null;
@@ -506,9 +543,14 @@ function Detail({ q, onClose, onDeleted, onSaved, go }) {
           <div className="whitespace-pre-wrap text-[14px] leading-relaxed">{q.notes}</div>
         </div>
       )}
-      <button onClick={() => { setSvcInit(quoteToServiceInit(q, byId)); toast("Kalemleri kontrol edip kaydet"); }} className="m-press mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-white py-3 text-[14px] font-bold" style={{ color: "var(--m-primary-2)" }}>
-        <Wrench className="h-4 w-4" /> Servise aktar
-      </button>
+      <div className="mt-4 flex gap-2">
+        <button onClick={() => { setSvcInit(quoteToServiceInit(q, byId)); toast("Kalemleri kontrol edip kaydet"); }} className="m-press flex flex-1 items-center justify-center gap-2 rounded-2xl bg-white py-3 text-[14px] font-bold" style={{ color: "var(--m-primary-2)" }}>
+          <Wrench className="h-4 w-4" /> Servise aktar
+        </button>
+        <button onClick={copy} disabled={copying || catalog.length === 0} className="m-press flex flex-1 items-center justify-center gap-2 rounded-2xl bg-white py-3 text-[14px] font-bold disabled:opacity-60" style={{ color: "var(--m-ink-2)" }}>
+          {copying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />} Kopyala
+        </button>
+      </div>
       <button onClick={remove} disabled={del} className="m-press mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-white py-3 text-[14px] font-bold text-rose-500 disabled:opacity-60">
         {del ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Teklifi Sil
       </button>
@@ -565,6 +607,7 @@ export default function Quotes({ go }) {
         q={sel}
         onClose={() => setSel(null)}
         go={go}
+        onCopied={async (doc) => { await reload(); setSel(doc); }}
         onDeleted={() => { setSel(null); reload(); }}
         onSaved={(u) => { setSel((s) => (s ? { ...s, ...u } : s)); setItems((prev) => prev.map((x) => (x.id === u.id ? { ...x, ...u } : x))); }}
       />
