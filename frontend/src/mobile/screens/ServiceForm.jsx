@@ -135,6 +135,36 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
     set("discount_amount", p > 0 && total > 0 ? String(Math.round(total * p) / 100) : "");
   };
   const laborTotal = f.items.reduce((a, it) => a + (it.unit_cost !== "" && it.unit_cost != null && parseFloat(it.unit_cost) === 0 ? lineTRY(it, "unit_price") : 0), 0);
+  // Tekrar gelen müşteri: eski servis kayıtlarından ad önerisi → telefon/araç/plaka doldur (sadece yeni kayıt)
+  const [picked, setPicked] = useState(false);
+  const suggestions = useMemo(() => {
+    const s = (f.customer_name || "").trim().toLocaleLowerCase("tr");
+    if (editing || picked || s.length < 2) return [];
+    const seen = new Set();
+    const out = [];
+    const past = [...(cache.get("services") || cache.get("dashboard")?.services || [])].sort((a, b) => String(b.arrival_date || "").localeCompare(String(a.arrival_date || "")));
+    for (const x of past) {
+      const n = (x.customer_name || "").trim();
+      const key = n.toLocaleLowerCase("tr");
+      if (!n || seen.has(key) || !key.includes(s) || key === s && !x.phone && !x.plate) continue;
+      seen.add(key);
+      out.push(x);
+      if (out.length >= 4) break;
+    }
+    return out;
+  }, [f.customer_name, editing, picked]);
+  const pickCustomer = (x) => {
+    setF((p) => ({
+      ...p,
+      customer_name: x.customer_name,
+      phone: p.phone || x.phone || "",
+      vehicle_brand: p.vehicle_brand || x.vehicle_brand || "",
+      vehicle_model: p.vehicle_model || x.vehicle_model || "",
+      plate: p.plate || x.plate || "",
+      is_trailer: p.is_trailer || !!x.is_trailer,
+    }));
+    setPicked(true);
+  };
   const updItem = (i, k, v) => set("items", f.items.map((it, j) => (j === i ? { ...it, [k]: v } : it)));
   const delItem = (i) => set("items", f.items.filter((_, j) => j !== i));
 
@@ -190,7 +220,17 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
   return (
     <Sheet open={open} onClose={onClose} title={editing ? "Servisi Düzenle" : "Yeni Servis"} full>
       <Group title="Müşteri">
-        <Field label="Ad Soyad"><input className={inp} value={f.customer_name} onChange={(e) => set("customer_name", e.target.value)} placeholder="Zorunlu" /></Field>
+        <Field label="Ad Soyad"><input className={inp} value={f.customer_name} onChange={(e) => { set("customer_name", e.target.value); setPicked(false); }} placeholder="Zorunlu" /></Field>
+        {suggestions.length > 0 && (
+          <div className="border-b border-slate-100 bg-slate-50 px-2 py-1">
+            {suggestions.map((x) => (
+              <button key={x.customer_name + (x.phone || "")} onClick={() => pickCustomer(x)} className="m-press flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left">
+                <span className="truncate text-[14px] font-semibold">{x.customer_name}</span>
+                <span className="shrink-0 text-[12px] text-slate-400">{[x.plate, x.phone].filter(Boolean).join(" · ")}</span>
+              </button>
+            ))}
+          </div>
+        )}
         <Field label="Telefon" last><input className={inp} value={f.phone} onChange={(e) => set("phone", e.target.value)} placeholder="0…" inputMode="tel" /></Field>
       </Group>
 

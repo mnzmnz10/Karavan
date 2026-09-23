@@ -190,3 +190,16 @@ test("ürünler: favoriler kartı + detayda yıldız toggle", async () => {
   expect(api.__calls.fav).toEqual(["p1"]);
   expect(container.querySelector('button[aria-label="Favori"] svg').getAttribute("style")).toContain("fill");
 });
+
+test("yeni servis: eski kayıttan müşteri önerisi → telefon/plaka dolar", async () => {
+  localStorage.setItem("mz:services", JSON.stringify([{ customer_name: "Mustafa Akçaoluk", phone: "05551112233", plate: "59 AB 123", vehicle_brand: "Fiat", arrival_date: "2026-09-01" }]));
+  await render(<ServiceForm open initial={null} onClose={() => {}} onSaved={() => {}} prodCost={{}} />);
+  const nameInput = container.querySelector('input[placeholder="Zorunlu"]');
+  await setVal(nameInput, "must");
+  const sug = btnWith("Mustafa Akçaoluk");
+  expect(sug).toBeTruthy();
+  await click(sug);
+  expect(nameInput.value).toBe("Mustafa Akçaoluk");
+  expect(container.querySelector('input[inputmode="tel"]').value).toBe("05551112233");
+  expect(btnWith("59 AB 123")).toBeFalsy(); // öneri kapandı
+});
