@@ -656,7 +656,8 @@ function App() {
   const [mpptSpecsSaving, setMpptSpecsSaving] = useState(false);
   const [mpptResult, setMpptResult] = useState(null);
   // Teklif: manuel (elle girilen) kalem formu
-  const [manualItem, setManualItem] = useState({ name: '', price: '', currency: 'TRY', qty: '1' });
+  const [manualItem, setManualItem] = useState({ name: '', price: '', cost: '', currency: 'TRY', qty: '1' });
+  const [quoteDiscountTL, setQuoteDiscountTL] = useState(''); // teklif indirimi ₺ (yüzde ile senkron)
   const [mpptLoading, setMpptLoading] = useState(false);
   const [termosaSyncSetting, setTermosaSyncSetting] = useState(null);
   const [termosaSyncEnabled, setTermosaSyncEnabled] = useState(false);
@@ -4026,16 +4027,35 @@ function App() {
     if (!price || price <= 0) { toast.error("0'dan büyük bir fiyat girin"); return; }
     const cur = manualItem.currency || 'TRY';
     const rate = cur === 'TRY' ? 1 : (parseFloat(exchangeRates[cur]) || (cur === 'USD' ? 34 : 37));
+    const costNum = parseFloat(String(manualItem.cost).replace(',', '.'));
+    const hasCost = costNum > 0;
     const id = `manual-${Date.now()}`;
     const data = {
       id, name, brand: '', company_name: 'Elle Girilen', manual: true,
-      list_price: price, discounted_price: null, currency: cur,
-      list_price_try: price * rate, discounted_price_try: price * rate
+      list_price: price, discounted_price: hasCost ? costNum : null, currency: cur,
+      list_price_try: price * rate, discounted_price_try: (hasCost ? costNum : price) * rate
     };
     setSelectedProducts(prev => new Map(prev).set(id, qty));
     setSelectedProductsData(prev => new Map(prev).set(id, data));
-    setManualItem({ name: '', price: '', currency: 'TRY', qty: '1' });
+    setManualItem({ name: '', price: '', cost: '', currency: 'TRY', qty: '1' });
     toast.success(`"${name}" teklife eklendi`);
+  };
+
+  // Manuel kalemi (selectedProductsData) satır-içi güncelle — ad/geliş
+  const updateManualQuoteItem = (id, patch) => {
+    setSelectedProductsData(prev => {
+      const cur = prev.get(id);
+      if (!cur) return prev;
+      const next = { ...cur, ...patch };
+      if ('discounted_price' in patch) {
+        const c = parseFloat(patch.discounted_price);
+        const rate = (cur.currency && cur.currency !== 'TRY') ? (parseFloat(exchangeRates[cur.currency]) || (cur.currency === 'USD' ? 34 : 37)) : 1;
+        const hasC = c > 0;
+        next.discounted_price = hasC ? c : null;
+        next.discounted_price_try = (hasC ? c : (parseFloat(cur.list_price) || 0)) * rate;
+      }
+      return new Map(prev).set(id, next);
+    });
   };
 
   const clearSelection = () => {
@@ -4044,6 +4064,7 @@ function App() {
     setSelectedProductsData(new Map());
     setSelectedProductsCustomPrices(new Map());
     setQuoteDiscount(0);
+    setQuoteDiscountTL('');
     setQuoteLaborCost(0); // İşçilik maliyetini de temizle
     setQuoteNotes(''); // Teklif notlarını da temizle
     setLoadedQuote(null); // Yüklenen teklifi de temizle
@@ -4104,6 +4125,7 @@ function App() {
               id: p.id,
               name: p.name,
               price: parseFloat(p.customPrice ?? p.list_price) || 0,
+              cost: (p.discounted_price !== null && p.discounted_price !== undefined && parseFloat(p.discounted_price) > 0) ? parseFloat(p.discounted_price) : undefined,
               currency: p.currency || 'TRY',
               quantity: p.quantity || 1
             }
@@ -4291,6 +4313,7 @@ function App() {
               id: p.id,
               name: p.name,
               price: parseFloat(p.customPrice ?? p.list_price) || 0,
+              cost: (p.discounted_price !== null && p.discounted_price !== undefined && parseFloat(p.discounted_price) > 0) ? parseFloat(p.discounted_price) : undefined,
               currency: p.currency || 'TRY',
               quantity: p.quantity || 1
             }
@@ -9829,12 +9852,38 @@ function App() {
                                   
                                   {/* Name / Desc */}
                                   <TableCell className="p-3.5 border-r border-slate-200/40">
-                                    <div className="font-bold text-slate-800 text-sm" title={product.name}>
-                                      {product.name}
-                                    </div>
+                                    {product.manual ? (
+                                      <input
+                                        value={product.name}
+                                        onChange={(e) => updateManualQuoteItem(product.id, { name: e.target.value })}
+                                        onDragStart={(e) => e.stopPropagation()}
+                                        draggable={false}
+                                        placeholder="Kalem adı"
+                                        className="w-full font-bold text-slate-800 text-sm bg-transparent border-b border-dashed border-emerald-300 focus:outline-none focus:border-emerald-500"
+                                        title="Manuel kalem — adı düzenleyebilirsiniz"
+                                      />
+                                    ) : (
+                                      <div className="font-bold text-slate-800 text-sm" title={product.name}>
+                                        {product.name}
+                                      </div>
+                                    )}
                                     {product.description && (
                                       <div className="text-xs text-slate-500 mt-1" title={product.description}>
                                         {product.description}
+                                      </div>
+                                    )}
+                                    {product.manual && showQuoteDiscountedPrices && (
+                                      <div className="mt-1.5 flex items-center gap-1.5" onMouseDown={(e) => e.stopPropagation()}>
+                                        <span className="text-[10px] font-bold text-amber-700 uppercase">Geliş</span>
+                                        <input
+                                          value={product.discounted_price ?? ''}
+                                          onChange={(e) => updateManualQuoteItem(product.id, { discounted_price: e.target.value })}
+                                          draggable={false}
+                                          placeholder="maliyet"
+                                          inputMode="decimal"
+                                          className="w-24 h-7 px-2 border border-amber-200 bg-amber-50/40 rounded text-xs text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                          title="Geliş fiyatı (kâr hesabı, müşteriye görünmez)"
+                                        />
                                       </div>
                                     )}
                                   </TableCell>
@@ -10096,6 +10145,16 @@ function App() {
                           inputMode="numeric"
                           className="w-16 h-9 px-3 border border-slate-200 rounded-md text-sm bg-white text-center tabular-nums focus:outline-none focus:ring-1 focus:ring-emerald-500"
                         />
+                        {showQuoteDiscountedPrices && (
+                          <input
+                            value={manualItem.cost}
+                            onChange={(e) => setManualItem(s => ({ ...s, cost: e.target.value }))}
+                            placeholder="Geliş (maliyet)"
+                            inputMode="decimal"
+                            title="Geliş fiyatı — kâr hesabı için (müşteriye görünmez)"
+                            className="w-32 h-9 px-3 border border-amber-200 bg-amber-50/40 rounded-md text-sm text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-amber-500"
+                          />
+                        )}
                         <Button size="sm" onClick={addManualQuoteItem} className="h-9 bg-emerald-600 hover:bg-emerald-700 text-white">
                           <Plus className="w-4 h-4 mr-1" /> Ekle
                         </Button>
@@ -10160,17 +10219,39 @@ function App() {
                             <span className="font-black text-slate-800">₺ {formatPrice(calculateQuoteTotals.totalListPrice)}</span>
                           </div>
 
-                          {/* Inline Edit Discount */}
+                          {/* Inline Edit Discount — % ve ₺ çift yön (biri girilince diğeri otomatik) */}
                           <div className="flex justify-between items-center text-rose-600 font-medium">
-                            <span>Uygulanan İndirim (%)</span>
+                            <span>Uygulanan İndirim</span>
                             <div className="flex items-center gap-1.5">
                               <input
                                 type="number"
                                 min="0"
                                 max="100"
                                 value={quoteDiscount || 0}
-                                onChange={(e) => setQuoteDiscount(Math.max(0, Math.min(100, parseFloat(e.target.value) || 0)))}
+                                onChange={(e) => {
+                                  const pct = Math.max(0, Math.min(100, parseFloat(e.target.value) || 0));
+                                  setQuoteDiscount(pct);
+                                  const base = calculateQuoteTotals.totalListPrice || 0;
+                                  setQuoteDiscountTL(pct > 0 && base > 0 ? String(Math.round(base * pct / 100)) : '');
+                                }}
                                 className="w-14 h-7 border border-slate-200 focus:border-rose-500 focus:ring-1 focus:ring-rose-500 rounded-md text-center text-sm font-bold text-rose-700 focus:outline-none bg-white"
+                              />
+                              <span className="text-xs text-slate-400">%</span>
+                              <input
+                                type="number"
+                                min="0"
+                                inputMode="decimal"
+                                value={quoteDiscountTL}
+                                placeholder="₺"
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  setQuoteDiscountTL(v);
+                                  const tl = Math.max(0, parseFloat(v) || 0);
+                                  const base = calculateQuoteTotals.totalListPrice || 0;
+                                  setQuoteDiscount(tl > 0 && base > 0 ? Math.min(100, +(tl / base * 100).toFixed(2)) : 0);
+                                }}
+                                title="İskonto tutarı (₺) — yüzdeyi otomatik ayarlar"
+                                className="w-24 h-7 border border-slate-200 focus:border-rose-500 focus:ring-1 focus:ring-rose-500 rounded-md text-right px-2 text-sm font-bold text-rose-700 focus:outline-none bg-white tabular-nums"
                               />
                               <span className="font-extrabold">- ₺ {formatPrice(calculateQuoteTotals.discountAmount)}</span>
                             </div>
