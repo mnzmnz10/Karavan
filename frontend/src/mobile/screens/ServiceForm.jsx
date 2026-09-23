@@ -99,6 +99,12 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
   });
   const [busy, setBusy] = useState(false);
   const [imgBusy, setImgBusy] = useState(false);
+  // Düzenlemede kaydedilmemiş değişiklik varsa kapatmadan önce sor (yeni kayıtta taslak zaten saklanıyor)
+  const [initialSnap] = useState(() => JSON.stringify(f));
+  const guardedClose = () => {
+    if (editing && !busy && JSON.stringify(f) !== initialSnap && !window.confirm("Kaydedilmemiş değişiklikler silinsin mi?")) return;
+    onClose();
+  };
   const fileRef = useRef();
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
 
@@ -265,7 +271,7 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
   };
 
   return (
-    <Sheet open={open} onClose={onClose} title={editing ? "Servisi Düzenle" : "Yeni Servis"} full>
+    <Sheet open={open} onClose={guardedClose} title={editing ? "Servisi Düzenle" : "Yeni Servis"} full>
       <Group title="Müşteri">
         <Field label="Ad Soyad"><input className={inp} value={f.customer_name} onChange={(e) => { set("customer_name", e.target.value); setPicked(false); }} placeholder="Zorunlu" /></Field>
         {suggestions.length > 0 && (

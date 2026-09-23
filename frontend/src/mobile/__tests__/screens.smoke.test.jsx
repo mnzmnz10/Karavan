@@ -514,3 +514,15 @@ test("servis formu: + İşçilik geliş 0 ile eklenir", async () => {
   const api = require("../api");
   expect(api.__calls.svcUpdate.at(-1).items[0]).toMatchObject({ name: "İşçilik", unit_price: 2500, unit_cost: 0 });
 });
+
+test("servis düzenle: kaydedilmemiş değişiklikte kapatma onayı", async () => {
+  let closed = 0, asked = 0;
+  global.confirm = () => { asked++; return false; };
+  await render(<ServiceForm open initial={global.__SERVICE} onClose={() => { closed++; }} onSaved={() => {}} prodCost={{}} />);
+  const xBtn = () => Array.from(container.querySelectorAll("button")).find((b) => b.className.includes("ml-auto flex h-8 w-8"));
+  await click(xBtn()); // değişiklik yok → direkt kapanır
+  expect(closed).toBe(1); expect(asked).toBe(0);
+  await setVal(container.querySelector('input[placeholder="Zorunlu"]'), "Başka Ad");
+  await click(xBtn());
+  expect(asked).toBe(1); expect(closed).toBe(1); // reddedildi → açık kaldı
+});
