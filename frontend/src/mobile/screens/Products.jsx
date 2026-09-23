@@ -7,6 +7,15 @@ import { cache } from "../cache";
 import { useCart } from "../Cart";
 import { useSession } from "../session";
 
+// Yüklü bundle hash'i (main.<hash>.js) — "eski sürüm mü?" kontrolü için
+function appVersion() {
+  try {
+    const src = Array.from(document.scripts).map((x) => x.src).find((u) => /\/main\.[a-z0-9]+\.js/.test(u));
+    const m = src && /main\.([a-z0-9]+)\.js/.exec(src);
+    return m ? m[1] : "geliştirme";
+  } catch { return "?"; }
+}
+
 function AccountButton() {
   const s = useSession();
   const [open, setOpen] = useState(false);
@@ -38,6 +47,23 @@ function AccountButton() {
               </button>
             ))}
           </div>
+        </div>
+        <div className="mt-3 rounded-2xl bg-white p-3">
+          <div className="flex items-center justify-between text-[13px]">
+            <span style={{ color: "var(--m-ink-2)" }}>Sürüm</span>
+            <span className="m-tnum font-semibold">{appVersion()}</span>
+          </div>
+          <button
+            onClick={() => {
+              if (!window.confirm("Yerel önbellek (liste, sepet, taslaklar) silinip uygulama yenilensin mi? Oturum açık kalır.")) return;
+              cache.clearAll(["theme"]);
+              window.location.reload();
+            }}
+            className="m-press mt-2 w-full rounded-xl bg-slate-100 py-2.5 text-[14px] font-semibold"
+            style={{ color: "var(--m-ink-2)" }}
+          >
+            Önbelleği temizle ve yenile
+          </button>
         </div>
         <button onClick={() => { if (window.confirm("Çıkış yapmak istediğinize emin misiniz?")) { setOpen(false); s?.logout?.(); } }} className="m-press mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-white py-3.5 text-[15px] font-bold text-rose-500">
           <LogOut className="h-5 w-5" /> Çıkış Yap
