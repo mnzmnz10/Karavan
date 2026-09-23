@@ -566,6 +566,7 @@ function Detail({ q, onClose, onDeleted, onSaved, onCopied, go }) {
             <div className="min-w-0">
               <div className="truncate text-[14px] font-medium">{it.name || it.product_name || "Ürün"}</div>
               {qtyOf(it) > 1 && <div className="m-tnum text-[12px] text-slate-400">{qtyOf(it)} × ₺{money(lineSaleTRY(it) / qtyOf(it))}</div>}
+              {showProfit && (it.manual ? <div className="text-[11px] text-slate-400">manuel</div> : it.custom_price != null ? <div className="text-[11px]" style={{ color: "#d9820a" }}>özel fiyat</div> : null)}
             </div>
             <div className="m-tnum shrink-0 text-[14px] font-semibold" style={{ color: "var(--m-ink)" }}>
               ₺{money(lineSaleTRY(it))}
