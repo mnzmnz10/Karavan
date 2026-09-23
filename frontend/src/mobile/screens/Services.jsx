@@ -535,6 +535,8 @@ export default function Services({ go }) {
   const [formInitial, setFormInitial] = useState(null);
   const [busyId, setBusyId] = useState(null);
   // Özet'ten yönlendirme: tek seferlik filtre (mz:svc_filter)
+  const [byDue, setByDue] = useState(() => cache.get("svc_by_due") === true);
+  useEffect(() => { cache.set("svc_by_due", byDue); }, [byDue]);
   const [statusF, setStatusF] = useState(() => { const f = cache.get("svc_filter"); if (f) cache.set("svc_filter", null); return f || ""; });
   // Ürün adı → geliş (indirimli, yoksa liste) TL haritası — kalem maliyeti boşsa kâr bundan türetilir.
   // Ortak katalog önbelleğinden (ayrı 2000'lik istek yok); Özet ekranı için "prodcost" önbelleği de yazılır.
@@ -593,8 +595,16 @@ export default function Services({ go }) {
         return [x.customer_name, x.plate, x.vehicle_brand, x.vehicle_model, x.order_no, x.phone, x.operations, ...(x.items || []).map((it) => it.name)]
           .filter(Boolean).some((v) => String(v).toLocaleLowerCase("tr").includes(s));
       })
-      .sort((a, b) => String(key(b)).localeCompare(String(key(a)))); // en yeni üstte
-  }, [items, q, statusF]);
+      .sort((a, b) => {
+        if (byDue) {
+          // Teslim tarihi yakın olan üstte; tarihsiz/teslim edilmiş sonda
+          const da = a.status !== "delivered" && a.delivery_date ? String(a.delivery_date) : "9999";
+          const db = b.status !== "delivered" && b.delivery_date ? String(b.delivery_date) : "9999";
+          if (da !== db) return da.localeCompare(db);
+        }
+        return String(key(b)).localeCompare(String(key(a))); // en yeni üstte
+      });
+  }, [items, q, statusF, byDue]);
 
   const counts = useMemo(() => {
     const c = { received: 0, in_progress: 0, delivered: 0 };
@@ -640,6 +650,10 @@ export default function Services({ go }) {
             </button>
           );
         })}
+        <button onClick={() => setByDue((v) => !v)} className={`m-press shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-semibold ${byDue ? "" : "m-fill"}`}
+          style={byDue ? { background: "#d9820a", color: "#fff" } : { background: "#e9e9ee", color: "var(--m-ink-2)" }}>
+          Teslime göre
+        </button>
       </div>
       <OfflineBar show={offline} />
       <RefreshScroll onRefresh={reload} className="flex-1 pb-[calc(var(--m-tabbar-h)+env(safe-area-inset-bottom)+8px)]">
