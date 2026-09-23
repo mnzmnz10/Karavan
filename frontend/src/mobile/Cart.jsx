@@ -189,7 +189,7 @@ function CartSheet({ open, onClose }) {
       <div className="mt-3 rounded-2xl bg-white p-2">
         <div className="flex items-center px-2 pb-1 pt-1">
           <div className="text-[12px] font-bold uppercase tracking-wide text-slate-400">Elle Kalem</div>
-          <button onClick={() => setShowCost((v) => !v)} title={showCost ? "Geliş fiyatını gizle" : "Geliş fiyatını göster"} className="m-press ml-auto flex h-5 w-5 items-center justify-center" style={{ opacity: showCost ? 0.9 : 0.28 }}>
+          <button onClick={() => setShowCost((v) => !v)} aria-label="Göster/Gizle" className="m-press ml-auto flex h-5 w-5 items-center justify-center" style={{ opacity: showCost ? 0.9 : 0.28 }}>
             {showCost ? <EyeOff className="h-3.5 w-3.5" style={{ color: "var(--m-primary-2)" }} /> : <Eye className="h-3.5 w-3.5" style={{ color: "var(--m-ink-2)" }} />}
           </button>
         </div>

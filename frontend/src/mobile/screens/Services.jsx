@@ -208,7 +208,7 @@ function Detail({ id, onClose, onEdit, onDeleted, prodCost }) {
                 <span className="text-[14px] font-semibold" style={{ color: "var(--m-ink-2)" }}>Toplam</span>
                 <button
                   onClick={() => setShowProfit((v) => !v)}
-                  title={showProfit ? "Kârı gizle" : "Kârı göster"}
+                  aria-label="Göster/Gizle"
                   className="m-press flex h-5 w-5 items-center justify-center"
                   style={{ opacity: showProfit ? 0.9 : 0.28 }}
                 >

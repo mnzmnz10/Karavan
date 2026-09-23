@@ -146,7 +146,6 @@ function Detail({ p, onClose, onAdd, showDisc }) {
             <>
               <span className="m-tnum text-[24px] font-extrabold" style={{ color: "var(--m-primary-2)" }}>₺{money(pr.disc)}</span>
               <span className="m-tnum text-[14px] text-slate-400 line-through">₺{money(pr.list)}</span>
-              <span className="ml-1 rounded-full px-2 py-0.5 text-[11px] font-bold" style={{ background: "#e7f3ee", color: "var(--m-primary-2)" }}>alış</span>
             </>
           ) : (
             <span className="m-tnum text-[24px] font-extrabold" style={{ color: "var(--m-ink)" }}>₺{money(pr.list)}</span>
@@ -240,16 +239,16 @@ export default function Products() {
     <div className="flex h-full flex-col">
       <Header
         title="Ürünler"
-        subtitle={loading ? "Yükleniyor…" : showDisc ? `${items.length} ürün · indirimli görünür` : `${items.length} ürün`}
+        subtitle={loading ? "Yükleniyor…" : `${items.length} ürün`}
         right={
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowDisc((v) => !v)}
-              title={showDisc ? "İndirimli fiyatı gizle" : "İndirimli (alış) fiyatı göster"}
-              className="m-press flex h-9 w-9 items-center justify-center rounded-full"
-              style={showDisc ? { background: "var(--m-primary-2)" } : { background: "rgba(148,163,184,.28)" }}
+              aria-label="Göster/Gizle"
+              className="m-press flex h-7 w-7 items-center justify-center"
+              style={{ opacity: showDisc ? 0.9 : 0.28 }}
             >
-              {showDisc ? <EyeOff className="h-5 w-5 text-white" /> : <Eye className="h-5 w-5" style={{ color: "var(--m-ink-2)" }} />}
+              {showDisc ? <EyeOff className="h-3.5 w-3.5" style={{ color: "var(--m-primary-2)" }} /> : <Eye className="h-3.5 w-3.5" style={{ color: "var(--m-ink-2)" }} />}
             </button>
             <AccountButton />
           </div>

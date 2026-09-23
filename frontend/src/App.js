@@ -8208,7 +8208,7 @@ function App() {
                               console.log('After toggle:', !showPackageDiscountedPrices);
                             }}
                             className="p-2"
-                            title={showPackageDiscountedPrices ? "Liste fiyatlarını göster" : "İndirimli fiyatları göster"}
+                            aria-label="Göster/Gizle"
                           >
                             {showPackageDiscountedPrices ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                           </Button>
@@ -9273,7 +9273,7 @@ function App() {
                                 size="sm"
                                 onClick={() => setShowDiscountedPrices(!showDiscountedPrices)}
                                 className="p-2 border-slate-200 text-slate-600 hover:text-slate-800 hover:bg-slate-50 h-9 w-9"
-                                title={showDiscountedPrices ? "İndirimli fiyatları gizle" : "İndirimli fiyatları göster"}
+                                aria-label="Göster/Gizle"
                               >
                                 {showDiscountedPrices ? (
                                   <EyeOff className="w-4 h-4" />
@@ -11321,7 +11321,7 @@ function App() {
                           <Package className="w-3.5 h-3.5" /> Yapılan İşlemler / Parçalar
                         </div>
                         <button type="button" onClick={() => setShowServiceProfit((v) => !v)}
-                          title={showServiceProfit ? "Maliyet/kârı gizle" : "Maliyet/kâr göster (müşteriye kapalı)"}
+                          aria-label="Göster/Gizle"
                           className={`flex items-center gap-1.5 h-8 px-2.5 rounded-lg border text-xs font-semibold transition-colors ${showServiceProfit ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
                           {showServiceProfit ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                         </button>
@@ -11810,7 +11810,7 @@ function App() {
               </div>
               <div className="flex items-center gap-2">
                 <Button variant="outline" onClick={() => setShowServiceProfit((v) => !v)}
-                  title={showServiceProfit ? "Maliyet/kârı gizle (müşteriye açık görünüm)" : "Maliyet/kâr göster"}
+                  aria-label="Göster/Gizle"
                   className={`rounded-xl font-bold ${showServiceProfit ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-600'}`}>
                   {showServiceProfit ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </Button>
