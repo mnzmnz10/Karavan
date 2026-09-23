@@ -10,3 +10,12 @@ test.each([
   ["12345", "12345"],
   ["", ""],
 ])("%s → %s", (i, o) => expect(formatPhoneTR(i)).toBe(o));
+
+const { formatPlateTR } = require("../screens/ServiceForm");
+test.each([
+  ["59abc123", "59 ABC 123"],
+  ["59 ab 1234", "59 AB 1234"],
+  ["34a12", "34 A 12"],
+  ["DE-AB 123", "DE-AB 123"],
+  ["", ""],
+])("plaka %s → %s", (i, o) => expect(formatPlateTR(i)).toBe(o));

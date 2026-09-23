@@ -58,6 +58,12 @@ export function formatPhoneTR(v) {
   if (d.length !== 11 || !d.startsWith("0")) return v;
   return `${d.slice(0, 4)} ${d.slice(4, 7)} ${d.slice(7, 9)} ${d.slice(9, 11)}`;
 }
+// TR plaka: "59abc123" / "59 ab 1234" → "59 ABC 123"; kalıba uymazsa sadece büyük harf
+export function formatPlateTR(v) {
+  const raw = String(v || "").toLocaleUpperCase("tr").replace(/\s+/g, "");
+  const m = /^(\d{2})([A-ZÇĞİÖŞÜ]{1,3})(\d{2,5})$/.exec(raw);
+  return m ? `${m[1]} ${m[2]} ${m[3]}` : String(v || "").toLocaleUpperCase("tr");
+}
 const inp = "w-full bg-transparent text-[15px] text-right placeholder:text-slate-300";
 
 export default function ServiceForm({ open, initial, onClose, onSaved, prodCost }) {
@@ -283,7 +289,7 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
             </button>
           </div>
         </Field>
-        {!f.is_trailer && <Field label="Plaka"><input className={inp} value={f.plate} onChange={(e) => set("plate", e.target.value.toLocaleUpperCase("tr"))} placeholder="59 …" /></Field>}
+        {!f.is_trailer && <Field label="Plaka"><input className={inp} value={f.plate} onChange={(e) => set("plate", e.target.value.toLocaleUpperCase("tr"))} onBlur={(e) => set("plate", formatPlateTR(e.target.value))} placeholder="59 …" /></Field>}
         <Field label="Marka"><input className={inp} value={f.vehicle_brand} onChange={(e) => set("vehicle_brand", e.target.value)} placeholder="—" /></Field>
         <Field label="Model" last><input className={inp} value={f.vehicle_model} onChange={(e) => set("vehicle_model", e.target.value)} placeholder="—" /></Field>
       </Group>
