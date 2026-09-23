@@ -6,6 +6,14 @@
 	<string>$(CAPACITOR_DEBUG)</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Servis kaydına araç fotoğrafı eklemek için kamera kullanılır.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Servis kaydına galeriden fotoğraf eklemek için fotoğraflarınıza erişilir.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Paylaşılan belgeleri kaydetmek için fotoğraflarınıza erişilir.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>CFBundleDisplayName</key>
         <string>MSZ Karavan</string>
 	<key>CFBundleExecutable</key>
