@@ -3,7 +3,7 @@ import { Wrench, Car, Phone, MessageCircle, Image as ImageIcon, Loader2, Plus, P
 import { toast } from "sonner";
 import { services as servicesApi, rates as ratesApi, docUrl, openDoc } from "../api";
 import { useCatalog, catRate } from "../catalog";
-import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, Lightbox, RefreshScroll, OfflineBar, todayISO, waNumber, fmtDate } from "../ui";
+import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, Lightbox, RefreshScroll, OfflineBar, todayISO, waNumber, fmtDate, CopyBtn } from "../ui";
 import { cache } from "../cache";
 import ServiceForm, { compressImage } from "./ServiceForm";
 import CustomerSheet from "../CustomerSheet";
@@ -354,8 +354,8 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuo
               {st && <span className="ml-auto"><Pill color={st.color}>{st.label}</Pill></span>}
             </div>
             <div className="mt-2 space-y-1 text-[13px]" style={{ color: "var(--m-ink-2)" }}>
-              {vehicleLine(s) && <div className="flex items-center gap-2"><Car className="h-4 w-4" /> {vehicleLine(s)}{s.plate ? ` · ${s.plate}` : ""}</div>}
-              {s.phone && <div className="flex items-center gap-2"><Phone className="h-4 w-4" /> {s.phone}</div>}
+              {(vehicleLine(s) || s.plate) && <div className="flex items-center gap-2"><Car className="h-4 w-4" /> {[vehicleLine(s), s.plate].filter(Boolean).join(" · ")}{s.plate && <CopyBtn text={s.plate} label="Plakayı kopyala" />}</div>}
+              {s.phone && <div className="flex items-center gap-2"><Phone className="h-4 w-4" /> {s.phone}<CopyBtn text={s.phone} label="Telefonu kopyala" /></div>}
             </div>
             <div className="mt-2 text-[12px] text-slate-400">
               {s.order_no ? `${s.order_no} · ` : ""}Geliş: {fmtDate(s.arrival_date)}{s.delivery_date ? ` · Teslim: ${fmtDate(s.delivery_date)}` : ""}{daysIn(s) != null ? ` · ${daysIn(s)} gündür serviste` : ""}

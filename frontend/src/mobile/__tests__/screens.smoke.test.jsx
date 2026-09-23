@@ -701,3 +701,15 @@ test("tahsilat: 'Kalanın tamamı' tutarı doldurur (₺ ve €/kur), açıklama
   await click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim() === "Nakit"));
   expect(container.querySelector('input[placeholder^="Açıklama"]').value).toBe("Nakit");
 });
+
+test("servis detayı: plaka + telefon kopyala butonları panoya yazar", async () => {
+  Object.assign(global.__SERVICE, { plate: "59 ABC 123", phone: "0555 111 22 33" });
+  const copied = [];
+  Object.defineProperty(navigator, "clipboard", { value: { writeText: (t) => { copied.push(t); return Promise.resolve(); } }, configurable: true });
+  await render(<Services />);
+  await click(Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri"));
+  expect(text()).toContain("59 ABC 123");
+  await click(container.querySelector('button[aria-label="Plakayı kopyala"]'));
+  await click(container.querySelector('button[aria-label="Telefonu kopyala"]'));
+  expect(copied).toEqual(["59 ABC 123", "0555 111 22 33"]);
+});

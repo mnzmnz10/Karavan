@@ -1,7 +1,8 @@
 // Mobil UI primitifleri — iOS-native his (büyük başlık, kart, sheet, arama, tab bar).
 import React, { useEffect, useRef, useState } from "react";
 import { cache } from "./cache";
-import { ChevronLeft, Search, X, Loader2, WifiOff, RotateCw } from "lucide-react";
+import { ChevronLeft, Search, X, Loader2, WifiOff, RotateCw, Copy, Check } from "lucide-react";
+import { toast } from "sonner";
 
 // Yerel (cihaz saat dilimi) bugün YYYY-MM-DD — toISOString UTC'dir; TR'de 00:00-03:00 arası bir önceki günü verirdi
 export const todayISO = () => {
@@ -316,4 +317,34 @@ export function Pill({ children, color = "slate" }) {
     red: "bg-rose-50 text-rose-700",
   };
   return <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${map[color] || map.slate}`}>{children}</span>;
+}
+
+// Panoya kopyala (plaka, telefon…) — Clipboard API yoksa textarea yedeği
+export async function copyText(text) {
+  const t = String(text || "");
+  try {
+    if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(t); return true; }
+  } catch {}
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = t; ta.setAttribute("readonly", ""); ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    return ok;
+  } catch { return false; }
+}
+
+export function CopyBtn({ text, label = "Kopyala" }) {
+  const [done, setDone] = useState(false);
+  const onClick = async (e) => {
+    e.stopPropagation();
+    if (await copyText(text)) { setDone(true); toast.success("Kopyalandı", { duration: 1200 }); setTimeout(() => setDone(false), 1200); }
+    else toast.error("Kopyalanamadı");
+  };
+  return (
+    <button type="button" onClick={onClick} aria-label={label} className="m-press -my-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-400">
+      {done ? <Check className="h-3.5 w-3.5" style={{ color: "var(--m-primary-2)" }} /> : <Copy className="h-3.5 w-3.5" />}
+    </button>
+  );
 }

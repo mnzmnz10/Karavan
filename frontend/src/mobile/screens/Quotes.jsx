@@ -678,6 +678,9 @@ export default function Quotes({ go }) {
     });
     return { month, service };
   }, [items, transferredNames]);
+  // Sıralama: tarih (ay grupları) | tutar | müşteri — seçim hatırlanır
+  const [qsort, setQsort] = useState(() => (["date", "amount", "name"].includes(cache.get("quote_sort")) ? cache.get("quote_sort") : "date"));
+  useEffect(() => { cache.set("quote_sort", qsort); }, [qsort]);
   const filtered = useMemo(() => {
     const s = q.trim().toLocaleLowerCase("tr");
     const now = new Date();
@@ -687,8 +690,12 @@ export default function Quotes({ go }) {
       (x.name || "").toLocaleLowerCase("tr").includes(s) || (x.customer_name || "").toLocaleLowerCase("tr").includes(s) ||
       (x.products || []).some((p) => (p.name || "").toLocaleLowerCase("tr").includes(s))
     );
+    const amt = (x) => Number(x.total_net_price || x.total_discounted_price || 0);
+    const who = (x) => String(x.customer_name || x.name || "");
+    if (qsort === "amount") return [...base].sort((a, b) => amt(b) - amt(a));
+    if (qsort === "name") return [...base].sort((a, b) => who(a).localeCompare(who(b), "tr"));
     return [...base].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || ""))); // en yeni üstte
-  }, [items, q, qf, transferredNames]);
+  }, [items, q, qf, transferredNames, qsort]);
 
   return (
     <div className="flex h-full flex-col">
@@ -712,6 +719,11 @@ export default function Quotes({ go }) {
             </button>
           );
         })}
+        <button onClick={() => setQsort((v) => (v === "date" ? "amount" : v === "amount" ? "name" : "date"))} aria-label="Sıralama"
+          className={`m-press shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-semibold ${qsort === "date" ? "m-fill" : ""}`}
+          style={qsort === "date" ? { background: "#e9e9ee", color: "var(--m-ink-2)" } : { background: "#d9820a", color: "#fff" }}>
+          ↕ {qsort === "amount" ? "Tutar" : qsort === "name" ? "Müşteri" : "Tarih"}
+        </button>
       </div>
       <OfflineBar show={offline} cacheKey="quotes" />
       <RefreshScroll onRefresh={reload} className="flex-1 pb-[calc(var(--m-tabbar-h)+env(safe-area-inset-bottom)+8px)]">
@@ -723,7 +735,9 @@ export default function Quotes({ go }) {
           <EmptyState icon={FileText} title="Teklif bulunamadı" hint={q ? "Aramayı değiştir" : "Henüz teklif yok"} />
         ) : (
           <div className="px-4 pt-1">
-            {groupByMonth(filtered).map((g) => (
+            {qsort !== "date" ? (
+              <div className="space-y-2 pb-3">{filtered.map((x) => <Row key={x.id} q={x} onOpen={setSel} transferred={transferredNames.has(x.name)} />)}</div>
+            ) : groupByMonth(filtered).map((g) => (
               <div key={g.key} className="mb-3">
                 <div className="flex items-baseline justify-between px-1 pb-1.5 text-[12px] font-bold uppercase tracking-wide text-slate-400">
                   <span>{g.label}</span>

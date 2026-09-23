@@ -27,7 +27,7 @@ jest.mock("../api", () => {
     __esModule: true,
     __calls: calls,
     quotes: {
-      list: () => Promise.resolve([global.__QUOTE]),
+      list: () => Promise.resolve(global.__QUOTES || [global.__QUOTE]),
       update: (id, p) => { calls.update.push(p); return Promise.resolve({ ...global.__QUOTE, ...p }); },
       create: (p) => { calls.create.push(p); return Promise.resolve({ ...global.__QUOTE, id: "q2", ...p }); },
       remove: ok({}),
@@ -51,6 +51,7 @@ const money = (n) => Number(n).toLocaleString("tr-TR", { maximumFractionDigits: 
 
 beforeEach(() => {
   global.__QUOTE = JSON.parse(JSON.stringify(QUOTE));
+  global.__QUOTES = null;
   global.__CATALOG = CATALOG;
   localStorage.clear();
   container = document.createElement("div");
@@ -231,4 +232,25 @@ test("teklif: müşterinin servis telefonu varsa WhatsApp o numaraya + tel linki
   const a = container.querySelector('a[aria-label="WhatsApp"]');
   expect(a.getAttribute("href")).toContain("wa.me/905551112233?text=");
   expect(container.querySelector('a[href="tel:0555 111 22 33"]')).toBeTruthy();
+});
+
+test("teklif sıralama: Tarih → Tutar → Müşteri döner, seçim hatırlanır", async () => {
+  global.__QUOTES = [
+    { id: "a", name: "Küçük", customer_name: "Zeki", created_at: "2026-09-20", total_net_price: 1000, products: [] },
+    { id: "b", name: "Büyük", customer_name: "Ahmet", created_at: "2026-08-01", total_net_price: 90000, products: [] },
+    { id: "c", name: "Orta", customer_name: "Çetin", created_at: "2026-09-01", total_net_price: 5000, products: [] },
+  ];
+  await act(async () => { root.render(<Quotes go={() => {}} />); });
+  await flush();
+  const order = () => ["Küçük", "Büyük", "Orta"].map((n) => [n, container.textContent.indexOf(n)]).sort((x, y) => x[1] - y[1]).map((x) => x[0]);
+  expect(order()).toEqual(["Küçük", "Orta", "Büyük"]); // tarih: en yeni üstte
+  const sortBtn = () => container.querySelector('button[aria-label="Sıralama"]');
+  await click(sortBtn());
+  expect(sortBtn().textContent).toContain("Tutar");
+  expect(order()).toEqual(["Büyük", "Orta", "Küçük"]);
+  await click(sortBtn());
+  expect(order()).toEqual(["Büyük", "Orta", "Küçük"]); // Ahmet, Çetin, Zeki (tr sırası)
+  expect(JSON.parse(localStorage.getItem("mz:quote_sort"))).toBe("name");
+  await click(sortBtn());
+  expect(sortBtn().textContent).toContain("Tarih");
 });
