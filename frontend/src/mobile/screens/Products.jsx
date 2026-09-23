@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Package, Boxes, Plus, Minus, User, LogOut, Loader2 } from "lucide-react";
+import { Package, Boxes, Plus, Minus, User, LogOut, Loader2, Eye, EyeOff } from "lucide-react";
 import { products as productsApi, categories as categoriesApi } from "../api";
 import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, RefreshScroll, Lightbox, OfflineBar } from "../ui";
 import { cache } from "../cache";
@@ -46,26 +46,30 @@ function AccountButton() {
   );
 }
 
-function CategoryBar({ cats, sel, onSel }) {
+function CategoryCards({ cats, sel, onSel }) {
   if (!cats.length) return null;
-  const Chip = ({ id, label }) => {
+  const Tile = ({ id, label, icon: Icon }) => {
     const on = sel === id;
     return (
       <button
         onClick={() => onSel(id)}
-        className={`m-press shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-semibold ${on ? "" : "m-fill"}`}
-        style={on
-          ? { background: "var(--m-primary)", color: "#fff" }
-          : { background: "#e9e9ee", color: "var(--m-ink-2)" }}
+        className={`m-press flex min-w-[86px] shrink-0 flex-col items-center gap-1.5 rounded-2xl px-3 py-2.5 ${on ? "" : "bg-white"}`}
+        style={on ? { background: "var(--m-primary)", color: "#fff" } : { color: "var(--m-ink-2)" }}
       >
-        {label}
+        <div
+          className="flex h-9 w-9 items-center justify-center rounded-xl"
+          style={{ background: on ? "rgba(255,255,255,.22)" : "rgba(120,130,145,.15)" }}
+        >
+          <Icon className="h-5 w-5" style={{ color: on ? "#fff" : "var(--m-primary)" }} />
+        </div>
+        <span className="max-w-[76px] truncate text-[12px] font-semibold">{label}</span>
       </button>
     );
   };
   return (
-    <div className="flex gap-2 overflow-x-auto px-4 pb-2" style={{ scrollbarWidth: "none" }}>
-      <Chip id="" label="Tümü" />
-      {cats.map((c) => <Chip key={c.id} id={c.id} label={c.name} />)}
+    <div className="flex gap-2 overflow-x-auto px-4 pb-2 pt-1" style={{ scrollbarWidth: "none" }}>
+      <Tile id="" label="Tümü" icon={Boxes} />
+      {cats.map((c) => <Tile key={c.id} id={c.id} label={c.name} icon={Package} />)}
     </div>
   );
 }
@@ -77,7 +81,7 @@ function priceTRY(p) {
   return { main: list || 0, old: null };
 }
 
-function Row({ p, onOpen, onAdd, qty }) {
+function Row({ p, onOpen, onAdd, qty, hide }) {
   const pr = priceTRY(p);
   return (
     <Card onClick={() => onOpen(p)} className="p-3">
@@ -93,8 +97,14 @@ function Row({ p, onOpen, onAdd, qty }) {
           <div className="truncate text-[15px] font-semibold leading-tight" style={{ color: "var(--m-ink)" }}>{p.name}</div>
           {p.brand && <div className="mt-0.5 truncate text-[12px] font-bold uppercase tracking-wide" style={{ color: "var(--m-ink-2)" }}>{p.brand}</div>}
           <div className="mt-1 flex items-baseline gap-1.5">
-            <span className="m-tnum text-[15px] font-extrabold" style={{ color: "var(--m-primary-2)" }}>₺{money(pr.main)}</span>
-            {pr.old && <span className="m-tnum text-[12px] text-slate-400 line-through">₺{money(pr.old)}</span>}
+            {hide ? (
+              <span className="m-tnum text-[15px] font-extrabold tracking-widest" style={{ color: "var(--m-ink-2)" }}>₺•••</span>
+            ) : (
+              <>
+                <span className="m-tnum text-[15px] font-extrabold" style={{ color: "var(--m-primary-2)" }}>₺{money(pr.main)}</span>
+                {pr.old && <span className="m-tnum text-[12px] text-slate-400 line-through">₺{money(pr.old)}</span>}
+              </>
+            )}
           </div>
         </div>
         <button
@@ -113,7 +123,7 @@ function Row({ p, onOpen, onAdd, qty }) {
   );
 }
 
-function Detail({ p, onClose, onAdd }) {
+function Detail({ p, onClose, onAdd, hide }) {
   const [lb, setLb] = useState(false);
   const [qty, setQty] = useState(1);
   useEffect(() => { if (p) setQty(1); }, [p]);
@@ -131,8 +141,14 @@ function Detail({ p, onClose, onAdd }) {
         <div className="text-[19px] font-bold leading-snug">{p.name}</div>
         {p.brand && <div className="mt-1"><Pill color="slate">{p.brand}</Pill></div>}
         <div className="mt-3 flex items-baseline gap-2">
-          <span className="m-tnum text-[24px] font-extrabold" style={{ color: "var(--m-primary-2)" }}>₺{money(pr.main)}</span>
-          {pr.old && <span className="m-tnum text-[14px] text-slate-400 line-through">₺{money(pr.old)}</span>}
+          {hide ? (
+            <span className="m-tnum text-[24px] font-extrabold tracking-widest" style={{ color: "var(--m-ink-2)" }}>₺••••</span>
+          ) : (
+            <>
+              <span className="m-tnum text-[24px] font-extrabold" style={{ color: "var(--m-primary-2)" }}>₺{money(pr.main)}</span>
+              {pr.old && <span className="m-tnum text-[14px] text-slate-400 line-through">₺{money(pr.old)}</span>}
+            </>
+          )}
         </div>
         <div className="mt-3 flex items-center gap-3">
           <div className="flex items-center gap-2 rounded-2xl bg-slate-100 px-2 py-1.5">
@@ -173,9 +189,12 @@ export default function Products() {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [sel, setSel] = useState(null);
+  const [hidePrice, setHidePrice] = useState(() => cache.get("price_hidden") === true);
   const debRef = useRef();
   const cart = useCart();
   const LIMIT = 40;
+
+  useEffect(() => { cache.set("price_hidden", hidePrice); }, [hidePrice]);
 
   const fetchPage = useCallback(async (search, category_id, pg, append) => {
     const home = !search && !category_id && pg === 1;
@@ -217,9 +236,25 @@ export default function Products() {
 
   return (
     <div className="flex h-full flex-col">
-      <Header title="Ürünler" subtitle={loading ? "Yükleniyor…" : `${items.length} ürün`} right={<AccountButton />} />
+      <Header
+        title="Ürünler"
+        subtitle={loading ? "Yükleniyor…" : hidePrice ? `${items.length} ürün · fiyatlar gizli` : `${items.length} ürün`}
+        right={
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setHidePrice((h) => !h)}
+              title={hidePrice ? "Fiyatları göster" : "Fiyatları gizle (müşteri modu)"}
+              className="m-press flex h-9 w-9 items-center justify-center rounded-full"
+              style={hidePrice ? { background: "var(--m-primary)" } : { background: "rgba(148,163,184,.28)" }}
+            >
+              {hidePrice ? <EyeOff className="h-5 w-5 text-white" /> : <Eye className="h-5 w-5" style={{ color: "var(--m-ink-2)" }} />}
+            </button>
+            <AccountButton />
+          </div>
+        }
+      />
       <SearchBar value={q} onChange={setQ} placeholder="Ürün adı veya marka" />
-      <CategoryBar cats={cats} sel={cat} onSel={setCat} />
+      <CategoryCards cats={cats} sel={cat} onSel={setCat} />
       <OfflineBar show={offline} />
       <RefreshScroll onRefresh={() => fetchPage(q.trim(), cat, 1, false)} onScroll={onScroll} className="flex-1 pb-[calc(var(--m-tabbar-h)+env(safe-area-inset-bottom)+8px)]">
         {loading ? (
@@ -231,13 +266,13 @@ export default function Products() {
         ) : (
           <>
             <div className="space-y-2 px-4 pt-1">
-              {items.map((p) => <Row key={p.id} p={p} onOpen={setSel} onAdd={cart.add} qty={cart.items.get(p.id)?.qty || 0} />)}
+              {items.map((p) => <Row key={p.id} p={p} onOpen={setSel} onAdd={cart.add} qty={cart.items.get(p.id)?.qty || 0} hide={hidePrice} />)}
             </div>
             {more && <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>}
           </>
         )}
       </RefreshScroll>
-      <Detail p={sel} onClose={() => setSel(null)} onAdd={cart.add} />
+      <Detail p={sel} onClose={() => setSel(null)} onAdd={cart.add} hide={hidePrice} />
     </div>
   );
 }
