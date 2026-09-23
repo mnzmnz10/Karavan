@@ -203,8 +203,8 @@ test("teklif filtreleri: Serviste / Bekleyen", async () => {
   localStorage.setItem("mz:services", JSON.stringify([{ id: "s1", notes: "[Teklif: Test Teklif]" }]));
   await act(async () => { root.render(<Quotes go={() => {}} />); });
   await flush();
-  await click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim() === "Bekleyen"));
+  await click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim().startsWith("Bekleyen")));
   expect(container.textContent).not.toContain("Test Teklif");
-  await click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim() === "Serviste"));
+  await click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim().startsWith("Serviste")));
   expect(container.textContent).toContain("Test Teklif");
 });

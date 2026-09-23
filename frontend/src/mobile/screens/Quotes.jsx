@@ -656,6 +656,16 @@ export default function Quotes({ go }) {
     svcs.forEach((x) => { const m = /\[Teklif: ([^\]]*)\]/.exec(x.notes || ""); if (m && m[1]) set.add(m[1]); });
     return set;
   }, [items]);
+  const qCounts = useMemo(() => {
+    const now = new Date();
+    let month = 0, service = 0;
+    items.forEach((x) => {
+      const d = new Date(x.created_at);
+      if (!isNaN(d) && d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()) month++;
+      if (transferredNames.has(x.name)) service++;
+    });
+    return { month, service };
+  }, [items, transferredNames]);
   const filtered = useMemo(() => {
     const s = q.trim().toLocaleLowerCase("tr");
     const now = new Date();
@@ -673,12 +683,12 @@ export default function Quotes({ go }) {
       <Header title="Teklifler" subtitle={loading ? "Yükleniyor…" : `${items.length} teklif`} />
       <SearchBar value={q} onChange={setQ} placeholder="Teklif, müşteri veya ürün" />
       <div className="flex gap-2 overflow-x-auto px-4 pb-2" style={{ scrollbarWidth: "none" }}>
-        {[["", "Tümü"], ["month", "Bu ay"], ["service", "Serviste"], ["open", "Bekleyen"]].map(([id, label]) => {
+        {[["", "Tümü", items.length], ["month", "Bu ay", qCounts.month], ["service", "Serviste", qCounts.service], ["open", "Bekleyen", items.length - qCounts.service]].map(([id, label, n]) => {
           const on = qf === id;
           return (
             <button key={id || "all"} onClick={() => setQf(id)} className={`m-press shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-semibold ${on ? "" : "m-fill"}`}
               style={on ? { background: "var(--m-primary)", color: "#fff" } : { background: "#e9e9ee", color: "var(--m-ink-2)" }}>
-              {label}
+              {label} {n > 0 && <span className="opacity-70">{n}</span>}
             </button>
           );
         })}
