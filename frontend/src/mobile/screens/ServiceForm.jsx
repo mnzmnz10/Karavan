@@ -249,6 +249,8 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
             rate: it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || null) : null,
           })),
       };
+      // Fotoğraflar değişmediyse gönderme: liste kaydından (photos alanı yok) açılan düzenleme mevcut fotoğrafları silmesin
+      if (editing && (initial.photos === undefined || JSON.stringify(f.photos) === JSON.stringify(initial.photos || []))) delete payload.photos;
       if (editing) await servicesApi.update(initial.id, payload);
       else await servicesApi.create(payload);
       toast.success(editing ? "Kayıt güncellendi" : "Servis kaydı oluşturuldu");

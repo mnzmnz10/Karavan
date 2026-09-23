@@ -446,3 +446,11 @@ test("daysIn: teslim edilmemiş araç gün sayısı", () => {
   expect(daysIn({ status: "in_progress", arrival_date: iso })).toBe(5);
   expect(daysIn({ status: "delivered", arrival_date: iso })).toBeNull();
 });
+
+test("servis formu: foto alanı olmayan kayıt düzenlenince photos gönderilmez", async () => {
+  const rec = { ...global.__SERVICE }; delete rec.photos;
+  await render(<ServiceForm open initial={rec} onClose={() => {}} onSaved={() => {}} prodCost={{}} />);
+  await click(btnWith("Kaydet"));
+  const api = require("../api");
+  expect("photos" in api.__calls.svcUpdate.at(-1)).toBe(false);
+});
