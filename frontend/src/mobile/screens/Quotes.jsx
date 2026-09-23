@@ -327,6 +327,23 @@ function QuoteItemsSheet({ q, open, onClose, onSaved, showCost }) {
   const net = base * (1 - discPct / 100) + labor;
   const oldNet = Number(q.total_net_price || 0);
 
+  // Birim satış fiyatını TL olarak düzenle → katalogda custom_price (ürün para birimi), manuelde price
+  const setUnitTL = (key, v) => setRows((rs) => rs.map((r) => {
+    if (r.key !== key) return r;
+    const t = parseFloat(v);
+    const next = { ...r, tl: v };
+    if (r.kind === "manual") {
+      if (Number.isFinite(t) && t > 0) next.price = r.currency === "TRY" ? t : t / (r.rate || 1);
+    } else {
+      const p = byId.get(r.id);
+      if (v === "") next.custom_price = null;
+      else if (Number.isFinite(t) && t >= 0) {
+        if (p && catRate(p) > 0) next.custom_price = t / catRate(p);
+        else next.snapSale = t; // katalogda yok → manuel olarak bu fiyatla gider
+      }
+    }
+    return next;
+  }));
   const setQty = (key, d) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, qty: Math.max(1, r.qty + d) } : r)));
   const removeRow = (key) => setRows((rs) => rs.filter((r) => r.key !== key));
   const addCat = (p) => {
@@ -380,8 +397,17 @@ function QuoteItemsSheet({ q, open, onClose, onSaved, showCost }) {
           <div key={r.key} className="flex items-center gap-2 border-b border-slate-50 px-2 py-2.5 last:border-0">
             <div className="min-w-0 flex-1">
               <div className="truncate text-[14px] font-medium">{r.name}</div>
-              <div className="m-tnum text-[12px] text-slate-400">
-                ₺{money(unitSale(r))}{missing(r) ? " · katalogda yok" : r.kind === "manual" ? " · manuel" : ""}
+              <div className="mt-0.5 flex items-center gap-1 text-[12px] text-slate-400">
+                <span>₺</span>
+                <input
+                  value={r.tl != null ? r.tl : String(Math.round(unitSale(r) * 100) / 100)}
+                  onChange={(e) => setUnitTL(r.key, e.target.value)}
+                  inputMode="decimal"
+                  aria-label="Birim fiyat"
+                  className="m-tnum w-24 rounded-md bg-slate-100 px-1.5 py-0.5 text-[12px] font-semibold"
+                  style={{ color: r.custom_price != null && r.kind === "cat" ? "#d9820a" : "var(--m-ink)" }}
+                />
+                <span className="truncate">{missing(r) ? "katalogda yok" : r.kind === "manual" ? "manuel" : r.custom_price != null ? "özel" : ""}</span>
               </div>
             </div>
             <div className="flex items-center gap-1">

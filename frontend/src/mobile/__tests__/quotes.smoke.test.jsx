@@ -149,3 +149,16 @@ test("dashboard render", async () => {
   expect(text()).toContain("Bu ay teslim edilen servis");
   expect(container.querySelector('button[aria-label="Göster/Gizle"]').textContent.trim()).toBe("");
 });
+
+test("kalem editörü: birim fiyatı TL düzenle → custom_price güncel kurla", async () => {
+  await openDetail();
+  await click(btnWith("Kalemleri düzenle"));
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+  const inp = container.querySelectorAll('input[aria-label="Birim fiyat"]')[0];
+  await act(async () => { setter.call(inp, "47000"); inp.dispatchEvent(new Event("input", { bubbles: true })); });
+  expect(text()).toContain(`₺${money(47000 * 2 + 5000 + 1000)}`);
+  const saveBtns = Array.from(container.querySelectorAll("button")).filter((b) => b.textContent.trim() === "Kaydet");
+  await click(saveBtns.at(-1));
+  const api = require("../api");
+  expect(api.__calls.update.at(-1).products[0]).toEqual({ id: "pUSD", quantity: 2, custom_price: 1000 }); // 47000 / 47
+});
