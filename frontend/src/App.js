@@ -2375,7 +2375,8 @@ function App() {
     const c = parseFloat(p.discounted_price_try) > 0 ? parseFloat(p.discounted_price_try) : parseFloat(p.list_price_try);
     return c > 0 ? c : null;
   };
-  // Kâr analizi: kalem maliyeti (geliş). Öncelik: elle girilen unit_cost → ürün eşleşmesi (indirimli fiyat) → yoksa satışa eşit (kâr 0).
+  const isLaborServiceItem = (it) => /işçilik|iscilik|işcilik/.test(String(it?.name || '').toLocaleLowerCase('tr'));
+  // Kâr analizi: kalem maliyeti (geliş). Öncelik: elle girilen unit_cost → işçilik (0) → ürün eşleşmesi (indirimli fiyat) → yoksa satışa eşit (kâr 0).
   const serviceItemCostLineTRY = (it) => {
     const q = parseFloat(it.qty) || 0;
     const hasCost = it.unit_cost !== '' && it.unit_cost != null && !isNaN(parseFloat(it.unit_cost));
@@ -2384,6 +2385,7 @@ function App() {
       const r = cur === 'TRY' ? 1 : (parseFloat(it.rate) || parseFloat(exchangeRates?.[cur]) || 0);
       return (parseFloat(it.unit_cost) || 0) * q * r;
     }
+    if (isLaborServiceItem(it)) return 0; // işçilik, geliş girilmemişse tamamı kâr (eski tekliften aktarımlar unit_cost'suz)
     const pc = productCostPerUnitTRY(it.name); // maliyet boşsa ürünün indirimli fiyatından türet
     if (pc != null) return pc * q;
     return serviceItemLineTRY(it); // gerçekten bilinmiyor → kâr 0
@@ -11504,7 +11506,7 @@ function App() {
                         // İşçilik = maliyeti 0 olan kalemler (tamamı kâr)
                         const laborTotal = (serviceForm.items || []).reduce((a, it) => {
                           const uc = it.unit_cost;
-                          const isZeroCost = uc !== '' && uc != null && parseFloat(uc) === 0;
+                          const isZeroCost = uc !== '' && uc != null ? parseFloat(uc) === 0 : isLaborServiceItem(it);
                           return isZeroCost ? a + serviceItemLineTRY(it) : a;
                         }, 0);
                         const adv = parseFloat(serviceForm.advance_amount) || 0;
