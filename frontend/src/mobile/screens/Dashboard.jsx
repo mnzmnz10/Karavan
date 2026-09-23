@@ -70,8 +70,7 @@ export default function Dashboard({ go }) {
     let svcNet = 0, svcCost = 0;
     doneMonth.forEach((x) => {
       const items = x.items || [];
-      const gross = items.length === 0 && x.cost != null ? Number(x.cost) || 0 : items.reduce((a, it) => a + lineTRY(it, "unit_price"), 0);
-      const net = gross - Math.min(Math.max(0, parseFloat(x.discount_amount) || 0), gross);
+      const net = serviceNet(x);
       svcNet += net;
       svcCost += items.length ? items.reduce((a, it) => a + costLine(it), 0) : net; // kalemsiz eski kayıt → kâr bilinmiyor (0)
     });
