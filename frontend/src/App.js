@@ -5228,12 +5228,14 @@ function App() {
     const totalListPriceDiscounted = totalTRYDiscounted + usdDiscountedInTry + eurDiscountedInTry;
     
     const discountAmount = totalListPrice * (parseFloat(quoteDiscount) || 0) / 100;
-    const discountAmountDiscounted = totalListPriceDiscounted * (parseFloat(quoteDiscount) || 0) / 100;
+    // İNDİRİM SADECE SATIŞA uygulanır. Maliyeti (geliş) İNDİRMEZ — ürünler indirimli alınmıyor,
+    // indirim müşteriye yapılıyor. (Eski hata: indirim geliş toplamından da düşülüp kâr şişiyordu.)
+    const discountAmountDiscounted = 0;
     const laborCost = parseFloat(quoteLaborCost) || 0;
     const totalNetPrice = totalListPrice - discountAmount + laborCost;
     // İşçiliğin "gelişi" (maliyeti) yoktur -> geliş/maliyet toplamına EKLENMEZ.
-    // Böylece işçilik tamamen kâra yazılır (BRÜT KAZANÇ = satış net - geliş net).
-    const totalNetPriceDiscounted = totalListPriceDiscounted - discountAmountDiscounted;
+    // Geliş net = geliş toplamı (indirimsiz). BRÜT KAZANÇ = satış net - geliş net.
+    const totalNetPriceDiscounted = totalListPriceDiscounted;
     
     // Toplam ürün adedi hesapla
     const totalQuantity = selectedProductsData.reduce((sum, p) => sum + (p.quantity || 1), 0);
@@ -10364,20 +10366,11 @@ function App() {
                                 </div>
                               )}
                               
-                              <div className="flex justify-between">
-                                <span>Geliş Liste Toplamı:</span>
-                                <span className="font-bold">₺ {formatPrice(calculateQuoteTotals.totalListPriceDiscounted)}</span>
-                              </div>
-                              
-                              <div className="flex justify-between text-rose-700">
-                                <span>İndirim Payı (-%):</span>
-                                <span>- ₺ {formatPrice(calculateQuoteTotals.discountAmountDiscounted)}</span>
-                              </div>
-                              
                               <div className="flex justify-between text-purple-700 font-extrabold border-t border-purple-200/60 pt-2 text-sm">
-                                <span>NET GELİŞ TOPLAMI:</span>
+                                <span>GELİŞ (MALİYET) TOPLAMI:</span>
                                 <span>₺ {formatPrice(calculateQuoteTotals.totalNetPriceDiscounted)}</span>
                               </div>
+                              <div className="text-[10px] text-slate-400 -mt-1">İndirim maliyete uygulanmaz — sadece satışa</div>
 
                               {calculateQuoteTotals.laborCost > 0 && (
                                 <div className="flex justify-between text-emerald-700">
