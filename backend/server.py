@@ -3332,7 +3332,7 @@ class PDFQuoteGenerator:
         ]
         right_col = [
             kv("Teklif Başlığı", title, valb), Spacer(1, 6),
-            kv("Proje Notları", notes),
+            kv("Teklif Notları", notes),
         ]
         card = PDFTable([[left_col, right_col]], colWidths=[8.9*cm, 9.1*cm])
         card.setStyle(TableStyle([
@@ -3352,7 +3352,7 @@ class PDFQuoteGenerator:
         raw = (quote_data.get('notes') or '').strip()
         if not raw:
             return None
-        band = self._create_section_band("PROJE NOTLARI")
+        band = self._create_section_band("TEKLİF NOTLARI")
         txt = _html.escape(raw).replace('\n', '<br/>')
         st = ParagraphStyle('QNoteFull', parent=self.styles['Normal'],
             fontName=self.get_font_name(), fontSize=9, textColor=colors.HexColor('#2D3748'), leading=13)
@@ -3518,7 +3518,7 @@ class PDFQuoteGenerator:
         P = self.PROP_PRIMARY
         W = self.PROP_CONTENT_W
 
-        band = self._create_section_band("NOTLAR & ŞARTLAR")
+        band = self._create_section_band("ŞARTLAR")
 
         terms_st = ParagraphStyle('TS', parent=self.styles['Normal'],
             fontName=self.get_font_name(), fontSize=8, textColor=colors.HexColor('#4A5568'), leading=12)
