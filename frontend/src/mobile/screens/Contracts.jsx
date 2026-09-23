@@ -207,9 +207,15 @@ function Detail({ c, onClose, onStage, staging, onDeleted, onEditItems, onCopy, 
 function ItemsEditor({ c, open, onClose, onSaved }) {
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [snap, setSnap] = useState("");
   useEffect(() => {
-    if (open && c?.data) setData(JSON.parse(JSON.stringify(c.data))); // deep copy (addon'lar dahil korunur)
+    if (open && c?.data) { setData(JSON.parse(JSON.stringify(c.data))); setSnap(JSON.stringify(c.data)); } // deep copy (addon'lar dahil korunur)
   }, [open, c]);
+  // Kaydedilmemiş değişiklik varsa kapatmadan önce sor
+  const guardedClose = () => {
+    if (!busy && data && snap && JSON.stringify(data) !== snap && !window.confirm("Kaydedilmemiş değişiklikler silinsin mi?")) return;
+    onClose();
+  };
 
   const kur = Number(data?.kur) || 0;
   const recalc = (d) => {
@@ -254,7 +260,7 @@ function ItemsEditor({ c, open, onClose, onSaved }) {
 
   if (!c) return null;
   return (
-    <Sheet open={open} onClose={onClose} title="Kalemleri Düzenle" full>
+    <Sheet open={open} onClose={guardedClose} title="Kalemleri Düzenle" full>
       {!data ? (
         <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>
       ) : (
