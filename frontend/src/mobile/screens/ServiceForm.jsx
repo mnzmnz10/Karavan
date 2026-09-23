@@ -364,9 +364,15 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
             </div>
           )}
         </div>
-        <button onClick={addItem} className="m-press flex w-full items-center justify-center gap-1.5 px-4 py-3 text-[14px] font-semibold" style={{ color: "var(--m-primary-2)" }}>
-          <Plus className="h-4 w-4" /> Kalem Ekle
-        </button>
+        <div className="flex">
+          <button onClick={addItem} className="m-press flex flex-1 items-center justify-center gap-1.5 px-4 py-3 text-[14px] font-semibold" style={{ color: "var(--m-primary-2)" }}>
+            <Plus className="h-4 w-4" /> Kalem Ekle
+          </button>
+          {/* İşçilik: geliş 0 → tamamı kâr (Brüt kazanç özetinde ayrı satır) */}
+          <button onClick={() => set("items", [...f.items, { name: "İşçilik", qty: 1, unit_price: "", unit_cost: 0, currency: "TRY" }])} className="m-press flex flex-1 items-center justify-center gap-1.5 px-4 py-3 text-[14px] font-semibold" style={{ color: "var(--m-primary-2)" }}>
+            <Plus className="h-4 w-4" /> İşçilik
+          </button>
+        </div>
         {total > 0 && (
           <div className="space-y-1.5 border-t border-slate-100 px-4 py-2.5">
             <div className="flex items-center justify-between text-[13px]">

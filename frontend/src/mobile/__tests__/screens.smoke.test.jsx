@@ -504,3 +504,13 @@ test("sepet: satırdan ürün çıkar", async () => {
   await click(container.querySelector('button[aria-label="Sepetten çıkar"]'));
   expect(JSON.parse(localStorage.getItem("mz:cart"))).toEqual([]);
 });
+
+test("servis formu: + İşçilik geliş 0 ile eklenir", async () => {
+  await render(<ServiceForm open initial={{ id: "s9", customer_name: "X", items: [] }} onClose={() => {}} onSaved={() => {}} prodCost={{}} />);
+  await click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim() === "İşçilik"));
+  const priceInput = container.querySelector('input[placeholder="Satış"]');
+  await setVal(priceInput, "2500");
+  await click(btnWith("Kaydet"));
+  const api = require("../api");
+  expect(api.__calls.svcUpdate.at(-1).items[0]).toMatchObject({ name: "İşçilik", unit_price: 2500, unit_cost: 0 });
+});
