@@ -82,6 +82,7 @@ function CartSheet({ open, onClose }) {
   const [customer, setCustomer] = useState("");
   const [discount, setDiscount] = useState(""); // %
   const [discTL, setDiscTL] = useState("");     // ₺ (yüzde ile senkron)
+  const [targetNet, setTargetNet] = useState(""); // hedef net toplam
   const [labor, setLabor] = useState("");
   const [notes, setNotes] = useState("");
   const [manualItems, setManualItems] = useState([]); // elle girilen kalemler
@@ -93,16 +94,24 @@ function CartSheet({ open, onClose }) {
   const manualTotal = manualItems.reduce((a, m) => a + (parseFloat(m.price) || 0) * (parseFloat(m.qty) || 1), 0);
   const subtotal = cart.total + manualTotal;
 
-  // İndirim çift yön: % girilince ₺ hesaplanır, ₺ girilince % hesaplanır.
+  // İndirim çift yön: % girilince ₺ hesaplanır, ₺ girilince % hesaplanır. Net hedefi indirimi tam ayarlar.
   const onPct = (v) => {
-    setDiscount(v);
+    setDiscount(v); setTargetNet("");
     const pct = Math.min(100, Math.max(0, parseFloat(v) || 0));
     setDiscTL(pct > 0 && subtotal > 0 ? String(Math.round(subtotal * pct / 100)) : "");
   };
   const onTL = (v) => {
-    setDiscTL(v);
+    setDiscTL(v); setTargetNet("");
     const tl = Math.max(0, parseFloat(v) || 0);
-    setDiscount(tl > 0 && subtotal > 0 ? String(Math.min(100, +(tl / subtotal * 100).toFixed(2))) : "");
+    setDiscount(tl > 0 && subtotal > 0 ? String(Math.min(100, tl / subtotal * 100)) : ""); // tam, yuvarlama yok
+  };
+  const onTargetNet = (v) => {
+    setTargetNet(v);
+    const target = parseFloat(v);
+    if (isNaN(target)) { setDiscount(""); setDiscTL(""); return; }
+    const discAmt = Math.max(0, Math.min(subtotal, subtotal + laborTL - target));
+    setDiscount(subtotal > 0 ? String(discAmt / subtotal * 100) : "");
+    setDiscTL(String(Math.round(discAmt)));
   };
 
   const discPct = Math.min(100, Math.max(0, parseFloat(discount) || 0));
@@ -140,7 +149,7 @@ function CartSheet({ open, onClose }) {
       });
       toast.success("Teklif oluşturuldu");
       cart.clear();
-      setName(""); setCustomer(""); setDiscount(""); setDiscTL(""); setLabor(""); setNotes(""); setManualItems([]);
+      setName(""); setCustomer(""); setDiscount(""); setDiscTL(""); setTargetNet(""); setLabor(""); setNotes(""); setManualItems([]);
       onClose();
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Teklif oluşturulamadı");
@@ -168,6 +177,10 @@ function CartSheet({ open, onClose }) {
         <div className="relative">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[14px] text-slate-400">₺</span>
           <input value={labor} onChange={(e) => setLabor(e.target.value)} inputMode="decimal" placeholder="İşçilik" className={`${field} pl-7`} />
+        </div>
+        <div className="relative">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] font-semibold text-emerald-700">Net ₺</span>
+          <input value={targetNet} onChange={(e) => onTargetNet(e.target.value)} inputMode="decimal" placeholder="Net toplamı ayarla (indirim otomatik)" className={`${field} pl-16`} style={{ background: "#ecfdf5" }} />
         </div>
         <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Not (opsiyonel)" rows={2} className={`${field} resize-none`} />
       </div>

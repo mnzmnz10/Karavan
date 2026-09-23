@@ -658,6 +658,7 @@ function App() {
   // Teklif: manuel (elle girilen) kalem formu
   const [manualItem, setManualItem] = useState({ name: '', price: '', cost: '', currency: 'TRY', qty: '1' });
   const [quoteDiscountTL, setQuoteDiscountTL] = useState(''); // teklif indirimi ₺ (yüzde ile senkron)
+  const [quoteTargetNet, setQuoteTargetNet] = useState(''); // hedef net toplam (girilince indirim buna göre tam ayarlanır)
   const [mpptLoading, setMpptLoading] = useState(false);
   const [termosaSyncSetting, setTermosaSyncSetting] = useState(null);
   const [termosaSyncEnabled, setTermosaSyncEnabled] = useState(false);
@@ -4077,6 +4078,7 @@ function App() {
     setSelectedProductsCustomPrices(new Map());
     setQuoteDiscount(0);
     setQuoteDiscountTL('');
+    setQuoteTargetNet('');
     setQuoteLaborCost(0); // İşçilik maliyetini de temizle
     setQuoteNotes(''); // Teklif notlarını da temizle
     setLoadedQuote(null); // Yüklenen teklifi de temizle
@@ -10245,6 +10247,7 @@ function App() {
                                   setQuoteDiscount(pct);
                                   const base = calculateQuoteTotals.totalListPrice || 0;
                                   setQuoteDiscountTL(pct > 0 && base > 0 ? String(Math.round(base * pct / 100)) : '');
+                                  setQuoteTargetNet('');
                                 }}
                                 className="w-14 h-7 border border-slate-200 focus:border-rose-500 focus:ring-1 focus:ring-rose-500 rounded-md text-center text-sm font-bold text-rose-700 focus:outline-none bg-white"
                               />
@@ -10260,7 +10263,8 @@ function App() {
                                   setQuoteDiscountTL(v);
                                   const tl = Math.max(0, parseFloat(v) || 0);
                                   const base = calculateQuoteTotals.totalListPrice || 0;
-                                  setQuoteDiscount(tl > 0 && base > 0 ? Math.min(100, +(tl / base * 100).toFixed(2)) : 0);
+                                  setQuoteDiscount(tl > 0 && base > 0 ? Math.min(100, tl / base * 100) : 0); // tam (yuvarlama yok) → net kayması olmaz
+                                  setQuoteTargetNet('');
                                 }}
                                 title="İskonto tutarı (₺) — yüzdeyi otomatik ayarlar"
                                 className="w-24 h-7 border border-slate-200 focus:border-rose-500 focus:ring-1 focus:ring-rose-500 rounded-md text-right px-2 text-sm font-bold text-rose-700 focus:outline-none bg-white tabular-nums"
@@ -10290,7 +10294,32 @@ function App() {
                               <span>NET TOPLAM</span>
                               <span className="text-emerald-700 text-xl">₺ {formatPrice(calculateQuoteTotals.totalNetPrice)}</span>
                             </div>
-                            
+
+                            {/* Net'i doğrudan ayarla — indirimi tam hesaplar (yüzde yuvarlaması yok) */}
+                            <div className="flex items-center justify-end gap-1.5 w-full mt-2">
+                              <span className="text-[11px] font-semibold text-slate-400">Net'i ayarla ₺</span>
+                              <input
+                                type="number"
+                                min="0"
+                                inputMode="decimal"
+                                value={quoteTargetNet}
+                                placeholder={formatPrice(calculateQuoteTotals.totalNetPrice)}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  setQuoteTargetNet(v);
+                                  const base = calculateQuoteTotals.totalListPrice || 0;
+                                  const labor = parseFloat(quoteLaborCost) || 0;
+                                  const target = parseFloat(v);
+                                  if (isNaN(target)) { setQuoteDiscount(0); setQuoteDiscountTL(''); return; }
+                                  const discTL = Math.max(0, Math.min(base, base + labor - target));
+                                  setQuoteDiscount(base > 0 ? discTL / base * 100 : 0);
+                                  setQuoteDiscountTL(String(Math.round(discTL)));
+                                }}
+                                title="Hedef net toplam — indirimi otomatik ve tam ayarlar (birkaç lira kayması olmaz)"
+                                className="w-32 h-8 border border-emerald-300 bg-emerald-50/40 rounded-md text-right px-2 text-sm font-bold text-emerald-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 tabular-nums"
+                              />
+                            </div>
+
                             {calculateQuoteTotals.totalNetPrice > 0 && exchangeRates.EUR && (
                               <span className="text-xs font-extrabold text-slate-400 mt-1">
                                 € {formatPrice(calculateQuoteTotals.totalNetPrice / exchangeRates.EUR)} EUR
