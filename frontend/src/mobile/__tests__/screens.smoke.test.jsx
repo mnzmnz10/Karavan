@@ -351,3 +351,19 @@ test("servis hesap özeti WhatsApp: toplam/ödenen/kalan, maliyet yok", async ()
   expect(msg).toContain("İskonto");
   expect(msg).not.toMatch(/maliyet|kâr|30\.000,0|9\.000/i.source ? /maliyet|kâr/i : /x/);
 });
+
+test("ürün WhatsApp paylaşımı: liste fiyatı var, alış yok", async () => {
+  await render(
+    <SessionCtx.Provider value={{ username: "t" }}>
+      <CartProvider><Products /></CartProvider>
+    </SessionCtx.Provider>
+  );
+  await act(() => new Promise((r) => setTimeout(r, 600)));
+  const row = Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Solar Panel 450W");
+  await click(row);
+  const a = container.querySelector('a[aria-label="WhatsApp ile paylaş"]');
+  const msg = decodeURIComponent(a.getAttribute("href").split("text=")[1]);
+  expect(msg).toContain("Solar Panel 450W");
+  expect(msg).toContain(`Fiyat: ₺${money(10000)}`);
+  expect(msg).not.toContain(money(7000));
+});

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Package, Boxes, Plus, Minus, User, LogOut, Loader2, Eye, EyeOff, Star } from "lucide-react";
+import { Package, Boxes, Plus, Minus, User, LogOut, Loader2, Eye, EyeOff, Star, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 import { products as productsApi, categories as categoriesApi } from "../api";
 import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, RefreshScroll, Lightbox, OfflineBar } from "../ui";
@@ -131,6 +131,17 @@ function Row({ p, onOpen, onAdd, qty, showDisc }) {
   );
 }
 
+// Müşteriye ürün bilgisi (liste fiyatı; alış/indirimli fiyat YOK)
+function productShareText(p) {
+  const L = [`*${p.name}*`];
+  if (p.brand) L.push(p.brand);
+  L.push(`Fiyat: ₺${money(priceTRY(p).list)}`);
+  const spec = String(p.specs || p.description || "").trim();
+  if (spec) L.push("", spec.length > 600 ? spec.slice(0, 600) + "…" : spec);
+  L.push("", "Çorlu Karavan");
+  return L.join("\n");
+}
+
 function Detail({ p, onClose, onAdd, showDisc, onFav }) {
   const [lb, setLb] = useState(false);
   const [qty, setQty] = useState(1);
@@ -148,6 +159,9 @@ function Detail({ p, onClose, onAdd, showDisc, onFav }) {
       <div className="rounded-2xl bg-white p-4">
         <div className="flex items-start gap-2">
           <div className="flex-1 text-[19px] font-bold leading-snug">{p.name}</div>
+          <a href={`https://wa.me/?text=${encodeURIComponent(productShareText(p))}`} target="_blank" rel="noreferrer" aria-label="WhatsApp ile paylaş" className="m-press flex h-9 w-9 shrink-0 items-center justify-center rounded-full">
+            <MessageCircle className="h-5 w-5" style={{ color: "#25d366" }} />
+          </a>
           <button onClick={() => onFav?.(p)} aria-label="Favori" className="m-press -mr-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full">
             <Star className="h-5 w-5" style={p.is_favorite ? { color: "#f5a524", fill: "#f5a524" } : { color: "var(--m-ink-2)", opacity: 0.45 }} />
           </button>
