@@ -2364,14 +2364,27 @@ function App() {
     return line * r;
   };
   const serviceItemsTotal = (items) => (items || []).reduce((sum, it) => sum + serviceItemLineTRY(it), 0);
-  // Kâr analizi: kalem maliyeti (geliş). Maliyet boşsa satışa eşit sayılır (o kalemde kâr 0).
+  // Ürün adından maliyet (geliş): ürünün indirimli fiyatı = maliyet (yoksa liste). TL döner.
+  const productCostPerUnitTRY = (name) => {
+    if (!name) return null;
+    const key = String(name).trim().toLocaleLowerCase('tr');
+    const p = (products || []).find((pr) => String(pr.name || '').trim().toLocaleLowerCase('tr') === key);
+    if (!p) return null;
+    const c = parseFloat(p.discounted_price_try) > 0 ? parseFloat(p.discounted_price_try) : parseFloat(p.list_price_try);
+    return c > 0 ? c : null;
+  };
+  // Kâr analizi: kalem maliyeti (geliş). Öncelik: elle girilen unit_cost → ürün eşleşmesi (indirimli fiyat) → yoksa satışa eşit (kâr 0).
   const serviceItemCostLineTRY = (it) => {
-    const hasCost = it.unit_cost !== '' && it.unit_cost != null && !isNaN(parseFloat(it.unit_cost));
-    if (!hasCost) return serviceItemLineTRY(it);
     const q = parseFloat(it.qty) || 0;
-    const cur = it.currency || 'TRY';
-    const r = cur === 'TRY' ? 1 : (parseFloat(it.rate) || parseFloat(exchangeRates?.[cur]) || 0);
-    return (parseFloat(it.unit_cost) || 0) * q * r;
+    const hasCost = it.unit_cost !== '' && it.unit_cost != null && !isNaN(parseFloat(it.unit_cost));
+    if (hasCost) {
+      const cur = it.currency || 'TRY';
+      const r = cur === 'TRY' ? 1 : (parseFloat(it.rate) || parseFloat(exchangeRates?.[cur]) || 0);
+      return (parseFloat(it.unit_cost) || 0) * q * r;
+    }
+    const pc = productCostPerUnitTRY(it.name); // maliyet boşsa ürünün indirimli fiyatından türet
+    if (pc != null) return pc * q;
+    return serviceItemLineTRY(it); // gerçekten bilinmiyor → kâr 0
   };
   const serviceItemsCostTotal = (items) => (items || []).reduce((sum, it) => sum + serviceItemCostLineTRY(it), 0);
   const addServiceItem = () => setServiceForm((f) => ({ ...f, items: [...(f.items || []), { name: '', qty: 1, unit_price: 0, unit_cost: '', currency: 'TRY', rate: '' }] }));

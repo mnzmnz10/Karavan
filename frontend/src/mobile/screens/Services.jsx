@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Wrench, Car, Phone, MessageCircle, Image as ImageIcon, Loader2, Plus, Pencil, Share2, Trash2, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
-import { services as servicesApi, docUrl, openDoc } from "../api";
+import { services as servicesApi, products as productsApi, docUrl, openDoc } from "../api";
 import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, Lightbox, RefreshScroll, OfflineBar } from "../ui";
 import { cache } from "../cache";
 import ServiceForm from "./ServiceForm";
@@ -74,7 +74,7 @@ function Row({ s, onOpen, onCycle, busy }) {
   );
 }
 
-function Detail({ id, onClose, onEdit, onDeleted }) {
+function Detail({ id, onClose, onEdit, onDeleted, prodCost }) {
   const [s, setS] = useState(null);
   const [loading, setLoading] = useState(true);
   const [lb, setLb] = useState(null);
@@ -100,19 +100,30 @@ function Detail({ id, onClose, onEdit, onDeleted }) {
     const rate = it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || 1) : 1;
     return v * q * rate;
   };
+  // Ürünün indirimli fiyatı = maliyet (TL). Kalem maliyeti boşsa ürün adından türet.
+  const prodCostUnit = (name) => {
+    const c = prodCost && prodCost[String(name || "").trim().toLocaleLowerCase("tr")];
+    return c != null ? c : null;
+  };
+  const costLineTRY = (it) => {
+    if (it.unit_cost !== "" && it.unit_cost != null) return lineTRY(it, "unit_cost");
+    const pc = prodCostUnit(it.name);
+    if (pc != null) return pc * (parseFloat(it.qty) || 1);
+    return lineTRY(it, "unit_price"); // bilinmiyor → kâr 0
+  };
+  const itemHasCost = (it) => (it.unit_cost !== "" && it.unit_cost != null) || prodCostUnit(it.name) != null;
   const total = useMemo(() => {
     if (!s) return 0;
     if ((s.items || []).length === 0 && s.cost != null) return Number(s.cost) || 0;
     return (s.items || []).reduce((a, it) => a + lineTRY(it, "unit_price"), 0);
   }, [s]);
-  // Kâr = satış − maliyet; kalem maliyeti yoksa o kalemde kâr 0 (cost=satış).
   const costTotal = useMemo(() => {
     if (!s) return 0;
-    return (s.items || []).reduce((a, it) => a + (it.unit_cost === "" || it.unit_cost == null ? lineTRY(it, "unit_price") : lineTRY(it, "unit_cost")), 0);
-  }, [s]);
+    return (s.items || []).reduce((a, it) => a + costLineTRY(it), 0);
+  }, [s, prodCost]);
   const profit = total - costTotal;
   const margin = total > 0 ? Math.round((profit / total) * 100) : 0;
-  const hasCost = !!s && (s.items || []).some((it) => it.unit_cost !== "" && it.unit_cost != null);
+  const hasCost = !!s && (s.items || []).some(itemHasCost);
 
   const st = s ? STATUS[s.status] || STATUS.received : null;
 
@@ -173,8 +184,8 @@ function Detail({ id, onClose, onEdit, onDeleted }) {
                     <div className="min-w-0"><div className="truncate text-[14px] font-medium">{it.name}</div>{q > 1 && <div className="text-[12px] text-slate-400">× {q}</div>}</div>
                     <div className="shrink-0 text-right">
                       <div className="m-tnum text-[14px] font-semibold">₺{money(up * q * rate)}</div>
-                      {showProfit && it.unit_cost !== "" && it.unit_cost != null && (
-                        <div className="m-tnum text-[11px] text-slate-400">mlyt ₺{money((parseFloat(it.unit_cost) || 0) * q * rate)}</div>
+                      {showProfit && itemHasCost(it) && (
+                        <div className="m-tnum text-[11px] text-slate-400">mlyt ₺{money(costLineTRY(it))}</div>
                       )}
                     </div>
                   </div>
@@ -212,7 +223,7 @@ function Detail({ id, onClose, onEdit, onDeleted }) {
                   <span style={{ color: "var(--m-ink-2)" }}>Marj</span>
                   <span className="m-tnum font-semibold" style={{ color: profit >= 0 ? "var(--m-primary-2)" : "#e11d48" }}>%{margin}</span>
                 </div>
-                {!hasCost && <div className="pt-0.5 text-[11px] text-slate-400">Kalemlere maliyet girilmemiş — kâr 0 görünür. Düzenle'den maliyet ekle.</div>}
+                {!hasCost && <div className="pt-0.5 text-[11px] text-slate-400">Maliyet bulunamadı (kalem adı ürünle eşleşmiyor). Düzenle'den maliyet gir.</div>}
               </div>
             )}
           </div>
@@ -259,6 +270,22 @@ export default function Services() {
   const [formInitial, setFormInitial] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [statusF, setStatusF] = useState("");
+  const [prodCost, setProdCost] = useState(() => cache.get("prodcost") || {});
+
+  // Ürün adı → indirimli fiyat (TL) haritası — servis kaleminde maliyet boşsa kâr bundan türetilir.
+  useEffect(() => {
+    productsApi.list({ limit: 2000 }).then((data) => {
+      const arr = Array.isArray(data) ? data : data?.products || [];
+      const map = {};
+      arr.forEach((p) => {
+        const name = String(p.name || "").trim().toLocaleLowerCase("tr");
+        if (!name) return;
+        const c = Number(p.discounted_price_try) > 0 ? Number(p.discounted_price_try) : Number(p.list_price_try);
+        if (c > 0) map[name] = c;
+      });
+      if (Object.keys(map).length) { setProdCost(map); cache.set("prodcost", map); }
+    }).catch(() => {});
+  }, []);
 
   const reload = async () => {
     setErr(false);
@@ -345,8 +372,8 @@ export default function Services() {
           <div className="space-y-2 px-4 pt-1">{filtered.map((x) => <Row key={x.id} s={x} onOpen={(r) => setSelId(r.id)} onCycle={cycleStatus} busy={busyId === x.id} />)}</div>
         )}
       </RefreshScroll>
-      <Detail id={selId} onClose={() => setSelId(null)} onEdit={openEdit} onDeleted={() => { setSelId(null); reload(); }} />
-      <ServiceForm key={formInitial?.id || "new"} open={formOpen} initial={formInitial} onClose={() => setFormOpen(false)} onSaved={reload} />
+      <Detail id={selId} onClose={() => setSelId(null)} onEdit={openEdit} onDeleted={() => { setSelId(null); reload(); }} prodCost={prodCost} />
+      <ServiceForm key={formInitial?.id || "new"} open={formOpen} initial={formInitial} onClose={() => setFormOpen(false)} onSaved={reload} prodCost={prodCost} />
     </div>
   );
 }

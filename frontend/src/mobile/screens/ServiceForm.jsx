@@ -51,7 +51,7 @@ function Field({ label, children, last }) {
 }
 const inp = "w-full bg-transparent text-[15px] text-right placeholder:text-slate-300";
 
-export default function ServiceForm({ open, initial, onClose, onSaved }) {
+export default function ServiceForm({ open, initial, onClose, onSaved, prodCost }) {
   const editing = !!initial?.id;
   const defaults = () => ({
     customer_name: initial?.customer_name || "",
@@ -102,16 +102,26 @@ export default function ServiceForm({ open, initial, onClose, onSaved }) {
   );
 
   const addItem = () => set("items", [...f.items, { name: "", qty: 1, unit_price: "", unit_cost: "", currency: "TRY" }]);
-  // Kâr = satış − maliyet (kalem maliyeti boşsa o kalemde kâr 0 sayılır)
+  // Kâr = satış − maliyet. Maliyet boşsa ürünün indirimli fiyatından (prodCost) türet, o da yoksa kâr 0.
   const lineTRY = (it, field) => {
     const q = parseFloat(it.qty) || 1;
     const v = parseFloat(it[field]) || 0;
     const rate = it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || 1) : 1;
     return v * q * rate;
   };
+  const prodCostUnit = (name) => {
+    const c = prodCost && prodCost[String(name || "").trim().toLocaleLowerCase("tr")];
+    return c != null ? c : null;
+  };
+  const costLineTRY = (it) => {
+    if (it.unit_cost !== "" && it.unit_cost != null) return lineTRY(it, "unit_cost");
+    const pc = prodCostUnit(it.name);
+    if (pc != null) return pc * (parseFloat(it.qty) || 1);
+    return lineTRY(it, "unit_price");
+  };
   const costTotal = useMemo(
-    () => f.items.reduce((a, it) => a + (it.unit_cost === "" || it.unit_cost == null ? lineTRY(it, "unit_price") : lineTRY(it, "unit_cost")), 0),
-    [f.items]
+    () => f.items.reduce((a, it) => a + costLineTRY(it), 0),
+    [f.items, prodCost]
   );
   const updItem = (i, k, v) => set("items", f.items.map((it, j) => (j === i ? { ...it, [k]: v } : it)));
   const delItem = (i) => set("items", f.items.filter((_, j) => j !== i));
@@ -224,7 +234,7 @@ export default function ServiceForm({ open, initial, onClose, onSaved }) {
               <span className="text-[12px] text-slate-400">Maliyet</span>
               <input type="number" min="0" inputMode="decimal" className="w-24 rounded-lg bg-slate-100 px-2 py-1 text-right text-[13px] m-tnum" value={it.unit_cost ?? ""} onChange={(e) => updItem(i, "unit_cost", e.target.value)} placeholder="geliş" />
               {(() => {
-                const prof = lineTRY(it, "unit_price") - (it.unit_cost === "" || it.unit_cost == null ? lineTRY(it, "unit_price") : lineTRY(it, "unit_cost"));
+                const prof = lineTRY(it, "unit_price") - costLineTRY(it);
                 return prof > 0 ? <span className="m-tnum ml-auto text-[12px] font-semibold" style={{ color: "var(--m-primary-2)" }}>kâr ₺{money(prof)}</span> : null;
               })()}
             </div>
