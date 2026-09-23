@@ -627,6 +627,7 @@ export default function Quotes({ go }) {
   const [err, setErr] = useState(false);
   const [offline, setOffline] = useState(false);
   const [sel, setSel] = useState(null);
+  const [qf, setQf] = useState(""); // "" | month | service | open
   // Özet'ten yönlendirme: liste gelince o teklifi aç (mz:quote_open, tek seferlik)
   useEffect(() => {
     const id = cache.get("quote_open");
@@ -657,17 +658,31 @@ export default function Quotes({ go }) {
   }, [items]);
   const filtered = useMemo(() => {
     const s = q.trim().toLocaleLowerCase("tr");
-    const base = !s ? items : items.filter((x) =>
+    const now = new Date();
+    const inMonth = (x) => { const d = new Date(x.created_at); return !isNaN(d) && d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth(); };
+    const pool = items.filter((x) => (qf === "month" ? inMonth(x) : qf === "service" ? transferredNames.has(x.name) : qf === "open" ? !transferredNames.has(x.name) : true));
+    const base = !s ? pool : pool.filter((x) =>
       (x.name || "").toLocaleLowerCase("tr").includes(s) || (x.customer_name || "").toLocaleLowerCase("tr").includes(s) ||
       (x.products || []).some((p) => (p.name || "").toLocaleLowerCase("tr").includes(s))
     );
     return [...base].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || ""))); // en yeni üstte
-  }, [items, q]);
+  }, [items, q, qf, transferredNames]);
 
   return (
     <div className="flex h-full flex-col">
       <Header title="Teklifler" subtitle={loading ? "Yükleniyor…" : `${items.length} teklif`} />
       <SearchBar value={q} onChange={setQ} placeholder="Teklif, müşteri veya ürün" />
+      <div className="flex gap-2 overflow-x-auto px-4 pb-2" style={{ scrollbarWidth: "none" }}>
+        {[["", "Tümü"], ["month", "Bu ay"], ["service", "Serviste"], ["open", "Bekleyen"]].map(([id, label]) => {
+          const on = qf === id;
+          return (
+            <button key={id || "all"} onClick={() => setQf(id)} className={`m-press shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-semibold ${on ? "" : "m-fill"}`}
+              style={on ? { background: "var(--m-primary)", color: "#fff" } : { background: "#e9e9ee", color: "var(--m-ink-2)" }}>
+              {label}
+            </button>
+          );
+        })}
+      </div>
       <OfflineBar show={offline} />
       <RefreshScroll onRefresh={reload} className="flex-1 pb-[calc(var(--m-tabbar-h)+env(safe-area-inset-bottom)+8px)]">
         {loading ? (
