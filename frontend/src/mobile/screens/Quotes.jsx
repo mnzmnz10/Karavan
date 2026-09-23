@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { FileText, User, Calendar, Share2, Trash2, Loader2, Pencil, Eye, EyeOff, Minus, Plus, Search, ListPlus, Wrench, Copy } from "lucide-react";
+import { FileText, User, Calendar, Share2, Trash2, Loader2, Pencil, Eye, EyeOff, Minus, Plus, Search, ListPlus, Wrench, Copy, MessageCircle } from "lucide-react";
 import ServiceForm from "./ServiceForm";
 import { useCatalog, catRate } from "../catalog";
 import { toast } from "sonner";
@@ -467,6 +467,23 @@ function QuoteItemsSheet({ q, open, onClose, onSaved, showCost }) {
   );
 }
 
+// Müşteriye WhatsApp özeti: kalemler + net (maliyet/kâr YOK)
+function quoteSummaryText(q) {
+  const lines = [`*${q.name || "Teklif"}*`];
+  if (q.customer_name) lines.push(`Sayın ${q.customer_name},`);
+  lines.push("");
+  (q.products || []).forEach((it) => {
+    const n = qtyOf(it);
+    lines.push(`• ${it.name || "Ürün"}${n > 1 ? ` × ${n}` : ""} — ₺${money(lineSaleTRY(it))}`);
+  });
+  const labor = Number(q.labor_cost || 0);
+  const disc = Number(q.discount_percentage || 0);
+  if (labor > 0) lines.push(`• İşçilik — ₺${money(labor)}`);
+  if (disc > 0) lines.push(`İskonto: %${money(disc)}`);
+  lines.push("", `*Toplam: ₺${money(q.total_net_price || 0)}*`, "", "Çorlu Karavan");
+  return lines.join("\n");
+}
+
 function Detail({ q, onClose, onDeleted, onSaved, onCopied, go }) {
   const [del, setDel] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -510,6 +527,9 @@ function Detail({ q, onClose, onDeleted, onSaved, onCopied, go }) {
         <button onClick={() => setEditOpen(true)} className="m-press flex flex-1 items-center justify-center gap-1.5 rounded-2xl bg-white py-3 text-[15px] font-bold" style={{ color: "var(--m-primary)" }}>
           <Pencil className="h-4 w-4" /> Düzenle
         </button>
+        <a href={`https://wa.me/?text=${encodeURIComponent(quoteSummaryText(q))}`} target="_blank" rel="noreferrer" aria-label="WhatsApp" className="m-press flex w-12 items-center justify-center rounded-2xl text-white" style={{ background: "#25d366" }}>
+          <MessageCircle className="h-5 w-5" />
+        </a>
         <button onClick={() => openDoc(docUrl.quote(q.id))} className="m-press flex flex-1 items-center justify-center gap-2 rounded-2xl py-3 text-[15px] font-bold text-white" style={{ background: "var(--m-primary)" }}>
           <Share2 className="h-4 w-4" /> PDF
         </button>

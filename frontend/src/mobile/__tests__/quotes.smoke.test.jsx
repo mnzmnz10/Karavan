@@ -162,3 +162,13 @@ test("kalem editörü: birim fiyatı TL düzenle → custom_price güncel kurla"
   const api = require("../api");
   expect(api.__calls.update.at(-1).products[0]).toEqual({ id: "pUSD", quantity: 2, custom_price: 1000 }); // 47000 / 47
 });
+
+test("WhatsApp özeti: kalem+toplam var, maliyet yok", async () => {
+  await openDetail();
+  const a = container.querySelector('a[aria-label="WhatsApp"]');
+  const msg = decodeURIComponent(a.getAttribute("href").split("text=")[1]);
+  expect(msg).toContain("Akü 315Ah × 2");
+  expect(msg).toContain(`Toplam: ₺${money(94070.92)}`);
+  expect(msg).toContain("İşçilik");
+  expect(msg).not.toMatch(/Maliyet|Kâr|810/);
+});
