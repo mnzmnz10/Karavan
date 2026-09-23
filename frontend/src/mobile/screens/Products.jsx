@@ -168,7 +168,7 @@ function productShareText(p) {
   return L.join("\n");
 }
 
-function Detail({ p, onClose, onAdd, showDisc, onFav }) {
+function Detail({ p, onClose, onAdd, showDisc, onFav, inCart = 0 }) {
   const [lb, setLb] = useState(false);
   const [qty, setQty] = useState(1);
   useEffect(() => { if (p) setQty(1); }, [p]);
@@ -213,6 +213,7 @@ function Detail({ p, onClose, onAdd, showDisc, onFav }) {
             <Plus className="h-5 w-5" strokeWidth={2.6} /> Teklife Ekle
           </button>
         </div>
+        {inCart > 0 && <div className="mt-2 text-center text-[12px] font-semibold" style={{ color: "var(--m-primary-2)" }}>Sepette {inCart} adet var</div>}
       </div>
       {showDisc && (() => {
         // Ürünün geçtiği son teklifler (önbellekten; ağ isteği yok) — fiyat verirken referans
@@ -375,7 +376,7 @@ export default function Products() {
           </>
         )}
       </RefreshScroll>
-      <Detail p={sel} onClose={() => setSel(null)} onAdd={cart.add} showDisc={showDisc} onFav={toggleFav} />
+      <Detail p={sel} onClose={() => setSel(null)} onAdd={cart.add} showDisc={showDisc} onFav={toggleFav} inCart={sel ? cart.items.get(sel.id)?.qty || 0 : 0} />
     </div>
   );
 }
