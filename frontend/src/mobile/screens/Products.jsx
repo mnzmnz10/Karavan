@@ -174,6 +174,31 @@ function Detail({ p, onClose, onAdd, showDisc, onFav }) {
           </button>
         </div>
       </div>
+      {showDisc && (() => {
+        // Ürünün geçtiği son teklifler (önbellekten; ağ isteği yok) — fiyat verirken referans
+        const qs = cache.get("quotes") || cache.get("dashboard")?.quotes || [];
+        const hits = [];
+        for (const q of qs) {
+          const it = (q.products || []).find((x) => x.id === p.id);
+          if (it) hits.push({ id: q.id, name: q.name, date: q.created_at, unit: Number(it.list_price_try) || 0, qty: Number(it.quantity) || 1, custom: it.custom_price != null });
+        }
+        hits.sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+        if (!hits.length) return null;
+        return (
+          <div className="mt-3 rounded-2xl bg-white p-4">
+            <div className="mb-1 text-[12px] font-bold uppercase tracking-wide text-slate-400">Son tekliflerde ({hits.length})</div>
+            {hits.slice(0, 3).map((h) => (
+              <div key={h.id} className="flex items-center justify-between gap-2 border-b border-slate-50 py-2 last:border-0">
+                <div className="min-w-0">
+                  <div className="truncate text-[14px]">{h.name || "Teklif"}</div>
+                  <div className="text-[12px] text-slate-400">{h.date ? new Date(h.date).toLocaleDateString("tr-TR") : ""}{h.qty > 1 ? ` · ${h.qty} adet` : ""}{h.custom ? " · özel fiyat" : ""}</div>
+                </div>
+                <span className="m-tnum shrink-0 text-[14px] font-semibold">₺{money(h.unit)}</span>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
       {p.description && (
         <div className="mt-3 rounded-2xl bg-white p-4">
           <div className="mb-1 text-[12px] font-bold uppercase tracking-wide text-slate-400">Açıklama</div>

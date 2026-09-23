@@ -298,3 +298,19 @@ test("sepet: liste fiyatı (alış gizli) + özel fiyat custom_price olarak gide
   const api = require("../api");
   expect(api.__calls.qCreate.at(-1).products[0]).toEqual({ id: "p1", quantity: 1, custom_price: 9500 });
 });
+
+test("ürün detayı: göz açıkken son tekliflerdeki fiyat", async () => {
+  localStorage.setItem("mz:quotes", JSON.stringify([{ id: "qa", name: "Ahmet Karavan", created_at: "2026-09-01", products: [{ id: "p1", list_price_try: 9800, quantity: 2, custom_price: 9800 }] }]));
+  localStorage.setItem("mz:show_disc", "true");
+  await render(
+    <SessionCtx.Provider value={{ username: "t" }}>
+      <CartProvider><Products /></CartProvider>
+    </SessionCtx.Provider>
+  );
+  await act(() => new Promise((r) => setTimeout(r, 600)));
+  const row = Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Solar Panel 450W");
+  await click(row);
+  expect(text()).toContain("Son tekliflerde (1)");
+  expect(text()).toContain("Ahmet Karavan");
+  expect(text()).toContain(`₺${money(9800)}`);
+});
