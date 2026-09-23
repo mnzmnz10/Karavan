@@ -667,3 +667,22 @@ test("sözleşme ödeme özeti: toplam + tahsilatlar (döviz sembolü) + TL tahs
   expect(t).toContain(`Tahsil edilen: ₺${money(200000)}`);
   expect(t).not.toMatch(/Kalan/i);
 });
+
+test("Özet teslim takvimi: yarın / gecikmiş etiketi, dokun → servis detayı", async () => {
+  const iso = (off) => { const d = new Date(); d.setDate(d.getDate() + off); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  global.__SERVICE.delivery_date = iso(1);
+  let went = null;
+  await render(<Dashboard go={(t) => { went = t; }} />);
+  expect(text()).toContain("Teslim Takvimi");
+  expect(text()).toContain("Yarın");
+  const card = Array.from(container.querySelectorAll("div")).find((d) => d.textContent.includes("Yarın") && d.className.includes("gap-3"));
+  await click(card);
+  expect(went).toBe("service");
+  expect(JSON.parse(localStorage.getItem("mz:svc_open"))).toBe("s1");
+  act(() => root.unmount());
+  root = createRoot(container);
+  global.__SERVICE.delivery_date = iso(-3);
+  localStorage.clear();
+  await render(<Dashboard go={() => {}} />);
+  expect(text()).toContain("3 gün gecikti");
+});

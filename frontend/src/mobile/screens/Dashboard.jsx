@@ -94,9 +94,17 @@ export default function Dashboard({ go }) {
       const b = months.find((mm) => mm.y === d.getFullYear() && mm.m === d.getMonth());
       if (b) b.total += serviceNet(x);
     });
+    // Teslim takvimi: gecikmiş + önümüzdeki 7 gün (teslim edilmemiş), en yakın önce
+    const dayDiff = (iso) => { const [y, m, d] = String(iso).slice(0, 10).split("-").map(Number); const t = new Date(); return Math.round((new Date(y, m - 1, d) - new Date(t.getFullYear(), t.getMonth(), t.getDate())) / 86400000); };
+    const upcoming = services
+      .filter((x) => x.status !== "delivered" && /^\d{4}-\d{2}-\d{2}/.test(String(x.delivery_date || "")))
+      .map((x) => ({ x, dd: dayDiff(x.delivery_date) }))
+      .filter((u) => u.dd <= 7)
+      .sort((a, b) => a.dd - b.dd)
+      .slice(0, 5);
     const recentQ = [...quotes].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || ""))).slice(0, 3);
     const recent = [...services].sort((a, b) => String(b.arrival_date || b.created_at || "").localeCompare(String(a.arrival_date || a.created_at || ""))).slice(0, 4);
-    return { active, delivered, overdue, dueToday, sTotal: services.length, qTotal: quotes.length, quotesMonth, quotesMonthSum, cTotal: contracts.length, agreed, recent, recentQ, months, svcDone: doneMonth.length, svcNet, svcProfit: svcNet - svcCost, openBal, openCnt };
+    return { active, delivered, overdue, dueToday, sTotal: services.length, qTotal: quotes.length, quotesMonth, quotesMonthSum, cTotal: contracts.length, agreed, recent, recentQ, upcoming, months, svcDone: doneMonth.length, svcNet, svcProfit: svcNet - svcCost, openBal, openCnt };
   }, [data]);
 
   // Genel arama: teklif / servis / sözleşme (müşteri, başlık, plaka, telefon rakamı) — en fazla 5'er sonuç
@@ -202,6 +210,25 @@ export default function Dashboard({ go }) {
                 </div>
                 <span className="m-tnum text-[20px] font-extrabold" style={{ color: "#e11d48" }}>₺{money(stats.openBal)}</span>
               </Card>
+            )}
+
+            {stats.upcoming.length > 0 && (
+              <>
+                <div className="px-1 pb-1.5 pt-4 text-[12px] font-bold uppercase tracking-wide text-slate-400">Teslim Takvimi</div>
+                <div className="space-y-2">
+                  {stats.upcoming.map(({ x, dd }) => (
+                    <Card key={x.id} onClick={() => { cache.set("svc_open", x.id); go?.("service"); }} className="flex items-center gap-3 p-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-[14px] font-semibold">{x.customer_name || "İsimsiz"}</div>
+                        <div className="truncate text-[12px] text-slate-400">{[x.plate, fmtDate(x.delivery_date)].filter(Boolean).join(" · ")}</div>
+                      </div>
+                      <span className="shrink-0 rounded-full px-2.5 py-1 text-[12px] font-bold" style={dd < 0 ? { background: "#ffe4e6", color: "#e11d48" } : dd === 0 ? { background: "#fef0e8", color: "#e56a1f" } : { background: "#f1f5f9", color: "#64748b" }}>
+                        {dd < 0 ? `${-dd} gün gecikti` : dd === 0 ? "Bugün" : dd === 1 ? "Yarın" : `${dd} gün`}
+                      </span>
+                    </Card>
+                  ))}
+                </div>
+              </>
             )}
 
             {stats.recent.length > 0 && (
