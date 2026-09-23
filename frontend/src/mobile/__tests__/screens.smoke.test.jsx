@@ -573,3 +573,14 @@ test("warrantyEnd: teslim + ay", () => {
   expect(warrantyEnd({ warranty_months: 6 })).toBeNull();
   expect(warrantyEnd({ delivery_date: "2026-01-15" })).toBeNull();
 });
+
+test("servis Garantide filtresi", async () => {
+  global.__SERVICE.status = "delivered";
+  global.__SERVICE.delivery_date = require("../ui").todayISO();
+  global.__SERVICE.warranty_months = 12;
+  await render(<Services />);
+  const chip = Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim().startsWith("Garantide"));
+  expect(chip).toBeTruthy();
+  await click(chip);
+  expect(text()).toContain("Test Müşteri");
+});

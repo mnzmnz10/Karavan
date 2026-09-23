@@ -606,7 +606,8 @@ export default function Services({ go }) {
     const key = (x) => x.arrival_date || x.created_at || "";
     return items
       .filter((x) => {
-        if (statusF === "today") { if (dueBadge(x)?.label !== "Bugün teslim") return false; }
+        if (statusF === "warranty") { if (!warrantyEnd(x)?.active) return false; }
+        else if (statusF === "today") { if (dueBadge(x)?.label !== "Bugün teslim") return false; }
         else if (statusF === "overdue") { if (dueBadge(x)?.label !== "Gecikmiş") return false; }
         else if (statusF === "unpaid") { if (!(serviceNet(x) > 0 && serviceNet(x) - collectedTRY(x) > 0.5)) return false; }
         else if (statusF && (x.status || "received") !== statusF) return false;
@@ -631,6 +632,7 @@ export default function Services({ go }) {
     return c;
   }, [items]);
 
+  const warrantyCnt = useMemo(() => items.filter((x) => warrantyEnd(x)?.active).length, [items]);
   const todayCnt = useMemo(() => items.filter((x) => dueBadge(x)?.label === "Bugün teslim").length, [items]);
   const overdueCnt = useMemo(() => items.filter((x) => dueBadge(x)?.label === "Gecikmiş").length, [items]);
   const unpaidCnt = useMemo(() => items.filter((x) => serviceNet(x) > 0 && serviceNet(x) - collectedTRY(x) > 0.5).length, [items]);
@@ -661,7 +663,7 @@ export default function Services({ go }) {
       />
       <SearchBar value={q} onChange={setQ} placeholder="Müşteri, plaka, araç, parça" />
       <div className="flex gap-2 overflow-x-auto px-4 pb-2" style={{ scrollbarWidth: "none" }}>
-        {[["", "Tümü", items.length], ["received", "Geldi", counts.received], ["in_progress", "İşlemde", counts.in_progress], ["delivered", "Teslim", counts.delivered], ["unpaid", "Ödenmemiş", unpaidCnt], ["overdue", "Gecikmiş", overdueCnt], ["today", "Bugün", todayCnt]].filter(([id, , n]) => !["unpaid", "overdue", "today"].includes(id) || n > 0 || statusF === id).map(([id, label, n]) => {
+        {[["", "Tümü", items.length], ["received", "Geldi", counts.received], ["in_progress", "İşlemde", counts.in_progress], ["delivered", "Teslim", counts.delivered], ["unpaid", "Ödenmemiş", unpaidCnt], ["overdue", "Gecikmiş", overdueCnt], ["today", "Bugün", todayCnt], ["warranty", "Garantide", warrantyCnt]].filter(([id, , n]) => !["unpaid", "overdue", "today", "warranty"].includes(id) || n > 0 || statusF === id).map(([id, label, n]) => {
           const on = statusF === id;
           return (
             <button key={id || "all"} onClick={() => setStatusF(id)} className={`m-press shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-semibold ${on ? "" : "m-fill"}`}
