@@ -50,6 +50,14 @@ function Field({ label, children, last }) {
     </div>
   );
 }
+// TR cep/sabit: 10-11 hane → "0555 111 22 33"; +90/90 önekini sadeleştirir; tanınmazsa dokunmaz
+export function formatPhoneTR(v) {
+  let d = String(v || "").replace(/\D/g, "");
+  if (d.startsWith("90") && d.length === 12) d = d.slice(2);
+  if (d.length === 10 && !d.startsWith("0")) d = "0" + d;
+  if (d.length !== 11 || !d.startsWith("0")) return v;
+  return `${d.slice(0, 4)} ${d.slice(4, 7)} ${d.slice(7, 9)} ${d.slice(9, 11)}`;
+}
 const inp = "w-full bg-transparent text-[15px] text-right placeholder:text-slate-300";
 
 export default function ServiceForm({ open, initial, onClose, onSaved, prodCost }) {
@@ -262,7 +270,7 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
             ))}
           </div>
         )}
-        <Field label="Telefon" last><input className={inp} value={f.phone} onChange={(e) => set("phone", e.target.value)} placeholder="0…" inputMode="tel" /></Field>
+        <Field label="Telefon" last><input className={inp} value={f.phone} onChange={(e) => set("phone", e.target.value)} onBlur={(e) => set("phone", formatPhoneTR(e.target.value))} placeholder="0…" inputMode="tel" /></Field>
       </Group>
 
       <Group title="Araç">
