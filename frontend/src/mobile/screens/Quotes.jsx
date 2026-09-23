@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { FileText, User, Calendar, Share2, Trash2, Loader2, Pencil, Eye, EyeOff } from "lucide-react";
+import { FileText, User, Calendar, Share2, Trash2, Loader2, Pencil, Eye, EyeOff, Minus, Plus, Search, ListPlus } from "lucide-react";
 import { toast } from "sonner";
-import { quotes as quotesApi, docUrl, openDoc } from "../api";
+import { quotes as quotesApi, products as productsApi, docUrl, openDoc } from "../api";
 import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, RefreshScroll, OfflineBar } from "../ui";
 import { cache } from "../cache";
 
@@ -210,9 +210,188 @@ function QuoteEditSheet({ q, open, onClose, onSaved }) {
   );
 }
 
+// Katalog (id → ürün) — kalem editörü için; offline'da önbellekten
+function useCatalog(open) {
+  const [cat, setCat] = useState(() => cache.get("catalog_min") || []);
+  useEffect(() => {
+    if (!open) return;
+    productsApi.list({ limit: 2000 }).then((data) => {
+      const arr = (Array.isArray(data) ? data : data?.products || []).map((p) => ({
+        id: p.id, name: p.name, currency: p.currency || "TRY",
+        list_price: Number(p.list_price) || 0, list_price_try: Number(p.list_price_try) || 0,
+      }));
+      if (arr.length) { setCat(arr); cache.set("catalog_min", arr); }
+    }).catch(() => {});
+  }, [open]);
+  return cat;
+}
+
+const catRate = (p) => (p.currency === "TRY" ? 1 : (p.list_price > 0 ? p.list_price_try / p.list_price : 0));
+
+function QuoteItemsSheet({ q, open, onClose, onSaved, showCost }) {
+  const catalog = useCatalog(open);
+  const byId = useMemo(() => new Map(catalog.map((p) => [p.id, p])), [catalog]);
+  const [rows, setRows] = useState([]);
+  const [search, setSearch] = useState("");
+  const [man, setMan] = useState({ name: "", price: "", qty: "1", cost: "" });
+  const [busy, setBusy] = useState(false);
+
+  // Kalemleri editör satırlarına çevir. Katalogda olmayan (silinmiş/eski format) ürün backend'de
+  // sessizce düşeceği için TL manuel kaleme çevrilir → fiyat ve geliş korunur.
+  useEffect(() => {
+    if (!open || !q) return;
+    setSearch(""); setMan({ name: "", price: "", qty: "1", cost: "" });
+    setRows((q.products || []).map((it, i) => {
+      const qty = qtyOf(it);
+      if (it.manual) {
+        return { key: it.id || `m${i}`, kind: "manual", id: it.id, name: it.name || "Kalem", qty,
+          price: num(it.list_price) ?? 0, currency: it.currency || "TRY",
+          rate: (num(it.list_price) || 0) > 0 ? (num(it.list_price_try) || 0) / num(it.list_price) : 1,
+          cost: num(it.discounted_price) };
+      }
+      return { key: it.id || `c${i}`, kind: "cat", id: it.id, name: it.name || "Ürün", qty,
+        custom_price: num(it.custom_price), snapSale: lineSaleTRY(it) / qty, snapCost: lineCostTRY(it) / qty };
+    }));
+  }, [open, q]);
+
+  const results = useMemo(() => {
+    const s = search.trim().toLocaleLowerCase("tr");
+    if (s.length < 2) return [];
+    return catalog.filter((p) => (p.name || "").toLocaleLowerCase("tr").includes(s)).slice(0, 15);
+  }, [search, catalog]);
+
+  if (!q) return null;
+  const missing =(r) => r.kind === "cat" && catalog.length > 0 && !byId.has(r.id);
+  const unitSale = (r) => {
+    if (r.kind === "manual") return r.price * (r.currency === "TRY" ? 1 : r.rate);
+    const p = byId.get(r.id);
+    if (!p) return r.snapSale;
+    return r.custom_price != null ? r.custom_price * catRate(p) : p.list_price_try;
+  };
+  const base = rows.reduce((s, r) => s + unitSale(r) * r.qty, 0);
+  const discPct = Number(q.discount_percentage || 0);
+  const labor = Number(q.labor_cost || 0);
+  const net = base * (1 - discPct / 100) + labor;
+  const oldNet = Number(q.total_net_price || 0);
+
+  const setQty = (key, d) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, qty: Math.max(1, r.qty + d) } : r)));
+  const removeRow = (key) => setRows((rs) => rs.filter((r) => r.key !== key));
+  const addCat = (p) => {
+    setRows((rs) => {
+      const ex = rs.find((r) => r.kind === "cat" && r.id === p.id && r.custom_price == null);
+      if (ex) return rs.map((r) => (r === ex ? { ...r, qty: r.qty + 1 } : r));
+      return [...rs, { key: `n-${p.id}-${Date.now()}`, kind: "cat", id: p.id, name: p.name, qty: 1, custom_price: null, snapSale: p.list_price_try, snapCost: 0 }];
+    });
+    setSearch("");
+    toast.success(`${p.name} eklendi`);
+  };
+  const addManual = () => {
+    const price = parseFloat(man.price);
+    if (!man.name.trim() || !(price > 0)) { toast.error("Ad ve fiyat gerekli"); return; }
+    const cost = man.cost === "" ? null : Math.max(0, parseFloat(man.cost) || 0);
+    setRows((rs) => [...rs, { key: `nm-${Date.now()}`, kind: "manual", name: man.name.trim(), qty: Math.max(1, parseInt(man.qty, 10) || 1), price, currency: "TRY", rate: 1, cost }]);
+    setMan({ name: "", price: "", qty: "1", cost: "" });
+  };
+
+  const save = async () => {
+    if (rows.length === 0) { toast.error("En az bir kalem olmalı"); return; }
+    const payload = rows.map((r) => {
+      if (r.kind === "manual") {
+        return { manual: true, id: r.id, name: r.name, price: r.price, quantity: r.qty, currency: r.currency, cost: r.cost == null ? undefined : r.cost };
+      }
+      if (missing(r)) {
+        // Katalogdan kalkmış ürün → TL manuel kalem (değer korunur)
+        return { manual: true, name: r.name, price: Math.round(r.snapSale * 100) / 100, quantity: r.qty, currency: "TRY", cost: Math.round(r.snapCost * 100) / 100 };
+      }
+      const o = { id: r.id, quantity: r.qty };
+      if (r.custom_price != null) o.custom_price = r.custom_price;
+      return o;
+    });
+    setBusy(true);
+    try {
+      const updated = await quotesApi.update(q.id, { products: payload });
+      if ((updated.products || []).length !== payload.length) toast.warning("Bazı kalemler kaydedilemedi, kontrol et");
+      else toast.success("Kalemler güncellendi");
+      onSaved?.(updated);
+      onClose();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Güncellenemedi");
+    } finally { setBusy(false); }
+  };
+
+  const field = "w-full rounded-xl bg-slate-100 px-3 py-2.5 text-[15px] placeholder:text-slate-400";
+  return (
+    <Sheet open={open} onClose={onClose} title="Kalemleri Düzenle" full>
+      <div className="rounded-2xl bg-white p-2">
+        {rows.map((r) => (
+          <div key={r.key} className="flex items-center gap-2 border-b border-slate-50 px-2 py-2.5 last:border-0">
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[14px] font-medium">{r.name}</div>
+              <div className="m-tnum text-[12px] text-slate-400">
+                ₺{money(unitSale(r))}{missing(r) ? " · katalogda yok" : r.kind === "manual" ? " · manuel" : ""}
+              </div>
+            </div>
+            <div className="flex items-center gap-1">
+              <button onClick={() => setQty(r.key, -1)} aria-label="Azalt" className="m-press flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100"><Minus className="h-4 w-4" /></button>
+              <span className="m-tnum w-7 text-center text-[14px] font-bold">{r.qty}</span>
+              <button onClick={() => setQty(r.key, 1)} aria-label="Artır" className="m-press flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100"><Plus className="h-4 w-4" /></button>
+              <button onClick={() => removeRow(r.key)} aria-label="Sil" className="m-press ml-1 flex h-8 w-8 items-center justify-center rounded-lg text-rose-500"><Trash2 className="h-4 w-4" /></button>
+            </div>
+          </div>
+        ))}
+        {rows.length === 0 && <div className="px-2 py-4 text-center text-[13px] text-slate-400">Kalem yok</div>}
+      </div>
+
+      <div className="mt-3 rounded-2xl bg-white p-3">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Katalogdan ürün ekle" className={`${field} pl-9`} />
+        </div>
+        {results.length > 0 && (
+          <div className="mt-2 max-h-60 overflow-y-auto">
+            {results.map((p) => (
+              <button key={p.id} onClick={() => addCat(p)} className="m-press flex w-full items-center justify-between gap-2 border-b border-slate-50 px-1 py-2.5 text-left last:border-0">
+                <span className="truncate text-[14px]">{p.name}</span>
+                <span className="m-tnum shrink-0 text-[13px] font-semibold" style={{ color: "var(--m-primary)" }}>₺{money(p.list_price_try)}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-3 space-y-2 rounded-2xl bg-white p-3" onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addManual(); } }}>
+        <input value={man.name} onChange={(e) => setMan({ ...man, name: e.target.value })} placeholder="Manuel kalem adı" className={field} />
+        <div className="flex gap-2">
+          <input value={man.price} onChange={(e) => setMan({ ...man, price: e.target.value })} inputMode="decimal" placeholder="Fiyat ₺" className={field} />
+          <input value={man.qty} onChange={(e) => setMan({ ...man, qty: e.target.value })} inputMode="numeric" placeholder="Adet" className={`${field} w-20`} />
+          {showCost && <input value={man.cost} onChange={(e) => setMan({ ...man, cost: e.target.value })} inputMode="decimal" placeholder="Geliş ₺" className={field} />}
+        </div>
+        <button onClick={addManual} className="m-press flex w-full items-center justify-center gap-1.5 rounded-xl bg-slate-100 py-2.5 text-[14px] font-bold" style={{ color: "var(--m-primary)" }}>
+          <Plus className="h-4 w-4" /> Manuel kalem ekle
+        </button>
+      </div>
+
+      <div className="mt-3 rounded-2xl bg-white px-4 py-3">
+        <div className="flex items-center justify-between text-[13px]" style={{ color: "var(--m-ink-2)" }}>
+          <span>Mevcut net</span><span className="m-tnum">₺{money(oldNet)}</span>
+        </div>
+        <div className="mt-1 flex items-center justify-between">
+          <span className="text-[13px]" style={{ color: "var(--m-ink-2)" }}>Yeni net{discPct > 0 ? ` (%${money(discPct)} iskonto)` : ""}</span>
+          <span className="m-tnum text-[17px] font-extrabold" style={{ color: "var(--m-primary)" }}>₺{money(net)}</span>
+        </div>
+        <div className="mt-1 text-[11px] text-slate-400">Katalog ürünleri güncel kur ve fiyatla hesaplanır.</div>
+      </div>
+      <button onClick={save} disabled={busy} className="m-press mt-3 flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-[15px] font-bold text-white disabled:opacity-60" style={{ background: "var(--m-primary)" }}>
+        {busy && <Loader2 className="h-5 w-5 animate-spin" />} Kaydet
+      </button>
+    </Sheet>
+  );
+}
+
 function Detail({ q, onClose, onDeleted, onSaved }) {
   const [del, setDel] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [itemsOpen, setItemsOpen] = useState(false);
   const [showProfit, setShowProfit] = useState(() => cache.get("quote_profit") === true);
   useEffect(() => { cache.set("quote_profit", showProfit); }, [showProfit]);
   if (!q) return null;
@@ -235,6 +414,7 @@ function Detail({ q, onClose, onDeleted, onSaved }) {
         </button>
       </div>
       <QuoteEditSheet q={q} open={editOpen} onClose={() => setEditOpen(false)} onSaved={onSaved} />
+      <QuoteItemsSheet q={q} open={itemsOpen} onClose={() => setItemsOpen(false)} onSaved={onSaved} showCost={showProfit} />
       <div className="rounded-2xl bg-white p-4">
         <div className="text-[19px] font-bold leading-snug">{q.name || "Teklif"}</div>
         <div className="mt-2 space-y-1 text-[13px]" style={{ color: "var(--m-ink-2)" }}>
@@ -256,6 +436,9 @@ function Detail({ q, onClose, onDeleted, onSaved }) {
           </div>
         ))}
         {(q.products || []).length === 0 && <div className="px-2 py-4 text-center text-[13px] text-slate-400">Kalem yok</div>}
+        <button onClick={() => setItemsOpen(true)} className="m-press mt-1 flex w-full items-center justify-center gap-1.5 rounded-xl py-2.5 text-[14px] font-bold" style={{ color: "var(--m-primary)" }}>
+          <ListPlus className="h-4 w-4" /> Kalemleri düzenle
+        </button>
       </div>
 
       <div className="mt-3 flex items-center justify-between rounded-2xl bg-white px-4 py-3.5">
