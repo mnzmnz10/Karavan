@@ -40,6 +40,7 @@ function Row({ c, onOpen }) {
           <div className="mt-1 flex items-center gap-2">
             {grand(c) > 0 && <span className="m-tnum text-[15px] font-extrabold" style={{ color: "var(--m-primary)" }}>₺{money(grand(c))}</span>}
             <span className="text-[12px] text-slate-400">{fmtDate(c.created_at)}</span>
+            {c.stage === "agreed" && (c.data?.collections || []).length > 0 && <span className="ml-auto shrink-0"><Pill color="green">{c.data.collections.length} tahsilat</Pill></span>}
           </div>
         </div>
       </div>
