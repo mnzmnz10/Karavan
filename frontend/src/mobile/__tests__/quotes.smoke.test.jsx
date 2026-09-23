@@ -224,3 +224,11 @@ test("kalem editörü: değişiklik varsa kapatma onayı, yoksa yok", async () =
   expect(asked).toBe(1);
   expect(container.textContent).toContain("Kalemleri Düzenle");
 });
+
+test("teklif: müşterinin servis telefonu varsa WhatsApp o numaraya + tel linki", async () => {
+  localStorage.setItem("mz:services", JSON.stringify([{ customer_name: "ali", phone: "0555 111 22 33" }]));
+  await openDetail();
+  const a = container.querySelector('a[aria-label="WhatsApp"]');
+  expect(a.getAttribute("href")).toContain("wa.me/905551112233?text=");
+  expect(container.querySelector('a[href="tel:0555 111 22 33"]')).toBeTruthy();
+});

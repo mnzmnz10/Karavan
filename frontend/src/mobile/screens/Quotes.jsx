@@ -481,6 +481,14 @@ function QuoteItemsSheet({ q, open, onClose, onSaved, showCost }) {
 }
 
 // Müşteriye WhatsApp özeti: kalemler + net (maliyet/kâr YOK)
+// TR telefon → wa.me (0'sız, 90 önekli)
+const waNum = (phone) => {
+  let d = String(phone || "").replace(/\D/g, "");
+  if (d.startsWith("0")) d = d.slice(1);
+  if (d.length === 10) d = "90" + d;
+  return d;
+};
+
 function quoteSummaryText(q) {
   const lines = [`*${q.name || "Teklif"}*`];
   if (q.customer_name) lines.push(`Sayın ${q.customer_name},`);
@@ -505,6 +513,13 @@ function Detail({ q, onClose, onDeleted, onSaved, onCopied, go }) {
   const catalog = useCatalog(!!q);
   const byId = useMemo(() => new Map(catalog.map((p) => [p.id, p])), [catalog]);
   const [copying, setCopying] = useState(false);
+  // Müşterinin telefonu (aynı adlı eski servis kaydından) — WhatsApp özeti doğrudan ona gider
+  const custPhone = useMemo(() => {
+    const n = (q?.customer_name || "").trim().toLocaleLowerCase("tr");
+    if (!n) return "";
+    const svcs = cache.get("services") || cache.get("dashboard")?.services || [];
+    return svcs.find((x) => (x.customer_name || "").trim().toLocaleLowerCase("tr") === n && x.phone)?.phone || "";
+  }, [q]);
   // Daha önce servise aktarıldı mı? (aktarım notuna "[Teklif: ad]" yazılır; önbellekteki servislerde ara)
   const transferred = useMemo(() => {
     if (!q?.name) return null;
@@ -547,7 +562,7 @@ function Detail({ q, onClose, onDeleted, onSaved, onCopied, go }) {
         <button onClick={() => setEditOpen(true)} className="m-press flex flex-1 items-center justify-center gap-1.5 rounded-2xl bg-white py-3 text-[15px] font-bold" style={{ color: "var(--m-primary)" }}>
           <Pencil className="h-4 w-4" /> Düzenle
         </button>
-        <a href={`https://wa.me/?text=${encodeURIComponent(quoteSummaryText(q))}`} target="_blank" rel="noreferrer" aria-label="WhatsApp" className="m-press flex w-12 items-center justify-center rounded-2xl text-white" style={{ background: "#25d366" }}>
+        <a href={`https://wa.me/${custPhone ? waNum(custPhone) : ""}?text=${encodeURIComponent(quoteSummaryText(q))}`} target="_blank" rel="noreferrer" aria-label="WhatsApp" className="m-press flex w-12 items-center justify-center rounded-2xl text-white" style={{ background: "#25d366" }}>
           <MessageCircle className="h-5 w-5" />
         </a>
         <button onClick={() => openDoc(docUrl.quote(q.id))} className="m-press flex flex-1 items-center justify-center gap-2 rounded-2xl py-3 text-[15px] font-bold text-white" style={{ background: "var(--m-primary)" }}>
@@ -564,7 +579,7 @@ function Detail({ q, onClose, onDeleted, onSaved, onCopied, go }) {
         <div className="text-[19px] font-bold leading-snug">{q.name || "Teklif"}</div>
         {transferred && <div className="mt-1"><Pill color="green">Servise aktarıldı</Pill></div>}
         <div className="mt-2 space-y-1 text-[13px]" style={{ color: "var(--m-ink-2)" }}>
-          <div className="flex items-center gap-2"><User className="h-4 w-4" /> {q.customer_name || "—"}</div>
+          <div className="flex items-center gap-2"><User className="h-4 w-4" /> {q.customer_name || "—"}{custPhone && <a href={`tel:${custPhone}`} className="ml-1 font-semibold" style={{ color: "var(--m-primary)" }}>{custPhone}</a>}</div>
           <div className="flex items-center gap-2"><Calendar className="h-4 w-4" /> {fmtDate(q.created_at)}</div>
         </div>
       </div>
