@@ -488,8 +488,8 @@ export default function Services() {
       .filter((x) => {
         if (statusF && (x.status || "received") !== statusF) return false;
         if (!s) return true;
-        return [x.customer_name, x.plate, x.vehicle_brand, x.vehicle_model, x.order_no, x.phone]
-          .filter(Boolean).some((v) => v.toLocaleLowerCase("tr").includes(s));
+        return [x.customer_name, x.plate, x.vehicle_brand, x.vehicle_model, x.order_no, x.phone, x.operations, ...(x.items || []).map((it) => it.name)]
+          .filter(Boolean).some((v) => String(v).toLocaleLowerCase("tr").includes(s));
       })
       .sort((a, b) => String(key(b)).localeCompare(String(key(a)))); // en yeni üstte
   }, [items, q, statusF]);
@@ -514,7 +514,7 @@ export default function Services() {
           </button>
         }
       />
-      <SearchBar value={q} onChange={setQ} placeholder="Müşteri, plaka, araç" />
+      <SearchBar value={q} onChange={setQ} placeholder="Müşteri, plaka, araç, parça" />
       <div className="flex gap-2 overflow-x-auto px-4 pb-2" style={{ scrollbarWidth: "none" }}>
         {[["", "Tümü", items.length], ["received", "Geldi", counts.received], ["in_progress", "İşlemde", counts.in_progress], ["delivered", "Teslim", counts.delivered]].map(([id, label, n]) => {
           const on = statusF === id;
