@@ -6,6 +6,7 @@ import { useSession } from "../session";
 import { cache } from "../cache";
 import { serviceNet, collectedTRY } from "./Services";
 import { useCatalog } from "../catalog";
+import CollectionsReport, { collectionEntries, monthKey } from "../CollectionsReport";
 
 const contractsApi = { list: () => http.get("/contracts").then((r) => r.data) };
 
@@ -32,6 +33,7 @@ export default function Dashboard({ go }) {
   const [offline, setOffline] = useState(false);
   const [showProfit, setShowProfit] = useState(() => cache.get("svc_profit") === true);
   const [gq, setGq] = useState(""); // genel arama
+  const [repOpen, setRepOpen] = useState(false); // tahsilat raporu
   const catalog = useCatalog(gq.trim().length >= 2); // ürün sonuçları için (ilk aramada yüklenir)
   useEffect(() => { cache.set("svc_profit", showProfit); }, [showProfit]);
 
@@ -102,9 +104,12 @@ export default function Dashboard({ go }) {
       .filter((u) => u.dd <= 7)
       .sort((a, b) => a.dd - b.dd)
       .slice(0, 5);
+    // Bu ay tahsil edilen (servis + sözleşme, TL)
+    const mk = monthKey();
+    const collMonth = collectionEntries(services, contracts).filter((e) => e.date.startsWith(mk)).reduce((a, e) => a + e.amount, 0);
     const recentQ = [...quotes].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || ""))).slice(0, 3);
     const recent = [...services].sort((a, b) => String(b.arrival_date || b.created_at || "").localeCompare(String(a.arrival_date || a.created_at || ""))).slice(0, 4);
-    return { active, delivered, overdue, dueToday, sTotal: services.length, qTotal: quotes.length, quotesMonth, quotesMonthSum, cTotal: contracts.length, agreed, recent, recentQ, upcoming, months, svcDone: doneMonth.length, svcNet, svcProfit: svcNet - svcCost, openBal, openCnt };
+    return { active, delivered, overdue, dueToday, sTotal: services.length, qTotal: quotes.length, quotesMonth, quotesMonthSum, cTotal: contracts.length, agreed, recent, recentQ, upcoming, collMonth, months, svcDone: doneMonth.length, svcNet, svcProfit: svcNet - svcCost, openBal, openCnt };
   }, [data]);
 
   // Genel arama: teklif / servis / sözleşme (müşteri, başlık, plaka, telefon rakamı) — en fazla 5'er sonuç
@@ -201,6 +206,15 @@ export default function Dashboard({ go }) {
                 </Card>
               );
             })()}
+
+            <Card onClick={() => setRepOpen(true)} className="mt-2 flex items-center justify-between p-3.5">
+              <div>
+                <div className="text-[12.5px] font-semibold" style={{ color: "var(--m-ink-2)" }}>Bu ay tahsilat</div>
+                <div className="text-[11px] text-slate-400">Rapor · ödeme türleri</div>
+              </div>
+              <span className="m-tnum text-[20px] font-extrabold" style={{ color: "var(--m-primary-2)" }}>{showProfit ? `₺${money(stats.collMonth)}` : "₺ •••"}</span>
+            </Card>
+            <CollectionsReport open={repOpen} onClose={() => setRepOpen(false)} services={data?.services || []} contracts={data?.contracts || []} go={go} />
 
             {stats.openCnt > 0 && (
               <Card onClick={() => { cache.set("svc_filter", "unpaid"); go?.("service"); }} className="mt-2 flex items-center justify-between p-3.5">

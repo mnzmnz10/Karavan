@@ -721,3 +721,25 @@ test("çevrimdışı bekleyen servis: listede 'Gönderilmedi' rozeti + başlıkt
   expect(text()).toContain("Gönderilmedi");
   expect(text()).toContain("1 gönderilmedi");
 });
+
+test("tahsilat raporu: özet kartı gözle gizli, rapor ay toplamı + tür kırılımı + detaya geçiş", async () => {
+  const d = new Date(); const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  global.__SERVICE.collections = [
+    { id: "c1", date: `${ym}-02`, description: "Nakit", amount: 30000, currency: "TRY" },
+    { id: "c2", date: `${ym}-05`, description: "EFT", amount: 500, currency: "EUR", rate: 50 },
+    { id: "c3", date: "2020-01-01", description: "Kart", amount: 999, currency: "TRY" },
+  ];
+  let went = null;
+  await render(<Dashboard go={(t) => { went = t; }} />);
+  expect(text()).toContain("Bu ay tahsilat");
+  expect(text()).toContain("₺ •••");
+  await click(Array.from(container.querySelectorAll("div")).find((x) => x.textContent.startsWith("Bu ay tahsilat") && x.className.includes("justify-between")));
+  expect(text()).toContain("Tahsilat Raporu");
+  expect(text()).toContain(`₺${money(55000)}`); // 30000 + 500×50, eski ay hariç
+  expect(text()).toContain("Nakit");
+  expect(text()).toContain("EFT/Havale");
+  expect(text()).not.toContain(money(999));
+  await click(Array.from(container.querySelectorAll("div")).find((x) => x.className.includes("gap-3") && x.textContent.includes("EFT · EFT/Havale")));
+  expect(went).toBe("service");
+  expect(JSON.parse(localStorage.getItem("mz:svc_open"))).toBe("s1");
+});
