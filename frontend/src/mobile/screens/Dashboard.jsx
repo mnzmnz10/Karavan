@@ -4,6 +4,7 @@ import http, { services as servicesApi, quotes as quotesApi } from "../api";
 import { Header, Card, SkeletonList, RefreshScroll, OfflineBar, money } from "../ui";
 import { useSession } from "../session";
 import { cache } from "../cache";
+import { serviceNet, collectedTRY } from "./Services";
 
 const contractsApi = { list: () => http.get("/contracts").then((r) => r.data) };
 
@@ -74,9 +75,12 @@ export default function Dashboard({ go }) {
       svcNet += net;
       svcCost += items.length ? items.reduce((a, it) => a + costLine(it), 0) : net; // kalemsiz eski kayıt → kâr bilinmiyor (0)
     });
+    // Açık bakiye: net − tahsilat > 0 olan servisler (Services.jsx ile aynı kural)
+    let openBal = 0, openCnt = 0;
+    services.forEach((x) => { const left = serviceNet(x) - collectedTRY(x); if (serviceNet(x) > 0 && left > 0.5) { openBal += left; openCnt++; } });
     const agreed = contracts.filter((c) => c.stage === "agreed").length;
     const recent = [...services].sort((a, b) => String(b.arrival_date || b.created_at || "").localeCompare(String(a.arrival_date || a.created_at || ""))).slice(0, 4);
-    return { active, delivered, overdue, sTotal: services.length, qTotal: quotes.length, quotesMonth, quotesMonthSum, cTotal: contracts.length, agreed, recent, svcDone: doneMonth.length, svcNet, svcProfit: svcNet - svcCost };
+    return { active, delivered, overdue, sTotal: services.length, qTotal: quotes.length, quotesMonth, quotesMonthSum, cTotal: contracts.length, agreed, recent, svcDone: doneMonth.length, svcNet, svcProfit: svcNet - svcCost, openBal, openCnt };
   }, [data]);
 
   const hour = new Date().getHours();
@@ -115,6 +119,16 @@ export default function Dashboard({ go }) {
                 </div>
               )}
             </Card>
+
+            {stats.openCnt > 0 && (
+              <Card onClick={() => go?.("service")} className="mt-2 flex items-center justify-between p-3.5">
+                <div>
+                  <div className="text-[12.5px] font-semibold" style={{ color: "var(--m-ink-2)" }}>Tahsil edilmemiş</div>
+                  <div className="text-[11px] text-slate-400">{stats.openCnt} servis kaydı</div>
+                </div>
+                <span className="m-tnum text-[20px] font-extrabold" style={{ color: "#e11d48" }}>₺{money(stats.openBal)}</span>
+              </Card>
+            )}
 
             {stats.recent.length > 0 && (
               <>

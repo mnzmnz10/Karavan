@@ -47,7 +47,7 @@ const waNumber = (phone) => {
 };
 
 // Liste satırı için net tutar (Detail ile aynı: kalemler TL − iskonto; kalemsiz eski kayıt → cost)
-const serviceNet = (s) => {
+export const serviceNet = (s) => {
   const items = s.items || [];
   const gross = items.length === 0 && s.cost != null
     ? Number(s.cost) || 0
@@ -86,6 +86,7 @@ function Row({ s, onOpen, onCycle, busy }) {
             {s.order_no && <span className="font-bold">{s.order_no}</span>}
             <span>{fmtDate(s.arrival_date || s.created_at)}</span>
             {(() => { const b = dueBadge(s); return b ? <Pill color={b.color}>{b.label}</Pill> : null; })()}
+            {(() => { const left = serviceNet(s) - collectedTRY(s); return left > 0.5 && serviceNet(s) > 0 ? <Pill color="red">Kalan ₺{money(left)}</Pill> : null; })()}
             {serviceNet(s) > 0 && <span className="m-tnum ml-auto shrink-0 text-[13px] font-extrabold" style={{ color: "var(--m-primary)" }}>₺{money(serviceNet(s))}</span>}
           </div>
         </div>
@@ -101,7 +102,7 @@ const collTRY = (c) => {
   if (!c.currency || c.currency === "TRY") return a;
   return a * (parseFloat(c.rate) || 0);
 };
-const collectedTRY = (s) => {
+export const collectedTRY = (s) => {
   const colls = Array.isArray(s.collections) ? s.collections : [];
   if (colls.length > 0) return colls.reduce((a, c) => a + collTRY(c), 0);
   return parseFloat(s.advance_amount) || 0;
