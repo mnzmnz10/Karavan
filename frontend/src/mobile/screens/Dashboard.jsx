@@ -96,7 +96,7 @@ export default function Dashboard({ go }) {
         ) : (
           <div className="px-4 pt-1">
             <div className="grid grid-cols-2 gap-2">
-              <Stat icon={Wrench} tint={{ bg: "#fef0e8", fg: "#e56a1f" }} value={stats.active} label="Aktif servis" sub={stats.overdue > 0 ? `⚠ ${stats.overdue} gecikmiş · ${stats.delivered} teslim` : `${stats.sTotal} kayıt · ${stats.delivered} teslim`} onClick={() => go?.("service")} />
+              <Stat icon={Wrench} tint={{ bg: "#fef0e8", fg: "#e56a1f" }} value={stats.active} label="Aktif servis" sub={stats.overdue > 0 ? `⚠ ${stats.overdue} gecikmiş · ${stats.delivered} teslim` : `${stats.sTotal} kayıt · ${stats.delivered} teslim`} onClick={() => { if (stats.overdue > 0) cache.set("svc_filter", "overdue"); go?.("service"); }} />
               <Stat icon={FileText} tint={{ bg: "#fff5e6", fg: "#d9820a" }} value={stats.qTotal} label="Teklif" sub={`Bu ay ${stats.quotesMonth}`} onClick={() => go?.("quotes")} />
               <Stat icon={ScrollText} tint={{ bg: "#e8f0fb", fg: "#1e73be" }} value={stats.cTotal} label="Sözleşme" sub={`${stats.agreed} anlaşıldı`} onClick={() => go?.("contracts")} />
               <Stat icon={TrendingUp} tint={{ bg: "#e7f3ee", fg: "#2e8b7a" }} value={`₺${money(stats.quotesMonthSum)}`} label="Bu ay teklif" sub={`${stats.quotesMonth} teklif`} onClick={() => go?.("quotes")} />

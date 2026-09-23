@@ -324,3 +324,14 @@ test("sepet formu taslağı kalıcı", async () => {
   await setVal(container.querySelector('input[placeholder="Müşteri adı (boşsa teklif adı)"]'), "Veli");
   expect(JSON.parse(localStorage.getItem("mz:cart_form")).customer).toBe("Veli");
 });
+
+test("servis Gecikmiş filtresi (sadece varsa görünür)", async () => {
+  await render(<Services />);
+  expect(btnWith("Gecikmiş")).toBeFalsy();
+  act(() => root.unmount()); root = createRoot(container);
+  global.__SERVICE.delivery_date = "2026-01-01";
+  localStorage.clear();
+  await render(<Services />);
+  await click(btnWith("Gecikmiş"));
+  expect(text()).toContain("Test Müşteri");
+});
