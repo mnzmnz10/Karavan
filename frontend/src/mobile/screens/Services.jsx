@@ -29,6 +29,15 @@ const dueBadge = (s) => {
   if (dd === today) return { label: "Bugün teslim", color: "amber" };
   return null;
 };
+// Teslim edilmemiş araç kaç gündür serviste (geliş tarihinden bugüne; 0 → null)
+export const daysIn = (s) => {
+  if (!s || s.status === "delivered" || !s.arrival_date) return null;
+  const a = new Date(String(s.arrival_date).slice(0, 10) + "T00:00:00");
+  if (isNaN(a)) return null;
+  const t = new Date(); t.setHours(0, 0, 0, 0);
+  const d = Math.round((t - a) / 86400000);
+  return d > 0 ? d : null;
+};
 // WhatsApp hazır mesaj (duruma göre; gönderilmeden önce kullanıcı düzenleyebilir)
 const waText = (s) => {
   const ad = (s.customer_name || "").trim();
@@ -337,7 +346,7 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuo
               {s.phone && <div className="flex items-center gap-2"><Phone className="h-4 w-4" /> {s.phone}</div>}
             </div>
             <div className="mt-2 text-[12px] text-slate-400">
-              {s.order_no ? `${s.order_no} · ` : ""}Geliş: {fmtDate(s.arrival_date)}{s.delivery_date ? ` · Teslim: ${fmtDate(s.delivery_date)}` : ""}
+              {s.order_no ? `${s.order_no} · ` : ""}Geliş: {fmtDate(s.arrival_date)}{s.delivery_date ? ` · Teslim: ${fmtDate(s.delivery_date)}` : ""}{daysIn(s) != null ? ` · ${daysIn(s)} gündür serviste` : ""}
             </div>
             {s.phone && (
               <div className="mt-3 flex gap-2">
