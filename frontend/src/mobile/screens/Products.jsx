@@ -260,7 +260,8 @@ export default function Products() {
   const [items, setItems] = useState(() => cache.get("products_home") || []);
   const [cats, setCats] = useState(() => cache.get("categories") || []);
   const [cat, setCat] = useState("");
-  const [q, setQ] = useState("");
+  // Genel aramadan gelen ürün adı (tek seferlik)
+  const [q, setQ] = useState(() => { const v = cache.get("prod_search"); if (v) cache.set("prod_search", null); return v || ""; });
   const [loading, setLoading] = useState(() => !cache.get("products_home"));
   const [err, setErr] = useState(false);
   const [offline, setOffline] = useState(false);

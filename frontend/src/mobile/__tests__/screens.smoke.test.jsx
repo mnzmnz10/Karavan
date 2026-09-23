@@ -623,3 +623,19 @@ test("Özet genel arama: plaka ile servis bul → detay deep-link", async () => 
   expect(went).toBe("service");
   expect(JSON.parse(localStorage.getItem("mz:svc_open"))).toBe("s1");
 });
+
+test("Özet genel arama: ürün bul (liste fiyatı, geliş yok) → Ürünler aramasına geç", async () => {
+  let went = null;
+  await render(<Dashboard go={(t) => { went = t; }} />);
+  await setVal(container.querySelector('input[placeholder^="Her yerde ara"]'), "panel");
+  await flush();
+  expect(text()).toContain("Ürünler");
+  expect(text()).toContain(`₺${money(10000)}`);
+  expect(text()).not.toContain(money(7000));
+  await click(Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Solar Panel 450W"));
+  expect(went).toBe("products");
+  expect(JSON.parse(localStorage.getItem("mz:prod_search"))).toBe("Solar Panel 450W");
+  await render(<CartProvider><Products /></CartProvider>);
+  expect(container.querySelector("input").value).toBe("Solar Panel 450W");
+  expect(JSON.parse(localStorage.getItem("mz:prod_search"))).toBe(null);
+});

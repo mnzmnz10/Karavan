@@ -5,6 +5,7 @@ import { Header, SearchBar, Card, SkeletonList, RefreshScroll, OfflineBar, money
 import { useSession } from "../session";
 import { cache } from "../cache";
 import { serviceNet, collectedTRY } from "./Services";
+import { useCatalog } from "../catalog";
 
 const contractsApi = { list: () => http.get("/contracts").then((r) => r.data) };
 
@@ -31,6 +32,7 @@ export default function Dashboard({ go }) {
   const [offline, setOffline] = useState(false);
   const [showProfit, setShowProfit] = useState(() => cache.get("svc_profit") === true);
   const [gq, setGq] = useState(""); // genel arama
+  const catalog = useCatalog(gq.trim().length >= 2); // ürün sonuçları için (ilk aramada yüklenir)
   useEffect(() => { cache.set("svc_profit", showProfit); }, [showProfit]);
 
   const load = async () => {
@@ -107,8 +109,9 @@ export default function Dashboard({ go }) {
     const services = (data?.services || []).filter((x) => has(x.customer_name, x.plate, x.vehicle_brand, x.vehicle_model, x.order_no) || phoneHit(x.phone)).slice(0, 5);
     const quotes = (data?.quotes || []).filter((q) => has(q.name, q.customer_name)).slice(0, 5);
     const contracts = (data?.contracts || []).filter((c) => has(c.title, c.customer_name, c.data?.customer_name) || phoneHit(c.customer_phone || c.data?.customer_phone)).slice(0, 5);
-    return { services, quotes, contracts };
-  }, [gq, data]);
+    const products = (catalog || []).filter((p) => has(p.name)).slice(0, 5);
+    return { services, quotes, contracts, products };
+  }, [gq, data, catalog]);
   const jump = (tab, key, val) => { cache.set(key, val); go?.(tab); };
 
   const hour = new Date().getHours();
@@ -124,7 +127,8 @@ export default function Dashboard({ go }) {
           <div className="space-y-3 px-4 pt-1">
             {[["Servisler", results.services, (x) => [x.customer_name || "İsimsiz", [x.plate, fmtDate(x.arrival_date)].filter(Boolean).join(" · ")], (x) => jump("service", "svc_open", x.id)],
               ["Teklifler", results.quotes, (q) => [q.name || "Teklif", `${q.customer_name || "—"} · ₺${money(q.total_net_price || 0)}`], (q) => jump("quotes", "quote_open", q.id)],
-              ["Sözleşmeler", results.contracts, (c) => [c.customer_name || c.data?.customer_name || c.title || "Sözleşme", c.title || ""], (c) => jump("contracts", "contract_open", c.id)]]
+              ["Sözleşmeler", results.contracts, (c) => [c.customer_name || c.data?.customer_name || c.title || "Sözleşme", c.title || ""], (c) => jump("contracts", "contract_open", c.id)],
+              ["Ürünler", results.products, (p) => [p.name, `₺${money(p.list_price_try || 0)}`], (p) => jump("products", "prod_search", p.name)]]
               .filter(([, list]) => list.length)
               .map(([title, list, fmt, onOpen]) => (
                 <div key={title}>
@@ -139,7 +143,7 @@ export default function Dashboard({ go }) {
                   </div>
                 </div>
               ))}
-            {!results.services.length && !results.quotes.length && !results.contracts.length && (
+            {!results.services.length && !results.quotes.length && !results.contracts.length && !results.products.length && (
               <div className="py-10 text-center text-[13px] text-slate-400">Sonuç yok</div>
             )}
           </div>
