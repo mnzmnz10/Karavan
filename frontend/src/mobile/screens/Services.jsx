@@ -112,11 +112,13 @@ function Detail({ id, onClose, onEdit, onDeleted, prodCost }) {
     return lineTRY(it, "unit_price"); // bilinmiyor → kâr 0
   };
   const itemHasCost = (it) => (it.unit_cost !== "" && it.unit_cost != null) || prodCostUnit(it.name) != null;
-  const total = useMemo(() => {
+  const gross = useMemo(() => {
     if (!s) return 0;
     if ((s.items || []).length === 0 && s.cost != null) return Number(s.cost) || 0;
     return (s.items || []).reduce((a, it) => a + lineTRY(it, "unit_price"), 0);
   }, [s]);
+  const discount = Math.min(Math.max(0, parseFloat(s?.discount_amount) || 0), gross); // servis iskontosu (teklif net'i buraya yansır)
+  const total = gross - discount; // net (indirimli)
   const costTotal = useMemo(() => {
     if (!s) return 0;
     return (s.items || []).reduce((a, it) => a + costLineTRY(it), 0);
@@ -195,6 +197,12 @@ function Detail({ id, onClose, onEdit, onDeleted, prodCost }) {
           )}
 
           <div className="mt-3 rounded-2xl bg-white px-4 py-3.5">
+            {discount > 0 && (
+              <div className="mb-2 space-y-1 border-b border-slate-100 pb-2 text-[12px]">
+                <div className="flex items-center justify-between"><span style={{ color: "var(--m-ink-2)" }}>Ara toplam</span><span className="m-tnum">₺{money(gross)}</span></div>
+                <div className="flex items-center justify-between"><span style={{ color: "#e11d48" }}>İskonto</span><span className="m-tnum" style={{ color: "#e11d48" }}>−₺{money(discount)}</span></div>
+              </div>
+            )}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="text-[14px] font-semibold" style={{ color: "var(--m-ink-2)" }}>Toplam</span>

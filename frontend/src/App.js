@@ -2661,35 +2661,37 @@ function App() {
       const c = customers.find((c) => c.id === quote.customer_id);
       if (c) customerName = c.name || '';
     }
-    // Teklif net toplamı = ürünler − indirim + işçilik. Servis kalemlerine birebir yansıt:
-    const disc = parseFloat(quote?.discount_percentage) || 0;
+    // Kalemler LİSTE fiyatıyla aktarılır (indirim kalem kalem UYGULANMAZ — yuvarlama net'i bozuyordu).
+    // İndirim tek kalem olarak servis indirimine yazılır → servis net = teklif net (TAM).
     const labor = parseFloat(quote?.labor_cost) || 0;
     const quoteItems = (quote?.products || []).map((p) => {
-      // İsim/fiyat TEKLİF ANI snapshot'ından (canlı ürün değil — fiyat değişmiş olabilir)
       const nm = p.name || products.find((prod) => prod.id === p.id)?.name || 'Ürün';
       const qty = parseFloat(p.quantity) || 1;
-      // Birim fiyat zaten teklif anında TL'ye çevrilmiş: list_price_try (özel fiyat
-      // varsa create_quote bunu custom_price*kur ile yazıyor). custom_price'ı DOĞRUDAN
-      // kullanma — o ürünün kendi para biriminde (€/$) olabilir, TL değil.
+      // Satış = liste (teklif anı TL). custom_price'ı doğrudan kullanma (€/$ olabilir).
       let unit = parseFloat(p.list_price_try);
       if (!unit || isNaN(unit)) unit = parseFloat(p.discounted_price_try);
       if (!unit || isNaN(unit)) unit = parseFloat(p.list_price) || 0; // manuel kalem (TL)
-      unit = unit * (1 - disc / 100);
-      // Maliyet = geliş (indirimli TL), yoksa liste TL; iskonto uygulanmaz (maliyet sabittir)
+      // Maliyet = geliş (indirimli TL). Manuel kalemde geliş girilmemişse discounted=list (kâr 0).
       let cost = parseFloat(p.discounted_price_try);
       if (!cost || isNaN(cost)) cost = parseFloat(p.list_price_try) || 0;
       return { name: nm, qty, unit_price: Math.round(unit), unit_cost: cost > 0 ? Math.round(cost) : '' };
     });
-    // İşçilik ayrı kalem olarak (teklif toplamına dahildi) — maliyeti yok, tamamı kâr
+    // İşçilik ayrı kalem (maliyeti yok, tamamı kâr)
     if (labor > 0) quoteItems.push({ name: 'İşçilik', qty: 1, unit_price: Math.round(labor), unit_cost: 0 });
+    // İndirimi teklifin NET'ine göre uzlaştır: servis indirimi = kalemler brüt − teklif net.
+    const grossItems = quoteItems.reduce((a, it) => a + (parseFloat(it.unit_price) || 0) * (parseFloat(it.qty) || 1), 0);
+    const net = parseFloat(quote?.total_net_price);
+    const discountTL = (!isNaN(net) && grossItems > net) ? Math.round(grossItems - net) : 0;
     const baseNote = quote?.notes ? `${quote.notes}\n\n` : '';
     setServiceEditingId(null);
     setServiceForm({
       ...emptyServiceForm,
       customer_name: customerName || quote?.name || '',
       items: quoteItems,
+      discount_amount: discountTL > 0 ? String(discountTL) : '',
+      discount_percent: '',
       notes: `${baseNote}[Teklif: ${quote?.name || ''}]`,
-      cost: quote?.total_net_price != null ? String(quote.total_net_price) : '',
+      cost: '',
       arrival_date: new Date().toISOString().slice(0, 10),
       status: 'received',
     });
