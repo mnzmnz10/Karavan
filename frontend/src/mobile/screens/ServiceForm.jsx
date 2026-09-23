@@ -276,7 +276,7 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
         <div className="border-b border-slate-100 px-3 py-2.5">
           <div className="m-seg flex">
             {STATUSES.map((s) => (
-              <button key={s.key} data-on={f.status === s.key} onClick={() => set("status", s.key)}
+              <button key={s.key} data-on={f.status === s.key} onClick={() => setF((p) => ({ ...p, status: s.key, delivery_date: s.key === "delivered" && !p.delivery_date ? today() : p.delivery_date }))}
                 className="m-seg-item flex-1 py-1.5 text-[13px] font-semibold"
                 style={{ color: f.status === s.key ? "var(--m-primary)" : "var(--m-ink-2)" }}>
                 {s.label}
