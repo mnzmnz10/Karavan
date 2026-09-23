@@ -272,7 +272,7 @@ function CartSheet({ open, onClose }) {
           return (
             <div key={p.id} className="flex items-center gap-3 rounded-2xl bg-white p-3">
               {p.image_url ? (
-                <img src={p.image_url} alt="" className="h-12 w-12 shrink-0 rounded-xl object-cover" />
+                <img src={p.image_url} alt="" loading="lazy" decoding="async" className="h-12 w-12 shrink-0 rounded-xl object-cover" />
               ) : (
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-slate-100"><Package className="h-5 w-5 text-slate-300" /></div>
               )}
