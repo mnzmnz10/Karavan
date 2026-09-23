@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from "
 import { toast } from "sonner";
 import { ShoppingCart, Minus, Plus, Trash2, Loader2, Package, Eye, EyeOff } from "lucide-react";
 import { quotes as quotesApi } from "./api";
-import { cache } from "./cache";
+import { cache, customerNames } from "./cache";
 import { Sheet, money } from "./ui";
 
 const CartCtx = createContext(null);
@@ -198,7 +198,8 @@ function CartSheet({ open, onClose }) {
     <Sheet open={open} onClose={onClose} title={`Teklif (${cart.count} ürün)`} full>
       <div className="space-y-2 rounded-2xl bg-white p-3">
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Teklif adı *" className={field} />
-        <input value={customer} onChange={(e) => setCustomer(e.target.value)} placeholder="Müşteri adı (boşsa teklif adı)" className={field} />
+        <input value={customer} onChange={(e) => setCustomer(e.target.value)} placeholder="Müşteri adı (boşsa teklif adı)" className={field} list="mz-customers" />
+        <datalist id="mz-customers">{customerNames().map((n) => <option key={n} value={n} />)}</datalist>
         <div className="flex gap-2">
           <div className="relative flex-1">
             <input value={discount} onChange={(e) => onPct(e.target.value)} inputMode="decimal" placeholder="İskonto" className={`${field} pr-7`} />

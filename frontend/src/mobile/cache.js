@@ -30,3 +30,12 @@ export const cache = {
     }
   },
 };
+
+// Önbellekteki teklif + servislerden tekil müşteri adları (öneri listesi için; ağ isteği yok)
+export function customerNames() {
+  const seen = new Map();
+  const add = (n) => { const v = String(n || "").trim(); if (v && !seen.has(v.toLocaleLowerCase("tr"))) seen.set(v.toLocaleLowerCase("tr"), v); };
+  (cache.get("quotes") || cache.get("dashboard")?.quotes || []).forEach((q) => add(q.customer_name));
+  (cache.get("services") || cache.get("dashboard")?.services || []).forEach((x) => add(x.customer_name));
+  return Array.from(seen.values()).sort((a, b) => a.localeCompare(b, "tr"));
+}

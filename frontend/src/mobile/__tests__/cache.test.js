@@ -14,3 +14,11 @@ test("clearAll: mz: iş verisini siler, tema ve yabancı anahtarlar kalır", () 
   expect(cache.get("cart_form")).toBeNull();
   expect(localStorage.getItem("other")).toBe("1");
 });
+
+test("customerNames: teklif+servis tekil, sıralı", () => {
+  const { customerNames } = require("../cache");
+  localStorage.clear();
+  cache.set("quotes", [{ customer_name: "Zeki" }, { customer_name: "ali" }]);
+  cache.set("services", [{ customer_name: "Ali " }, { customer_name: "Çetin" }]);
+  expect(customerNames()).toEqual(["ali", "Çetin", "Zeki"]);
+});

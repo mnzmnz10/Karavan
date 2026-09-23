@@ -5,7 +5,7 @@ import { useCatalog, catRate } from "../catalog";
 import { toast } from "sonner";
 import { quotes as quotesApi, docUrl, openDoc } from "../api";
 import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, RefreshScroll, OfflineBar } from "../ui";
-import { cache } from "../cache";
+import { cache, customerNames } from "../cache";
 
 const fmtDate = (s) => {
   if (!s) return "";
@@ -198,7 +198,8 @@ function QuoteEditSheet({ q, open, onClose, onSaved }) {
     <Sheet open={open} onClose={onClose} title="Teklifi Düzenle">
       <div className="space-y-2 rounded-2xl bg-white p-3">
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Teklif adı *" className={field} />
-        <input value={customer} onChange={(e) => setCustomer(e.target.value)} placeholder="Müşteri adı" className={field} />
+        <input value={customer} onChange={(e) => setCustomer(e.target.value)} placeholder="Müşteri adı" className={field} list="mz-customers-q" />
+        <datalist id="mz-customers-q">{customerNames().map((n) => <option key={n} value={n} />)}</datalist>
         <div className="flex gap-2">
           <div className="relative flex-1">
             <input value={disc} onChange={(e) => onPct(e.target.value)} inputMode="decimal" placeholder="İskonto" className={`${field} pr-7`} />
