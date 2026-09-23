@@ -22,3 +22,12 @@ test("customerNames: teklif+servis tekil, sıralı", () => {
   cache.set("services", [{ customer_name: "Ali " }, { customer_name: "Çetin" }]);
   expect(customerNames()).toEqual(["ali", "Çetin", "Zeki"]);
 });
+
+test("logout temizliği son kullanıcı adını korur", () => {
+  localStorage.clear();
+  cache.set("last_user", "karavan_admin");
+  cache.set("quotes", [1]);
+  cache.clearAll(["theme", "last_user"]);
+  expect(cache.get("last_user")).toBe("karavan_admin");
+  expect(cache.get("quotes")).toBeNull();
+});

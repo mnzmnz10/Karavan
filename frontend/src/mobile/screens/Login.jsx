@@ -2,9 +2,10 @@ import React, { useState } from "react";
 import { toast } from "sonner";
 import { Loader2, Eye, EyeOff } from "lucide-react";
 import { auth } from "../api";
+import { cache } from "../cache";
 
 export default function Login({ onDone }) {
-  const [u, setU] = useState("");
+  const [u, setU] = useState(() => cache.get("last_user") || ""); // şifre saklanmaz, sadece kullanıcı adı
   const [p, setP] = useState("");
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -15,6 +16,7 @@ export default function Login({ onDone }) {
     setBusy(true);
     try {
       await auth.login(u.trim(), p, true);
+      cache.set("last_user", u.trim());
       onDone();
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Giriş başarısız");
@@ -41,6 +43,7 @@ export default function Login({ onDone }) {
           value={u}
           onChange={(e) => setU(e.target.value)}
           placeholder="Kullanıcı adı"
+          autoComplete="username"
           autoCapitalize="none"
           autoCorrect="off"
           className="w-full rounded-2xl bg-white/95 px-4 py-3.5 text-[16px] text-slate-800 placeholder:text-slate-400"
@@ -51,6 +54,8 @@ export default function Login({ onDone }) {
             onChange={(e) => setP(e.target.value)}
             type={show ? "text" : "password"}
             placeholder="Şifre"
+            autoComplete="current-password"
+            autoFocus={!!u}
             className="w-full rounded-2xl bg-white/95 px-4 py-3.5 pr-12 text-[16px] text-slate-800 placeholder:text-slate-400"
           />
           <button type="button" onClick={() => setShow((v) => !v)} className="m-press absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" aria-label={show ? "Şifreyi gizle" : "Şifreyi göster"}>

@@ -103,7 +103,7 @@ export default function MobileApp() {
   const logout = async () => {
     try { await auth.logout(); } catch {}
     // Ortak cihazda iş verisi (müşteri, maliyet, sepet) kalmasın; tema tercihi korunur
-    cache.clearAll([THEME_KEY]);
+    cache.clearAll([THEME_KEY, "last_user"]);
     setAuthed(false);
     setTab("dashboard");
   };
