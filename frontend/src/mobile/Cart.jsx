@@ -87,15 +87,20 @@ export function CartBar() {
 
 function CartSheet({ open, onClose }) {
   const cart = useCart();
-  const [name, setName] = useState("");
-  const [customer, setCustomer] = useState("");
-  const [discount, setDiscount] = useState(""); // %
-  const [discTL, setDiscTL] = useState("");     // ₺ (yüzde ile senkron)
-  const [targetNet, setTargetNet] = useState(""); // hedef net toplam
-  const [discMode, setDiscMode] = useState("pct"); // son düzenlenen: pct | tl | net
-  const [labor, setLabor] = useState("");
-  const [notes, setNotes] = useState("");
-  const [manualItems, setManualItems] = useState([]); // elle girilen kalemler
+  // Form taslağı kalıcı (sepet gibi): uygulama kapanınca ad/müşteri/indirim/işçilik/not/manuel kalemler kaybolmaz
+  const draft0 = (() => { const d = cache.get("cart_form"); return d && typeof d === "object" ? d : {}; })();
+  const [name, setName] = useState(draft0.name || "");
+  const [customer, setCustomer] = useState(draft0.customer || "");
+  const [discount, setDiscount] = useState(draft0.discount || ""); // %
+  const [discTL, setDiscTL] = useState(draft0.discTL || "");     // ₺ (yüzde ile senkron)
+  const [targetNet, setTargetNet] = useState(draft0.targetNet || ""); // hedef net toplam
+  const [discMode, setDiscMode] = useState(draft0.discMode || "pct"); // son düzenlenen: pct | tl | net
+  const [labor, setLabor] = useState(draft0.labor || "");
+  const [notes, setNotes] = useState(draft0.notes || "");
+  const [manualItems, setManualItems] = useState(Array.isArray(draft0.manualItems) ? draft0.manualItems : []); // elle girilen kalemler
+  useEffect(() => {
+    cache.set("cart_form", { name, customer, discount, discTL, targetNet, discMode, labor, notes, manualItems });
+  }, [name, customer, discount, discTL, targetNet, discMode, labor, notes, manualItems]);
   const [showCost, setShowCost] = useState(false);    // göz: manuel kalem geliş fiyatı
   const [busy, setBusy] = useState(false);
   if (!cart) return null;

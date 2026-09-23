@@ -314,3 +314,13 @@ test("ürün detayı: göz açıkken son tekliflerdeki fiyat", async () => {
   expect(text()).toContain("Ahmet Karavan");
   expect(text()).toContain(`₺${money(9800)}`);
 });
+
+test("sepet formu taslağı kalıcı", async () => {
+  localStorage.setItem("mz:cart_form", JSON.stringify({ name: "Yarım Teklif", labor: "1500" }));
+  localStorage.setItem("mz:cart", JSON.stringify([{ product: global.__PRODUCTS[1], qty: 1 }]));
+  await render(<CartProvider><CartBar /></CartProvider>);
+  await click(btnWith("Teklif Oluştur"));
+  expect(container.querySelector('input[placeholder="Teklif adı *"]').value).toBe("Yarım Teklif");
+  await setVal(container.querySelector('input[placeholder="Müşteri adı (boşsa teklif adı)"]'), "Veli");
+  expect(JSON.parse(localStorage.getItem("mz:cart_form")).customer).toBe("Veli");
+});

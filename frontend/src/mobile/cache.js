@@ -18,4 +18,15 @@ export const cache = {
       // kota/private mode — sessiz geç
     }
   },
+  // Çıkışta iş verisini (teklif/servis/maliyet/sepet önbellekleri) sil; sadece `keep` anahtarları kalır
+  clearAll(keep = []) {
+    try {
+      const keepSet = new Set(keep.map((k) => PFX + k));
+      Object.keys(localStorage)
+        .filter((k) => k.startsWith(PFX) && !keepSet.has(k))
+        .forEach((k) => localStorage.removeItem(k));
+    } catch {
+      // erişim yok — sessiz geç
+    }
+  },
 };
