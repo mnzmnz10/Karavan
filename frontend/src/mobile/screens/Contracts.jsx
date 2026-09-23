@@ -18,6 +18,16 @@ const STAGE = {
   agreed: { label: "Anlaşıldı", color: "green" },
 };
 const grand = (c) => Number(c?.data?.grandTotal || c?.grandTotal || 0);
+// TC kimlik no algoritması (11 hane, ilk hane 0 değil, 10. ve 11. hane kontrolleri)
+export const isValidTC = (v) => {
+  const d = String(v || "");
+  if (!/^[1-9]\d{10}$/.test(d)) return false;
+  const n = d.split("").map(Number);
+  const odd = n[0] + n[2] + n[4] + n[6] + n[8];
+  const even = n[1] + n[3] + n[5] + n[7];
+  if (((odd * 7 - even) % 10 + 10) % 10 !== n[9]) return false;
+  return n.slice(0, 10).reduce((a, b) => a + b, 0) % 10 === n[10];
+};
 const custName = (c) => c?.customer_name || c?.data?.customer_name || "";
 const custPhone = (c) => c?.customer_phone || c?.data?.customer_phone || "";
 const custTc = (c) => c?.customer_tc || c?.data?.customer_tc || "";
@@ -436,8 +446,9 @@ function CreateSheet({ open, onClose, onCreated }) {
         <datalist id="mz-customers-c">{customerNames().map((n) => <option key={n} value={n} />)}</datalist>
         <div className="flex gap-2">
           <input value={phone} onChange={(e) => setPhone(e.target.value)} onBlur={(e) => setPhone(formatPhoneTR(e.target.value))} placeholder="Telefon" inputMode="tel" className={`${field} flex-1`} />
-          <input value={tc} onChange={(e) => setTc(e.target.value)} placeholder="TC" inputMode="numeric" className={`${field} flex-1`} />
+          <input value={tc} onChange={(e) => setTc(e.target.value.replace(/\D/g, "").slice(0, 11))} placeholder="TC" inputMode="numeric" className={`${field} flex-1`} />
         </div>
+        {tc && !isValidTC(tc) && <div className="px-1 text-[12px] text-amber-600">TC kimlik no geçersiz görünüyor (kontrol et)</div>}
         <div className="relative">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">€ kuru</span>
           <input value={kur} onChange={(e) => setKur(e.target.value)} inputMode="decimal" placeholder="boşsa varsayılan" className={`${field} pl-20 text-right`} />

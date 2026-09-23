@@ -19,3 +19,12 @@ test.each([
   ["DE-AB 123", "DE-AB 123"],
   ["", ""],
 ])("plaka %s → %s", (i, o) => expect(formatPlateTR(i)).toBe(o));
+
+test("isValidTC", () => {
+  jest.doMock("../api", () => ({ __esModule: true, default: { get: () => Promise.resolve({ data: [] }) } }));
+  const { isValidTC } = require("../screens/Contracts");
+  expect(isValidTC("10000000146")).toBe(true);
+  expect(isValidTC("12345678901")).toBe(false);
+  expect(isValidTC("01234567890")).toBe(false);
+  expect(isValidTC("123")).toBe(false);
+});
