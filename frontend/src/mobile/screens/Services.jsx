@@ -200,6 +200,18 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuo
   const [collOpen, setCollOpen] = useState(false);
   // Hızlı foto ekleme (düzenleme formuna girmeden): sıkıştır → photos'a ekle → PUT
   const [photoBusy, setPhotoBusy] = useState(false);
+  const removePhoto = async (idx) => {
+    if (!s || !window.confirm("Fotoğraf silinsin mi?")) return;
+    const photos = (s.photos || []).filter((_, j) => j !== idx);
+    try {
+      await servicesApi.update(s.id, { photos });
+      setS((prev) => ({ ...prev, photos }));
+      onChanged?.();
+      toast.success("Fotoğraf silindi");
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Silinemedi");
+    }
+  };
   const addPhotos = async (files) => {
     if (!files?.length || !s) return;
     setPhotoBusy(true);
@@ -444,8 +456,11 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuo
               </div>
               <div className="grid grid-cols-3 gap-2">
                 {s.photos.map((src, i) => (
-                  <div key={i} className="m-press aspect-square overflow-hidden rounded-xl bg-slate-100" onClick={() => setLb(src)}>
+                  <div key={i} className="m-press relative aspect-square overflow-hidden rounded-xl bg-slate-100" onClick={() => setLb(src)}>
                     <img src={src} alt="" className="h-full w-full object-cover" />
+                    <button onClick={(e) => { e.stopPropagation(); removePhoto(i); }} aria-label="Fotoğrafı sil" className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/50 text-white">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
                   </div>
                 ))}
               </div>

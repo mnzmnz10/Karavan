@@ -399,3 +399,15 @@ test("Özet'ten servis detayı deep-link", async () => {
   expect(text()).toContain("Servis Kaydı");
   expect(localStorage.getItem("mz:svc_open")).toBe("null");
 });
+
+test("servis detay: foto sil (onaylı)", async () => {
+  global.__SERVICE.photos = ["data:image/jpeg;base64,AAA", "data:image/jpeg;base64,BBB"];
+  global.confirm = () => true;
+  await render(<Services />);
+  const row = Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
+  await click(row);
+  await click(container.querySelectorAll('button[aria-label="Fotoğrafı sil"]')[0]);
+  const api = require("../api");
+  expect(api.__calls.svcUpdate.at(-1)).toEqual({ photos: ["data:image/jpeg;base64,BBB"] });
+  expect(container.querySelectorAll('button[aria-label="Fotoğrafı sil"]').length).toBe(1);
+});
