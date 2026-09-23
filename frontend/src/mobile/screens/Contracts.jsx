@@ -478,6 +478,13 @@ export default function Contracts({ go }) {
   const [err, setErr] = useState(false);
   const [offline, setOffline] = useState(false);
   const [sel, setSel] = useState(null);
+  // Müşteri özetinden yönlendirme: liste gelince o sözleşmeyi aç (mz:contract_open, tek seferlik)
+  useEffect(() => {
+    const id = cache.get("contract_open");
+    if (!id || !items.length) return;
+    const hit = items.find((x) => x.id === id);
+    if (hit) { cache.set("contract_open", null); setSel(hit); }
+  }, [items]);
   const [staging, setStaging] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [editItems, setEditItems] = useState(null);

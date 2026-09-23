@@ -92,7 +92,7 @@ export default function CustomerSheet({ name, open, onClose, go }) {
 
       <Section icon={ScrollText} title="Sözleşmeler" count={rec.contracts.length}>
         {rec.contracts.map((c) => (
-          <Card key={c.id} onClick={() => { onClose(); go?.("contracts"); }} className="flex items-center justify-between gap-2 p-3">
+          <Card key={c.id} onClick={() => jump("contracts", "contract_open", c.id)} className="flex items-center justify-between gap-2 p-3">
             <div className="min-w-0">
               <div className="truncate text-[14px] font-semibold">{c.title || "Sözleşme"}</div>
               <div className="text-[12px] text-slate-400">{fmtDate(c.created_at)}</div>
