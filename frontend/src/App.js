@@ -11323,7 +11323,7 @@ function App() {
                         <button type="button" onClick={() => setShowServiceProfit((v) => !v)}
                           title={showServiceProfit ? "Maliyet/kârı gizle" : "Maliyet/kâr göster (müşteriye kapalı)"}
                           className={`flex items-center gap-1.5 h-8 px-2.5 rounded-lg border text-xs font-semibold transition-colors ${showServiceProfit ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
-                          {showServiceProfit ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />} Maliyet / Kâr
+                          {showServiceProfit ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                         </button>
                       </div>
 
@@ -11812,7 +11812,7 @@ function App() {
                 <Button variant="outline" onClick={() => setShowServiceProfit((v) => !v)}
                   title={showServiceProfit ? "Maliyet/kârı gizle (müşteriye açık görünüm)" : "Maliyet/kâr göster"}
                   className={`rounded-xl font-bold ${showServiceProfit ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-600'}`}>
-                  {showServiceProfit ? <EyeOff className="w-4 h-4 mr-2" /> : <Eye className="w-4 h-4 mr-2" />} Kâr
+                  {showServiceProfit ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </Button>
                 <Button onClick={openNewServiceDialog} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl">
                   <Plus className="w-4 h-4 mr-2" /> Yeni Servis Kaydı
