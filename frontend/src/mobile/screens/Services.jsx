@@ -438,7 +438,8 @@ export default function Services() {
   const [formOpen, setFormOpen] = useState(false);
   const [formInitial, setFormInitial] = useState(null);
   const [busyId, setBusyId] = useState(null);
-  const [statusF, setStatusF] = useState("");
+  // Özet'ten yönlendirme: tek seferlik filtre (mz:svc_filter)
+  const [statusF, setStatusF] = useState(() => { const f = cache.get("svc_filter"); if (f) cache.set("svc_filter", null); return f || ""; });
   // Ürün adı → geliş (indirimli, yoksa liste) TL haritası — kalem maliyeti boşsa kâr bundan türetilir.
   // Ortak katalog önbelleğinden (ayrı 2000'lik istek yok); Özet ekranı için "prodcost" önbelleği de yazılır.
   const catalog = useCatalog(true);

@@ -121,7 +121,7 @@ export default function Dashboard({ go }) {
             </Card>
 
             {stats.openCnt > 0 && (
-              <Card onClick={() => go?.("service")} className="mt-2 flex items-center justify-between p-3.5">
+              <Card onClick={() => { cache.set("svc_filter", "unpaid"); go?.("service"); }} className="mt-2 flex items-center justify-between p-3.5">
                 <div>
                   <div className="text-[12.5px] font-semibold" style={{ color: "var(--m-ink-2)" }}>Tahsil edilmemiş</div>
                   <div className="text-[11px] text-slate-400">{stats.openCnt} servis kaydı</div>
