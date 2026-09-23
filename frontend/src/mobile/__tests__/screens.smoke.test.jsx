@@ -612,3 +612,14 @@ test("müşteri özeti: servis detayından aç, sayılar + açık bakiye, teklif
   expect(went).toBe("quotes");
   expect(JSON.parse(localStorage.getItem("mz:quote_open"))).toBe("qa");
 });
+
+test("Özet genel arama: plaka ile servis bul → detay deep-link", async () => {
+  global.__SERVICE.plate = "59 ABC 123";
+  let went = null;
+  await render(<Dashboard go={(t) => { went = t; }} />);
+  await setVal(container.querySelector('input[placeholder^="Her yerde ara"]'), "59 abc");
+  expect(text()).toContain("Servisler");
+  await click(Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri"));
+  expect(went).toBe("service");
+  expect(JSON.parse(localStorage.getItem("mz:svc_open"))).toBe("s1");
+});

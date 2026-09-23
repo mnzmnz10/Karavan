@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Wrench, FileText, ScrollText, Clock, CheckCircle2, TrendingUp, Eye, EyeOff } from "lucide-react";
 import http, { services as servicesApi, quotes as quotesApi } from "../api";
-import { Header, Card, SkeletonList, RefreshScroll, OfflineBar, money, ago, todayISO, fmtDate } from "../ui";
+import { Header, SearchBar, Card, SkeletonList, RefreshScroll, OfflineBar, money, ago, todayISO, fmtDate } from "../ui";
 import { useSession } from "../session";
 import { cache } from "../cache";
 import { serviceNet, collectedTRY } from "./Services";
@@ -30,6 +30,7 @@ export default function Dashboard({ go }) {
   const [loading, setLoading] = useState(() => !cache.get("dashboard"));
   const [offline, setOffline] = useState(false);
   const [showProfit, setShowProfit] = useState(() => cache.get("svc_profit") === true);
+  const [gq, setGq] = useState(""); // genel arama
   useEffect(() => { cache.set("svc_profit", showProfit); }, [showProfit]);
 
   const load = async () => {
@@ -96,15 +97,53 @@ export default function Dashboard({ go }) {
     return { active, delivered, overdue, dueToday, sTotal: services.length, qTotal: quotes.length, quotesMonth, quotesMonthSum, cTotal: contracts.length, agreed, recent, recentQ, months, svcDone: doneMonth.length, svcNet, svcProfit: svcNet - svcCost, openBal, openCnt };
   }, [data]);
 
+  // Genel arama: teklif / servis / sözleşme (müşteri, başlık, plaka, telefon rakamı) — en fazla 5'er sonuç
+  const results = useMemo(() => {
+    const s = gq.trim().toLocaleLowerCase("tr");
+    if (s.length < 2) return null;
+    const digits = /^[\d\s+()-]+$/.test(s) ? s.replace(/\D/g, "").replace(/^0/, "") : "";
+    const has = (...vals) => vals.some((v) => String(v || "").toLocaleLowerCase("tr").includes(s));
+    const phoneHit = (p) => digits.length >= 4 && String(p || "").replace(/\D/g, "").includes(digits);
+    const services = (data?.services || []).filter((x) => has(x.customer_name, x.plate, x.vehicle_brand, x.vehicle_model, x.order_no) || phoneHit(x.phone)).slice(0, 5);
+    const quotes = (data?.quotes || []).filter((q) => has(q.name, q.customer_name)).slice(0, 5);
+    const contracts = (data?.contracts || []).filter((c) => has(c.title, c.customer_name, c.data?.customer_name) || phoneHit(c.customer_phone || c.data?.customer_phone)).slice(0, 5);
+    return { services, quotes, contracts };
+  }, [gq, data]);
+  const jump = (tab, key, val) => { cache.set(key, val); go?.(tab); };
+
   const hour = new Date().getHours();
   const greet = hour < 6 ? "İyi geceler" : hour < 12 ? "Günaydın" : hour < 18 ? "İyi günler" : "İyi akşamlar";
 
   return (
     <div className="flex h-full flex-col">
       <Header title="Özet" subtitle={`${greet}${s?.username ? ", " + s.username : ""}${data?.at ? " · güncellendi " + ago(data.at) : ""}`} />
+      <SearchBar value={gq} onChange={setGq} placeholder="Her yerde ara: müşteri, plaka, teklif…" />
       <OfflineBar show={offline} cacheKey="dashboard" />
       <RefreshScroll onRefresh={load} className="flex-1 pb-[calc(var(--m-tabbar-h)+env(safe-area-inset-bottom)+8px)]">
-        {loading ? (
+        {results ? (
+          <div className="space-y-3 px-4 pt-1">
+            {[["Servisler", results.services, (x) => [x.customer_name || "İsimsiz", [x.plate, fmtDate(x.arrival_date)].filter(Boolean).join(" · ")], (x) => jump("service", "svc_open", x.id)],
+              ["Teklifler", results.quotes, (q) => [q.name || "Teklif", `${q.customer_name || "—"} · ₺${money(q.total_net_price || 0)}`], (q) => jump("quotes", "quote_open", q.id)],
+              ["Sözleşmeler", results.contracts, (c) => [c.customer_name || c.data?.customer_name || c.title || "Sözleşme", c.title || ""], (c) => jump("contracts", "contract_open", c.id)]]
+              .filter(([, list]) => list.length)
+              .map(([title, list, fmt, onOpen]) => (
+                <div key={title}>
+                  <div className="px-1 pb-1.5 text-[12px] font-bold uppercase tracking-wide text-slate-400">{title}</div>
+                  <div className="space-y-2">
+                    {list.map((x) => { const [a, b] = fmt(x); return (
+                      <Card key={x.id} onClick={() => onOpen(x)} className="p-3">
+                        <div className="truncate text-[14px] font-semibold">{a}</div>
+                        {b && <div className="truncate text-[12px] text-slate-400">{b}</div>}
+                      </Card>
+                    ); })}
+                  </div>
+                </div>
+              ))}
+            {!results.services.length && !results.quotes.length && !results.contracts.length && (
+              <div className="py-10 text-center text-[13px] text-slate-400">Sonuç yok</div>
+            )}
+          </div>
+        ) : loading ? (
           <SkeletonList />
         ) : (
           <div className="px-4 pt-1">
