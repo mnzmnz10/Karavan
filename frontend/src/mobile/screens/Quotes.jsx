@@ -212,11 +212,15 @@ function QuoteEditSheet({ q, open, onClose, onSaved }) {
 }
 
 // Katalog (id → ürün) — kalem editörü için; offline'da önbellekten
+let catalogFetchedAt = 0; // oturum içi: 5 dk'da bir tazele (her detay açılışında ~200KB çekme)
 function useCatalog(open) {
   const [cat, setCat] = useState(() => cache.get("catalog_min") || []);
   useEffect(() => {
     if (!open) return;
+    const cached = cache.get("catalog_min");
+    if (cached?.length && Date.now() - catalogFetchedAt < 5 * 60 * 1000) { setCat(cached); return; }
     productsApi.list({ limit: 2000 }).then((data) => {
+      catalogFetchedAt = Date.now();
       const arr = (Array.isArray(data) ? data : data?.products || []).map((p) => ({
         id: p.id, name: p.name, currency: p.currency || "TRY",
         list_price: Number(p.list_price) || 0, list_price_try: Number(p.list_price_try) || 0,

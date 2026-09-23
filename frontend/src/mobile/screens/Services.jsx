@@ -36,6 +36,15 @@ const waNumber = (phone) => {
   return d;
 };
 
+// Liste satırı için net tutar (Detail ile aynı: kalemler TL − iskonto; kalemsiz eski kayıt → cost)
+const serviceNet = (s) => {
+  const items = s.items || [];
+  const gross = items.length === 0 && s.cost != null
+    ? Number(s.cost) || 0
+    : items.reduce((a, it) => a + (parseFloat(it.unit_price) || 0) * (parseFloat(it.qty) || 1) * (it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || 1) : 1), 0);
+  return gross - Math.min(Math.max(0, parseFloat(s.discount_amount) || 0), gross);
+};
+
 function Row({ s, onOpen, onCycle, busy }) {
   const st = STATUS[s.status] || STATUS.received;
   return (
@@ -66,7 +75,8 @@ function Row({ s, onOpen, onCycle, busy }) {
           <div className="mt-1 flex items-center gap-2 text-[12px] text-slate-400">
             {s.order_no && <span className="font-bold">{s.order_no}</span>}
             <span>{fmtDate(s.arrival_date || s.created_at)}</span>
-            {(() => { const b = dueBadge(s); return b ? <span className="ml-auto shrink-0"><Pill color={b.color}>{b.label}</Pill></span> : null; })()}
+            {(() => { const b = dueBadge(s); return b ? <Pill color={b.color}>{b.label}</Pill> : null; })()}
+            {serviceNet(s) > 0 && <span className="m-tnum ml-auto shrink-0 text-[13px] font-extrabold" style={{ color: "var(--m-primary)" }}>₺{money(serviceNet(s))}</span>}
           </div>
         </div>
       </div>
