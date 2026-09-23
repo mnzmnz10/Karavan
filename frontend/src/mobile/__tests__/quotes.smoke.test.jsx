@@ -183,3 +183,10 @@ test("daha önce aktarılmış teklif: rozet + onay", async () => {
   expect(asked).toBe(1);
   expect(text()).not.toContain("Yeni Servis");
 });
+
+test("liste: servise aktarılan teklifte 'Serviste' rozeti", async () => {
+  localStorage.setItem("mz:services", JSON.stringify([{ id: "s1", notes: "[Teklif: Test Teklif]" }]));
+  await act(async () => { root.render(<Quotes go={() => {}} />); });
+  await flush();
+  expect(text()).toContain("Serviste");
+});

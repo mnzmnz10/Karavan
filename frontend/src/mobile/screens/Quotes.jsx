@@ -30,7 +30,7 @@ function groupByMonth(list) {
   return groups;
 }
 
-function Row({ q, onOpen }) {
+function Row({ q, onOpen, transferred }) {
   const total = Number(q.total_net_price || q.total_discounted_price || q.total_list_price || 0);
   return (
     <Card onClick={() => onOpen(q)} className="p-3.5">
@@ -48,6 +48,7 @@ function Row({ q, onOpen }) {
           <div className="mt-1.5 flex items-center gap-2">
             <span className="m-tnum text-[15px] font-extrabold" style={{ color: "var(--m-primary)" }}>₺{money(total)}</span>
             <Pill color="slate">{(q.products || []).length} kalem</Pill>
+            {transferred && <Pill color="green">Serviste</Pill>}
           </div>
         </div>
       </div>
@@ -636,6 +637,13 @@ export default function Quotes({ go }) {
   };
   useEffect(() => { reload(); }, []);
 
+  // Servise aktarılmış teklif adları (servis notundaki "[Teklif: ad]" izinden)
+  const transferredNames = useMemo(() => {
+    const set = new Set();
+    const svcs = cache.get("services") || cache.get("dashboard")?.services || [];
+    svcs.forEach((x) => { const m = /\[Teklif: ([^\]]*)\]/.exec(x.notes || ""); if (m && m[1]) set.add(m[1]); });
+    return set;
+  }, [items]);
   const filtered = useMemo(() => {
     const s = q.trim().toLocaleLowerCase("tr");
     const base = !s ? items : items.filter((x) =>
@@ -665,7 +673,7 @@ export default function Quotes({ go }) {
                   <span>{g.label}</span>
                   <span className="m-tnum normal-case">{g.items.length} teklif · ₺{money(g.total)}</span>
                 </div>
-                <div className="space-y-2">{g.items.map((x) => <Row key={x.id} q={x} onOpen={setSel} />)}</div>
+                <div className="space-y-2">{g.items.map((x) => <Row key={x.id} q={x} onOpen={setSel} transferred={transferredNames.has(x.name)} />)}</div>
               </div>
             ))}
           </div>
