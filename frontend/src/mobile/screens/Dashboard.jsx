@@ -56,6 +56,7 @@ export default function Dashboard({ go }) {
     const delivered = services.filter((x) => x.status === "delivered").length;
     const today = new Date().toISOString().slice(0, 10);
     const overdue = services.filter((x) => x.status !== "delivered" && x.delivery_date && String(x.delivery_date).slice(0, 10) < today).length;
+    const dueToday = services.filter((x) => x.status !== "delivered" && x.delivery_date && String(x.delivery_date).slice(0, 10) === today).length;
     const quotesMonth = quotes.filter((q) => sameMonth(q.created_at)).length;
     const quotesMonthSum = quotes.filter((q) => sameMonth(q.created_at)).reduce((a, q) => a + Number(q.total_net_price || q.total_discounted_price || 0), 0);
     // Bu ay teslim edilen servisler: net ciro (kalemler − iskonto) ve kâr (net − geliş; Services.jsx ile aynı kural)
@@ -94,7 +95,7 @@ export default function Dashboard({ go }) {
     });
     const recentQ = [...quotes].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || ""))).slice(0, 3);
     const recent = [...services].sort((a, b) => String(b.arrival_date || b.created_at || "").localeCompare(String(a.arrival_date || a.created_at || ""))).slice(0, 4);
-    return { active, delivered, overdue, sTotal: services.length, qTotal: quotes.length, quotesMonth, quotesMonthSum, cTotal: contracts.length, agreed, recent, recentQ, months, svcDone: doneMonth.length, svcNet, svcProfit: svcNet - svcCost, openBal, openCnt };
+    return { active, delivered, overdue, dueToday, sTotal: services.length, qTotal: quotes.length, quotesMonth, quotesMonthSum, cTotal: contracts.length, agreed, recent, recentQ, months, svcDone: doneMonth.length, svcNet, svcProfit: svcNet - svcCost, openBal, openCnt };
   }, [data]);
 
   const hour = new Date().getHours();
@@ -110,7 +111,7 @@ export default function Dashboard({ go }) {
         ) : (
           <div className="px-4 pt-1">
             <div className="grid grid-cols-2 gap-2">
-              <Stat icon={Wrench} tint={{ bg: "#fef0e8", fg: "#e56a1f" }} value={stats.active} label="Aktif servis" sub={stats.overdue > 0 ? `⚠ ${stats.overdue} gecikmiş · ${stats.delivered} teslim` : `${stats.sTotal} kayıt · ${stats.delivered} teslim`} onClick={() => { if (stats.overdue > 0) cache.set("svc_filter", "overdue"); go?.("service"); }} />
+              <Stat icon={Wrench} tint={{ bg: "#fef0e8", fg: "#e56a1f" }} value={stats.active} label="Aktif servis" sub={[stats.overdue > 0 ? `⚠ ${stats.overdue} gecikmiş` : null, stats.dueToday > 0 ? `${stats.dueToday} bugün teslim` : null].filter(Boolean).join(" · ") || `${stats.sTotal} kayıt · ${stats.delivered} teslim`} onClick={() => { if (stats.overdue > 0) cache.set("svc_filter", "overdue"); go?.("service"); }} />
               <Stat icon={FileText} tint={{ bg: "#fff5e6", fg: "#d9820a" }} value={stats.qTotal} label="Teklif" sub={`Bu ay ${stats.quotesMonth}`} onClick={() => go?.("quotes")} />
               <Stat icon={ScrollText} tint={{ bg: "#e8f0fb", fg: "#1e73be" }} value={stats.cTotal} label="Sözleşme" sub={`${stats.agreed} anlaşıldı`} onClick={() => go?.("contracts")} />
               <Stat icon={TrendingUp} tint={{ bg: "#e7f3ee", fg: "#2e8b7a" }} value={`₺${money(stats.quotesMonthSum)}`} label="Bu ay teklif" sub={`${stats.quotesMonth} teklif`} onClick={() => go?.("quotes")} />
