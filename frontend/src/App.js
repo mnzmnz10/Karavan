@@ -2681,9 +2681,14 @@ function App() {
         const base = dp > 0 ? dp : (parseFloat(prod.list_price) || 0); // indirimli yoksa liste (kâr 0)
         cost = Math.round(base * rate);
       } else {
-        // manuel/eşleşmeyen kalem: teklifte girilen geliş (satıştan küçükse gerçek maliyet), yoksa satış
-        const snap = parseFloat(p.discounted_price_try);
-        cost = (snap > 0 && snap < unit) ? Math.round(snap) : Math.round(unit);
+        // manuel/eşleşmeyen kalem: teklifte geliş GİRİLDİYSE (0 dahil) onu kullan, yoksa satış (kâr 0)
+        const dp = p.discounted_price;
+        if (dp !== null && dp !== undefined && dp !== '') {
+          const snap = parseFloat(p.discounted_price_try);
+          cost = isNaN(snap) ? 0 : Math.round(snap); // 0 geçerli maliyet (tam kâr)
+        } else {
+          cost = Math.round(unit);
+        }
       }
       return { name: nm, qty, unit_price: Math.round(unit), unit_cost: cost };
     });
