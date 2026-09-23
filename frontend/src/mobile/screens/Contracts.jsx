@@ -3,7 +3,8 @@ import { ScrollText, User, Share2, Loader2, CheckCircle2, Trash2, Plus, Pencil, 
 import { toast } from "sonner";
 import http, { docUrl, openDoc } from "../api";
 import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, RefreshScroll, OfflineBar } from "../ui";
-import { cache } from "../cache";
+import { cache, customerNames } from "../cache";
+import { formatPhoneTR } from "./ServiceForm";
 
 const contractsApi = {
   list: () => http.get("/contracts").then((r) => r.data),
@@ -416,9 +417,25 @@ function CreateSheet({ open, onClose, onCreated }) {
     <Sheet open={open} onClose={onClose} title="Yeni Sözleşme">
       <div className="space-y-2 rounded-2xl bg-white p-3">
         <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Başlık *" className={field} />
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Müşteri adı" className={field} />
+        <input
+          value={name}
+          onChange={(e) => {
+            const v = e.target.value;
+            setName(v);
+            // Bilinen müşteri seçildiyse (eski servis kaydı) telefonu doldur — boşsa
+            if (!phone) {
+              const svcs = cache.get("services") || cache.get("dashboard")?.services || [];
+              const hit = svcs.find((x) => (x.customer_name || "").trim().toLocaleLowerCase("tr") === v.trim().toLocaleLowerCase("tr") && x.phone);
+              if (hit) setPhone(formatPhoneTR(hit.phone));
+            }
+          }}
+          placeholder="Müşteri adı"
+          list="mz-customers-c"
+          className={field}
+        />
+        <datalist id="mz-customers-c">{customerNames().map((n) => <option key={n} value={n} />)}</datalist>
         <div className="flex gap-2">
-          <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Telefon" inputMode="tel" className={`${field} flex-1`} />
+          <input value={phone} onChange={(e) => setPhone(e.target.value)} onBlur={(e) => setPhone(formatPhoneTR(e.target.value))} placeholder="Telefon" inputMode="tel" className={`${field} flex-1`} />
           <input value={tc} onChange={(e) => setTc(e.target.value)} placeholder="TC" inputMode="numeric" className={`${field} flex-1`} />
         </div>
         <div className="relative">

@@ -469,3 +469,13 @@ test("Teklifler '+': boş sepetle sadece manuel kalemli teklif", async () => {
   expect(p.name).toBe("Sadece Manuel");
   expect(p.products).toEqual([expect.objectContaining({ manual: true, name: "Montaj", price: 3000 })]);
 });
+
+test("yeni sözleşme: bilinen müşteri adı telefonu doldurur", async () => {
+  localStorage.setItem("mz:services", JSON.stringify([{ customer_name: "Mustafa Akçaoluk", phone: "05551112233" }]));
+  await render(<Contracts />);
+  await click(container.querySelector("header button, button")); // başlıktaki +
+  const plus = Array.from(container.querySelectorAll("button")).find((b) => b.querySelector("svg") && b.className.includes("rounded-full") && b.textContent.trim() === "");
+  if (!container.querySelector('input[placeholder="Müşteri adı"]')) await click(plus);
+  await setVal(container.querySelector('input[placeholder="Müşteri adı"]'), "Mustafa Akçaoluk");
+  expect(container.querySelector('input[placeholder="Telefon"]').value).toBe("0555 111 22 33");
+});
