@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { ShoppingCart, Minus, Plus, Trash2, Loader2, Package } from "lucide-react";
+import { ShoppingCart, Minus, Plus, Trash2, Loader2, Package, Eye, EyeOff } from "lucide-react";
 import { quotes as quotesApi } from "./api";
 import { cache } from "./cache";
 import { Sheet, money } from "./ui";
@@ -80,20 +80,43 @@ function CartSheet({ open, onClose }) {
   const cart = useCart();
   const [name, setName] = useState("");
   const [customer, setCustomer] = useState("");
-  const [discount, setDiscount] = useState("");
+  const [discount, setDiscount] = useState(""); // %
+  const [discTL, setDiscTL] = useState("");     // ₺ (yüzde ile senkron)
   const [labor, setLabor] = useState("");
   const [notes, setNotes] = useState("");
+  const [manualItems, setManualItems] = useState([]); // elle girilen kalemler
+  const [showCost, setShowCost] = useState(false);    // göz: manuel kalem geliş fiyatı
   const [busy, setBusy] = useState(false);
   if (!cart) return null;
   const rows = Array.from(cart.items.values());
 
+  const manualTotal = manualItems.reduce((a, m) => a + (parseFloat(m.price) || 0) * (parseFloat(m.qty) || 1), 0);
+  const subtotal = cart.total + manualTotal;
+
+  // İndirim çift yön: % girilince ₺ hesaplanır, ₺ girilince % hesaplanır.
+  const onPct = (v) => {
+    setDiscount(v);
+    const pct = Math.min(100, Math.max(0, parseFloat(v) || 0));
+    setDiscTL(pct > 0 && subtotal > 0 ? String(Math.round(subtotal * pct / 100)) : "");
+  };
+  const onTL = (v) => {
+    setDiscTL(v);
+    const tl = Math.max(0, parseFloat(v) || 0);
+    setDiscount(tl > 0 && subtotal > 0 ? String(Math.min(100, +(tl / subtotal * 100).toFixed(2))) : "");
+  };
+
   const discPct = Math.min(100, Math.max(0, parseFloat(discount) || 0));
   const laborTL = Math.max(0, parseFloat(labor) || 0);
-  const discAmt = cart.total * (discPct / 100);
-  const grand = cart.total - discAmt + laborTL;
+  const discAmt = subtotal * (discPct / 100);
+  const grand = subtotal - discAmt + laborTL;
+
+  const addManual = () => setManualItems((p) => [...p, { key: Math.random().toString(36).slice(2, 9), name: "", price: "", qty: 1, cost: "" }]);
+  const updManual = (key, k, v) => setManualItems((p) => p.map((m) => (m.key === key ? { ...m, [k]: v } : m)));
+  const delManual = (key) => setManualItems((p) => p.filter((m) => m.key !== key));
 
   const create = async () => {
-    if (rows.length === 0) return;
+    const validManual = manualItems.filter((m) => (m.name || "").trim() && parseFloat(m.price) > 0);
+    if (rows.length === 0 && validManual.length === 0) { toast.error("En az bir ürün veya kalem ekleyin"); return; }
     if (!name.trim()) { toast.error("Teklif adı girin"); return; }
     setBusy(true);
     try {
@@ -103,11 +126,21 @@ function CartSheet({ open, onClose }) {
         discount_percentage: discPct,
         labor_cost: laborTL,
         notes: notes.trim() || undefined,
-        products: rows.map((x) => ({ id: x.product.id, quantity: x.qty })),
+        products: [
+          ...rows.map((x) => ({ id: x.product.id, quantity: x.qty })),
+          ...validManual.map((m) => ({
+            manual: true,
+            name: m.name.trim(),
+            price: parseFloat(m.price) || 0,
+            quantity: Math.max(1, parseInt(m.qty) || 1),
+            cost: parseFloat(m.cost) > 0 ? parseFloat(m.cost) : undefined,
+            currency: "TRY",
+          })),
+        ],
       });
       toast.success("Teklif oluşturuldu");
       cart.clear();
-      setName(""); setCustomer(""); setDiscount(""); setLabor(""); setNotes("");
+      setName(""); setCustomer(""); setDiscount(""); setDiscTL(""); setLabor(""); setNotes(""); setManualItems([]);
       onClose();
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Teklif oluşturulamadı");
@@ -124,20 +157,61 @@ function CartSheet({ open, onClose }) {
         <input value={customer} onChange={(e) => setCustomer(e.target.value)} placeholder="Müşteri adı (boşsa teklif adı)" className={field} />
         <div className="flex gap-2">
           <div className="relative flex-1">
-            <input value={discount} onChange={(e) => setDiscount(e.target.value)} inputMode="decimal" placeholder="İskonto" className={`${field} pr-7`} />
+            <input value={discount} onChange={(e) => onPct(e.target.value)} inputMode="decimal" placeholder="İskonto" className={`${field} pr-7`} />
             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[14px] text-slate-400">%</span>
           </div>
           <div className="relative flex-1">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[14px] text-slate-400">₺</span>
-            <input value={labor} onChange={(e) => setLabor(e.target.value)} inputMode="decimal" placeholder="İşçilik" className={`${field} pl-7`} />
+            <input value={discTL} onChange={(e) => onTL(e.target.value)} inputMode="decimal" placeholder="İskonto ₺" className={`${field} pl-7`} />
           </div>
+        </div>
+        <div className="relative">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[14px] text-slate-400">₺</span>
+          <input value={labor} onChange={(e) => setLabor(e.target.value)} inputMode="decimal" placeholder="İşçilik" className={`${field} pl-7`} />
         </div>
         <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Not (opsiyonel)" rows={2} className={`${field} resize-none`} />
       </div>
 
+      {/* Elle kalem */}
+      <div className="mt-3 rounded-2xl bg-white p-2">
+        <div className="flex items-center px-2 pb-1 pt-1">
+          <div className="text-[12px] font-bold uppercase tracking-wide text-slate-400">Elle Kalem</div>
+          <button onClick={() => setShowCost((v) => !v)} title={showCost ? "Geliş fiyatını gizle" : "Geliş fiyatını göster"} className="m-press ml-auto flex h-5 w-5 items-center justify-center" style={{ opacity: showCost ? 0.9 : 0.28 }}>
+            {showCost ? <EyeOff className="h-3.5 w-3.5" style={{ color: "var(--m-primary-2)" }} /> : <Eye className="h-3.5 w-3.5" style={{ color: "var(--m-ink-2)" }} />}
+          </button>
+        </div>
+        {manualItems.map((m) => {
+          const prof = (parseFloat(m.price) || 0) - (parseFloat(m.cost) || 0);
+          return (
+            <div key={m.key} className="border-b border-slate-50 px-2 py-2 last:border-0">
+              <div className="flex items-center gap-2">
+                <input value={m.name} onChange={(e) => updManual(m.key, "name", e.target.value)} placeholder="Kalem adı" className="min-w-0 flex-1 bg-transparent text-[14px] placeholder:text-slate-300" />
+                <button onClick={() => delManual(m.key)} className="m-press shrink-0 text-rose-400"><Trash2 className="h-4 w-4" /></button>
+              </div>
+              <div className="mt-1 flex items-center gap-2">
+                <input type="number" min="0" inputMode="decimal" value={m.price} onChange={(e) => updManual(m.key, "price", e.target.value)} placeholder="Satış ₺" className="min-w-0 flex-1 rounded-lg bg-slate-100 px-2 py-1 text-right text-[13px] m-tnum" />
+                <input type="number" min="1" value={m.qty} onChange={(e) => updManual(m.key, "qty", e.target.value)} placeholder="Adet" className="w-14 rounded-lg bg-slate-100 px-2 py-1 text-center text-[13px] m-tnum" />
+              </div>
+              {showCost && (
+                <div className="mt-1 flex items-center gap-2">
+                  <span className="text-[12px] text-slate-400">Geliş</span>
+                  <input type="number" min="0" inputMode="decimal" value={m.cost} onChange={(e) => updManual(m.key, "cost", e.target.value)} placeholder="maliyet ₺" className="w-28 rounded-lg bg-slate-100 px-2 py-1 text-right text-[13px] m-tnum" />
+                  {parseFloat(m.cost) > 0 && prof !== 0 && (
+                    <span className="m-tnum ml-auto text-[12px] font-semibold" style={{ color: prof >= 0 ? "var(--m-primary-2)" : "#e11d48" }}>kâr ₺{money(prof * (parseFloat(m.qty) || 1))}</span>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+        <button onClick={addManual} className="m-press flex w-full items-center justify-center gap-1.5 px-2 py-2.5 text-[13px] font-semibold" style={{ color: "var(--m-primary-2)" }}>
+          <Plus className="h-4 w-4" /> Elle Kalem Ekle
+        </button>
+      </div>
+
       {(discPct > 0 || laborTL > 0) && (
         <div className="mt-3 divide-y divide-slate-50 rounded-2xl bg-white py-1">
-          <div className="flex items-center justify-between px-4 py-2 text-[13px]"><span style={{ color: "var(--m-ink-2)" }}>Ara toplam</span><span className="m-tnum font-semibold">₺{money(cart.total)}</span></div>
+          <div className="flex items-center justify-between px-4 py-2 text-[13px]"><span style={{ color: "var(--m-ink-2)" }}>Ara toplam</span><span className="m-tnum font-semibold">₺{money(subtotal)}</span></div>
           {discPct > 0 && <div className="flex items-center justify-between px-4 py-2 text-[13px]"><span style={{ color: "var(--m-ink-2)" }}>İskonto (%{money(discPct)})</span><span className="m-tnum font-semibold" style={{ color: "#e11d48" }}>−₺{money(discAmt)}</span></div>}
           {laborTL > 0 && <div className="flex items-center justify-between px-4 py-2 text-[13px]"><span style={{ color: "var(--m-ink-2)" }}>İşçilik</span><span className="m-tnum font-semibold">+₺{money(laborTL)}</span></div>}
         </div>

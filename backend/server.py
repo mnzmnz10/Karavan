@@ -2578,6 +2578,14 @@ def _process_manual_quote_item(mi: dict, exchange_rates: dict):
         currency = "TRY"
     rate = float(exchange_rates.get(currency, 1)) if currency != 'TRY' else 1.0
     price_try = price * rate
+    # Geliş (maliyet) — opsiyonel. Yoksa satışa eşit (kâr 0). Kendi para biriminde girilir.
+    cost_val = mi.get("cost")
+    try:
+        cost = float(cost_val) if cost_val not in (None, "") else None
+    except (ValueError, TypeError):
+        cost = None
+    has_cost = cost is not None and cost > 0
+    cost_try = (cost * rate) if has_cost else price_try
     entry = {
         "id": mi.get("id") or f"manual-{uuid.uuid4()}",
         "name": name[:500],
@@ -2585,14 +2593,14 @@ def _process_manual_quote_item(mi: dict, exchange_rates: dict):
         "company_name": "Elle Girilen",
         "list_price": price,
         "list_price_try": price_try,
-        "discounted_price": None,
-        "discounted_price_try": price_try,
+        "discounted_price": cost if has_cost else None,
+        "discounted_price_try": cost_try,
         "currency": currency,
         "quantity": quantity,
         "custom_price": None,
         "manual": True,
     }
-    return entry, price_try * quantity
+    return entry, price_try * quantity, cost_try * quantity
 
 
 @api_router.post("/quotes", response_model=QuoteResponse)
@@ -2675,11 +2683,11 @@ async def create_quote(quote: QuoteCreate):
             res = _process_manual_quote_item(mi, exchange_rates)
             if not res:
                 continue
-            entry, line_total = res
+            entry, line_total, cost_line = res
             processed_products.append(entry)
             total_list_price += line_total
             total_discounted_price += line_total
-            total_cost_price += line_total  # manuel kalemde geliş bilinmez -> kâr 0 varsay
+            total_cost_price += cost_line  # geliş girilmişse gerçek maliyet, yoksa satış (kâr 0)
 
         # Apply quote discount
         quote_discount_amount = total_discounted_price * (quote.discount_percentage / 100)
@@ -2824,10 +2832,11 @@ async def update_quote(quote_id: str, quote_update: Dict[str, Any]):
             processed_products = []
             total_list_price = 0
             total_discounted_price = 0
-            
+            total_cost_price = 0  # kâr analizi (geliş toplamı)
+
             # Fetch current exchange rates
             exchange_rates = await currency_service.get_exchange_rates()
-            
+
             for product_data in products_data:
                 product_id = product_data["id"]
                 quantity = product_data.get("quantity", 1)
@@ -2843,19 +2852,23 @@ async def update_quote(quote_id: str, quote_update: Dict[str, Any]):
                     currency = product.get("currency", "TRY")
                     rate = float(exchange_rates.get(currency, 1)) if currency != 'TRY' else 1.0
                     
+                    # Maliyet HER ZAMAN geliş (discounted, yoksa liste) — özel satış fiyatı maliyeti değiştirmez
+                    base_list = float(product.get("list_price", 0))
+                    base_cost = float(product.get("discounted_price")) if product.get("discounted_price") else base_list
+                    cost_try = base_cost * rate
                     if custom_price is not None:
                         custom_price = float(custom_price)
                         list_price_try = custom_price * rate
                         discounted_price_try = custom_price * rate
                     else:
-                        list_price = float(product.get("list_price", 0))
-                        list_price_try = list_price * rate
-                        discounted_price = float(product.get("discounted_price", 0)) if product.get("discounted_price") else list_price
+                        list_price_try = base_list * rate
+                        discounted_price = base_cost
                         discounted_price_try = discounted_price * rate
-                    
+
                     # Calculate totals with quantity - SADECE LİSTE FİYATI KULLAN
                     total_list_price += list_price_try * quantity
                     total_discounted_price += list_price_try * quantity  # PDF için liste fiyatı kullan
+                    total_cost_price += cost_try * quantity
                     
                     processed_products.append({
                         "id": product["id"],
@@ -2878,15 +2891,17 @@ async def update_quote(quote_id: str, quote_update: Dict[str, Any]):
                 res = _process_manual_quote_item(mi, exchange_rates)
                 if not res:
                     continue
-                entry, line_total = res
+                entry, line_total, cost_line = res
                 processed_products.append(entry)
                 total_list_price += line_total
                 total_discounted_price += line_total
+                total_cost_price += cost_line
 
             # Güncellenen ürün listesini ve toplamları ekle
             update_data["products"] = processed_products
             update_data["total_list_price"] = total_list_price
             update_data["total_discounted_price"] = total_discounted_price
+            update_data["total_cost_price"] = total_cost_price
             
             # Net toplamı yeniden hesapla (indirim ve işçilikle birlikte)
             discount_percentage = quote_update.get("discount_percentage", existing_quote.get("discount_percentage", 0))
