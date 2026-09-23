@@ -172,6 +172,7 @@ export function SkeletonList({ rows = 6 }) {
 // Native: lib/native.js backButton → window.__mzBack().
 const sheetStack = [];
 let sheetSeq = 0;
+let pendingBack = null; // { id, t } — kapanan sheet'in ertelenmiş history.back()'i
 if (typeof window !== "undefined") {
   window.__mzBack = () => {
     const top = sheetStack[sheetStack.length - 1];
@@ -199,12 +200,24 @@ export function useBackClose(open, onClose) {
     if (!open) return;
     const entry = { id: ++sheetSeq, close: closeRef, popped: false };
     sheetStack.push(entry);
-    try { window.history.pushState({ mzSheet: entry.id }, ""); } catch {}
+    try {
+      // Aynı anda biri kapanıp bu açılıyorsa (Detay → Düzenle): kapananın bekleyen geri adımını iptal et,
+      // geçmiş kaydını devral. Safari geri adımını sonradan yapılan pushState'e uygular → yeni sheet anında kapanırdı.
+      if (pendingBack && window.history.state && window.history.state.mzSheet === pendingBack.id) {
+        clearTimeout(pendingBack.t);
+        pendingBack = null;
+        window.history.replaceState({ mzSheet: entry.id }, "");
+      } else {
+        window.history.pushState({ mzSheet: entry.id }, "");
+      }
+    } catch {}
     return () => {
       const i = sheetStack.lastIndexOf(entry);
       if (i >= 0) sheetStack.splice(i, 1);
       if (!entry.popped && window.history.state && window.history.state.mzSheet === entry.id) {
-        try { window.history.back(); } catch {}
+        // Geri adımını bir tik ertele: aynı commit'te açılan sheet varsa devralır (yukarıda)
+        const t = setTimeout(() => { if (pendingBack && pendingBack.t === t) pendingBack = null; try { window.history.back(); } catch {} }, 0);
+        pendingBack = { id: entry.id, t };
       }
     };
   }, [open]);
