@@ -192,7 +192,6 @@ function productShareText(p) {
   L.push(`Fiyat: ₺${money(priceTRY(p).list)}`);
   const spec = String(p.specs || p.description || "").trim();
   if (spec) L.push("", spec.length > 600 ? spec.slice(0, 600) + "…" : spec);
-  L.push("", "Çorlu Karavan");
   return L.join("\n");
 }
 
