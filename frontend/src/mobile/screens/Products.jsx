@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Package, Boxes, Plus, Minus, User, LogOut, Loader2, Eye, EyeOff, Star, MessageCircle } from "lucide-react";
 import { toast } from "../toast";
 import { products as productsApi, categories as categoriesApi } from "../api";
+import { imgOf, imgFallback } from "../img";
 import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, RefreshScroll, Lightbox, OfflineBar } from "../ui";
 import { cache } from "../cache";
 import { useCart } from "../Cart";
@@ -96,7 +97,7 @@ const FAV = "__fav"; // sanal kategori: favori ürünler
 
 function CategoryCards({ cats, sel, onSel }) {
   if (!cats.length) return null;
-  const Tile = ({ id, label, icon: Icon }) => {
+  const Tile = ({ id, label, icon: Icon, img }) => {
     const on = sel === id;
     return (
       <button
@@ -104,12 +105,18 @@ function CategoryCards({ cats, sel, onSel }) {
         className={`m-press flex min-w-[86px] shrink-0 flex-col items-center gap-1.5 rounded-2xl px-3 py-2.5 ${on ? "" : "bg-white"}`}
         style={on ? { background: "var(--m-grad)", color: "#fff" } : { color: "var(--m-ink-2)" }}
       >
-        <div
-          className="flex h-9 w-9 items-center justify-center rounded-xl"
-          style={{ background: on ? "rgba(255,255,255,.22)" : "rgba(120,130,145,.15)" }}
-        >
-          <Icon className="h-5 w-5" style={{ color: on ? "#fff" : "var(--m-primary)" }} />
-        </div>
+        {img ? (
+          <img src={img.src} alt="" loading="lazy" decoding="async" onError={img.onError}
+            className="m-img h-11 w-11 rounded-xl bg-white object-contain p-0.5"
+            style={on ? { boxShadow: "0 0 0 2px rgba(255,255,255,.85)" } : undefined} />
+        ) : (
+          <div
+            className="flex h-11 w-11 items-center justify-center rounded-xl"
+            style={{ background: on ? "rgba(255,255,255,.22)" : "rgba(120,130,145,.15)" }}
+          >
+            <Icon className="h-5 w-5" style={{ color: on ? "#fff" : "var(--m-primary)" }} />
+          </div>
+        )}
         <span className="max-w-[76px] truncate text-[12px] font-semibold">{label}</span>
       </button>
     );
@@ -118,7 +125,7 @@ function CategoryCards({ cats, sel, onSel }) {
     <div className="flex gap-2 overflow-x-auto px-4 pb-2 pt-1" style={{ scrollbarWidth: "none" }}>
       <Tile id="" label="Tümü" icon={Boxes} />
       <Tile id={FAV} label="Favoriler" icon={Star} />
-      {cats.map((c) => <Tile key={c.id} id={c.id} label={c.name} icon={Package} />)}
+      {cats.map((c) => <Tile key={c.id} id={c.id} label={c.name} icon={Package} img={imgOf(c) ? { src: imgOf(c), onError: imgFallback(c) } : null} />)}
     </div>
   );
 }
@@ -137,7 +144,7 @@ function Row({ p, onOpen, onAdd, onDec, qty, showDisc }) {
     <Card onClick={() => onOpen(p)} className="p-3">
       <div className="flex items-center gap-3">
         {p.image_url ? (
-          <img src={p.image_url} alt="" loading="lazy" decoding="async" className="m-img h-14 w-14 shrink-0 rounded-xl object-cover" onError={(e) => (e.target.style.visibility = "hidden")} />
+          <img src={imgOf(p)} alt="" loading="lazy" decoding="async" className="m-img h-14 w-14 shrink-0 rounded-xl object-cover" onError={imgFallback(p)} />
         ) : (
           <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-slate-100">
             <Package className="h-6 w-6 text-slate-300" />
@@ -205,10 +212,10 @@ function Detail({ p, onClose, onAdd, showDisc, onFav, inCart = 0 }) {
     <Sheet open={!!p} onClose={onClose} title="Ürün" full>
       {p.image_url && (
         <div className="m-press mb-3 flex items-center justify-center overflow-hidden rounded-2xl bg-white p-2" onClick={() => setLb(true)}>
-          <img src={p.image_url} alt="" className="max-h-56 w-auto object-contain" />
+          <img src={imgOf(p)} alt="" className="max-h-56 w-auto object-contain" onError={imgFallback(p)} />
         </div>
       )}
-      <Lightbox src={lb ? p.image_url : null} onClose={() => setLb(false)} />
+      <Lightbox src={lb ? imgOf(p) : null} onClose={() => setLb(false)} />
       <div className="rounded-2xl bg-white p-4">
         <div className="flex items-start gap-2">
           <div className="flex-1 text-[19px] font-bold leading-snug">{p.name}</div>

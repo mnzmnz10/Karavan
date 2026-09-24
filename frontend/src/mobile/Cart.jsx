@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from "
 import { toast } from "./toast";
 import { ShoppingCart, Minus, Plus, Trash2, Loader2, Package, Eye, EyeOff, X } from "lucide-react";
 import { quotes as quotesApi } from "./api";
+import { imgOf, imgFallback } from "./img";
 import { cache, customerNames } from "./cache";
 import { Sheet, money } from "./ui";
 
@@ -272,7 +273,7 @@ function CartSheet({ open, onClose }) {
           return (
             <div key={p.id} className="flex items-center gap-3 rounded-2xl bg-white p-3">
               {p.image_url ? (
-                <img src={p.image_url} alt="" loading="lazy" decoding="async" className="m-img h-12 w-12 shrink-0 rounded-xl object-cover" />
+                <img src={imgOf(p)} alt="" loading="lazy" decoding="async" className="m-img h-12 w-12 shrink-0 rounded-xl object-cover" onError={imgFallback(p)} />
               ) : (
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-slate-100"><Package className="h-5 w-5 text-slate-300" /></div>
               )}

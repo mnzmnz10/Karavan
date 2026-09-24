@@ -203,6 +203,7 @@ async def lifespan(app: FastAPI):
     await create_indexes()
     await create_supplies_category()
     await create_default_admin()
+    asyncio.create_task(_image_archiver_loop())
     logger.info("Application startup completed")
     yield
     
@@ -316,7 +317,7 @@ def _set_session_cookie(response, token: str, hours: int = SESSION_WINDOW_HOURS)
 @app.middleware("http")
 async def api_auth_middleware(request: Request, call_next):
     path = request.url.path
-    if path.startswith("/api") and request.method != "OPTIONS" and path.rstrip("/") not in PUBLIC_API_PATHS:
+    if path.startswith("/api") and request.method != "OPTIONS" and path.rstrip("/") not in PUBLIC_API_PATHS and not path.startswith(IMG_PUBLIC_PREFIX):
         token = request.cookies.get("session_token")
         username = await auth_service.validate_session(token) if token else None
         if not username:
@@ -326,6 +327,8 @@ async def api_auth_middleware(request: Request, call_next):
             )
         request.state.username = username
         response = await call_next(request)
+        if request.method in ("POST", "PUT", "PATCH") and response.status_code < 400 and path.startswith(("/api/products", "/api/categories")):
+            _image_archiver_kick()
         # Sliding renewal: her istekte cookie'yi yeniden set et ki tarayıcının
         # ~400 günlük cookie ömrü sıfırlansın; oturum DB'de zaten uzun (login penceresi).
         try:
@@ -335,6 +338,155 @@ async def api_auth_middleware(request: Request, call_next):
             pass
         return response
     return await call_next(request)
+
+# ==================== GÖRSEL ARŞİVİ ====================
+# Ürün/kategori görselleri harici linkle girilir; link ölünce görsel kaybolmasın diye sunucuya
+# kopyalanır (image_cache koleksiyonu, küçültülmüş webp). image_url (orijinal link) DEĞİŞMEZ —
+# içe aktarma eşleştirmesi (termosa url anahtarı) ona dayanıyor. Kopya yolu image_cached'ta;
+# image_cached_src != image_url ise kopya bayattır, arayüz linke düşer, döngü yeniden kopyalar.
+IMG_PUBLIC_PREFIX = "/api/img/"
+IMG_MAX_BYTES = 15 * 1024 * 1024
+_img_kick_event = None
+
+
+def _img_host_is_public(url: str) -> bool:
+    """SSRF koruması: yalnız http(s) ve herkese açık IP'ye çözülen hostlar."""
+    import ipaddress, socket
+    from urllib.parse import urlparse
+    u = urlparse(url)
+    if u.scheme not in ("http", "https") or not u.hostname:
+        return False
+    try:
+        infos = socket.getaddrinfo(u.hostname, u.port or (443 if u.scheme == "https" else 80))
+    except OSError:
+        return False
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+            return False
+    return True
+
+
+def _fetch_image_bytes(url: str):
+    """Linkten görseli indir (yönlendirmeler tek tek denetlenir), 1000px'e küçült, webp'ye çevir."""
+    from urllib.parse import urljoin
+    from PIL import ImageOps as _ImageOps
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36", "Accept": "image/*,*/*;q=0.8"}
+    cur = url
+    for _ in range(4):
+        if not _img_host_is_public(cur):
+            raise ValueError("izin verilmeyen adres")
+        try:
+            r = requests.get(cur, headers=headers, timeout=15, stream=True, allow_redirects=False)
+        except requests.exceptions.SSLError:
+            # Tedarikçi sitelerinde bozuk sertifika yaygın; içerik yalnız görsel olarak çözülüyor (PIL)
+            r = requests.get(cur, headers=headers, timeout=15, stream=True, allow_redirects=False, verify=False)
+        if r.is_redirect and r.headers.get("location"):
+            cur = urljoin(cur, r.headers["location"])
+            r.close()
+            continue
+        break
+    else:
+        raise ValueError("çok fazla yönlendirme")
+    r.raise_for_status()
+    data = r.raw.read(IMG_MAX_BYTES + 1, decode_content=True)
+    r.close()
+    if len(data) > IMG_MAX_BYTES:
+        raise ValueError("görsel çok büyük")
+    img = PILImage.open(io.BytesIO(data))
+    img.load()
+    img = _ImageOps.exif_transpose(img)
+    img.thumbnail((1000, 1000))
+    alpha = img.mode in ("RGBA", "LA", "P")
+    img = img.convert("RGBA" if alpha else "RGB")
+    out = io.BytesIO()
+    try:
+        img.save(out, "WEBP", quality=82, method=4)
+        return out.getvalue(), "image/webp"
+    except Exception:
+        out = io.BytesIO()
+        if alpha:
+            img.save(out, "PNG", optimize=True)
+            return out.getvalue(), "image/png"
+        img.save(out, "JPEG", quality=85, optimize=True)
+        return out.getvalue(), "image/jpeg"
+
+
+async def _archive_image(url: str) -> str:
+    """Linki arşivle (aynı link daha önce alındıysa tekrar indirmez); /api/img/{id} döner."""
+    existing = await db.image_cache.find_one({"src_url": url}, {"id": 1})
+    if existing:
+        return IMG_PUBLIC_PREFIX + existing["id"]
+    data, ctype = await asyncio.to_thread(_fetch_image_bytes, url)
+    img_id = uuid.uuid4().hex
+    await db.image_cache.insert_one({
+        "id": img_id, "src_url": url, "content_type": ctype, "size": len(data),
+        "data_b64": base64.b64encode(data).decode("ascii"),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return IMG_PUBLIC_PREFIX + img_id
+
+
+async def _archive_pending_images() -> dict:
+    """Kopyası olmayan/bayat ürün ve kategori görsellerini arşivle. Başarısız link bir kez işaretlenir
+    (image_cache_err_src); link değişince yeniden denenir."""
+    done = failed = 0
+    q = {"image_url": {"$regex": "^https?://"},
+         "$expr": {"$and": [{"$ne": ["$image_cached_src", "$image_url"]}, {"$ne": ["$image_cache_err_src", "$image_url"]}]}}
+    for coll in (db.products, db.categories):
+        docs = await coll.find(q, {"_id": 0, "id": 1, "image_url": 1}).to_list(length=None)
+        for d in docs:
+            url = d["image_url"]
+            try:
+                path = await _archive_image(url)
+                await coll.update_one({"id": d["id"], "image_url": url}, {"$set": {"image_cached": path, "image_cached_src": url}})
+                done += 1
+            except Exception as e:
+                failed += 1
+                logger.warning(f"Görsel arşivlenemedi ({coll.name} {d['id']}): {url[:120]} — {e}")
+                await coll.update_one({"id": d["id"], "image_url": url}, {"$set": {"image_cache_err_src": url}})
+    if done or failed:
+        logger.info(f"Görsel arşivi: {done} kopyalandı, {failed} başarısız")
+    return {"archived": done, "failed": failed}
+
+
+def _image_archiver_kick():
+    if _img_kick_event is not None:
+        _img_kick_event.set()
+
+
+async def _image_archiver_loop():
+    """Açılışta ve her 10 dk'da (ürün/kategori yazımında hemen) bekleyen görselleri arşivler."""
+    global _img_kick_event
+    _img_kick_event = asyncio.Event()
+    await asyncio.sleep(5)
+    while True:
+        _img_kick_event.clear()
+        try:
+            await _archive_pending_images()
+        except Exception as e:
+            logger.warning(f"Görsel arşiv döngüsü hatası: {e}")
+        try:
+            await asyncio.wait_for(_img_kick_event.wait(), timeout=600)
+            await asyncio.sleep(2)  # aynı anda gelen yazımları topla
+        except asyncio.TimeoutError:
+            pass
+
+
+@app.get(IMG_PUBLIC_PREFIX + "{img_id}")
+async def get_archived_image(img_id: str):
+    from fastapi import Response
+    rec = await db.image_cache.find_one({"id": img_id}, {"_id": 0, "data_b64": 1, "content_type": 1})
+    if not rec:
+        raise HTTPException(404, "Görsel bulunamadı")
+    return Response(content=base64.b64decode(rec["data_b64"]), media_type=rec.get("content_type", "image/webp"),
+                    headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
+@app.post("/api/images/archive-pending")
+async def archive_pending_images_now():
+    """Elle tetikleme: bekleyen tüm görselleri şimdi arşivle (sonucu döner)."""
+    return await _archive_pending_images()
 
 # Cache invalidation utility
 def invalidate_cache(pattern: str = None):
@@ -369,6 +521,8 @@ class Product(BaseModel):
     description: Optional[str] = None
     specs: Optional[str] = None  # Teknik özellikler (ölçü/ağırlık/kapasite) — açıklamadan ayrı
     image_url: Optional[str] = None
+    image_cached: Optional[str] = None      # sunucu kopyası (/api/img/{id}) — link ölse de görünür
+    image_cached_src: Optional[str] = None  # kopyanın alındığı image_url (değişince kopya geçersiz)
     list_price: Decimal
     discounted_price: Optional[Decimal] = None
     currency: str
@@ -397,6 +551,8 @@ class Category(BaseModel):
     description: Optional[str] = None
     color: Optional[str] = None
     image_url: Optional[str] = None  # Kategori küçük resmi
+    image_cached: Optional[str] = None
+    image_cached_src: Optional[str] = None
     sort_order: int = 0  # Kategori sıralama numarası
     is_deletable: bool = True
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

@@ -24,6 +24,8 @@ import { CSS } from '@dnd-kit/utilities';
 // undefined olursa "undefined/api" üretip 405'e yol açıyordu.
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 const API = `${BACKEND_URL}/api`;
+// Görsel: sunucu kopyası (link ölse de görünür) güncelse onu, değilse orijinal linki kullan
+const imgOf = (x) => (x && x.image_cached && x.image_cached_src === x.image_url ? `${BACKEND_URL}${x.image_cached}` : x?.image_url);
 
 // Sözleşme kalem satırı — dnd-kit ile sürükle-bırak (telefon uygulaması gibi animasyonlu yeniden sıralama).
 // children render-prop'una drag dinleyicileri verilir (sadece tutamaca bağlanır, input'lar serbest kalır).
@@ -5952,7 +5954,7 @@ function App() {
                             </svg>
                             {category.image_url ? (
                               <img 
-                                src={category.image_url} 
+                                src={imgOf(category)} 
                                 alt={category.name}
                                 className="w-5 h-5 rounded-md object-cover border border-slate-100 flex-shrink-0"
                               />
@@ -9132,7 +9134,7 @@ function App() {
                               
                               {category.image_url ? (
                                 <img 
-                                  src={category.image_url} 
+                                  src={imgOf(category)} 
                                   alt={category.name}
                                   className="w-full h-full rounded-xl object-cover border border-slate-200/80 group-hover:border-emerald-400 group-hover:shadow-sm transition-all pointer-events-none"
                                 />
@@ -9241,7 +9243,7 @@ function App() {
                             <div className="flex items-center gap-3">
                               {category && category.image_url ? (
                                 <img 
-                                  src={category.image_url} 
+                                  src={imgOf(category)} 
                                   alt={categoryName}
                                   className="w-7 h-7 rounded-lg object-cover border border-slate-100 shadow-sm flex-shrink-0 pointer-events-none"
                                 />
@@ -9429,7 +9431,7 @@ function App() {
                                             <div className="flex items-start gap-3 relative z-0 ml-2">
                                               {product.image_url && (
                                                 <img
-                                                  src={product.image_url}
+                                                  src={imgOf(product)}
                                                   alt={product.name}
                                                   className="w-12 h-12 object-cover rounded border cursor-zoom-in hover:opacity-75 transition-opacity relative z-0 flex-shrink-0"
                                                   onError={(e) => {e.target.style.display = 'none'}}
@@ -9873,7 +9875,7 @@ function App() {
                                   <TableCell className="p-3.5 text-center select-none border-r border-slate-200/40">
                                     {product.image_url ? (
                                       <img 
-                                        src={product.image_url} 
+                                        src={imgOf(product)} 
                                         alt="" 
                                         onClick={() => openProductDetails(product)}
                                         className="w-14 h-14 object-cover rounded-xl border border-slate-100 shadow-xxs cursor-pointer hover:scale-105 hover:opacity-90 transition-all duration-200" 
@@ -10120,7 +10122,7 @@ function App() {
                                       >
                                         <div className="flex items-center gap-2">
                                           {p.image_url ? (
-                                            <img src={p.image_url} alt="" className="w-8 h-8 min-w-[32px] min-h-[32px] max-w-[32px] max-h-[32px] object-cover rounded" />
+                                            <img src={imgOf(p)} alt="" className="w-8 h-8 min-w-[32px] min-h-[32px] max-w-[32px] max-h-[32px] object-cover rounded" />
                                           ) : (
                                             <div className="w-8 h-8 min-w-[32px] min-h-[32px] bg-slate-100 rounded flex items-center justify-center text-slate-300">
                                               <Package className="w-4 h-4" />
@@ -11405,7 +11407,7 @@ function App() {
                                        className="p-2.5 hover:bg-emerald-50 cursor-pointer flex items-center justify-between text-xs border-b border-slate-50">
                                     <div className="flex items-center gap-2 min-w-0">
                                       {p.image_url ? (
-                                        <img src={p.image_url} alt="" className="w-8 h-8 object-cover rounded shrink-0" />
+                                        <img src={imgOf(p)} alt="" className="w-8 h-8 object-cover rounded shrink-0" />
                                       ) : (
                                         <div className="w-8 h-8 bg-slate-100 rounded flex items-center justify-center text-slate-300 shrink-0"><Package className="w-4 h-4" /></div>
                                       )}
@@ -12489,7 +12491,7 @@ function App() {
                             title={prod.name}
                           >
                             <img 
-                              src={prod.image_url} 
+                              src={imgOf(prod)} 
                               alt={prod.name} 
                               className="w-full h-full object-cover pointer-events-none"
                             />
@@ -12752,7 +12754,7 @@ function App() {
                     <div className="relative aspect-square bg-slate-50 border border-slate-150 rounded-2xl overflow-hidden flex items-center justify-center group shadow-xxs">
                       {product.image_url ? (
                         <img 
-                          src={product.image_url} 
+                          src={imgOf(product)} 
                           alt={product.name}
                           onClick={() => window.open(product.image_url, '_blank')}
                           className="max-w-full max-h-full object-contain cursor-zoom-in group-hover:scale-[1.02] transition-transform duration-200"
@@ -13125,7 +13127,7 @@ function App() {
                           />
                           {product.image_url && (
                             <img
-                              src={product.image_url}
+                              src={imgOf(product)}
                               alt={product.name}
                               className="w-16 h-16 object-cover rounded border"
                               onError={(e) => {e.target.style.display = 'none'}}
