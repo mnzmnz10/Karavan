@@ -144,3 +144,7 @@
 
 /* iOS HIG kontrast: açık temada ikincil gri yazı ≥4.5:1 (slate-500); koyu tema kuralı üstte daha özgül */
 #mobile-root .text-slate-400 { color: #64748b; }
+
+/* Servis listesi araç görseli kutusu: açık zemin; koyu temada hafif aydınlık yüzey (beyaz araçlar okunur kalsın) */
+#mobile-root .m-vehicle { background: #f1f5f9; }
+#mobile-root.theme-dark .m-vehicle { background: #2a2d33; }
