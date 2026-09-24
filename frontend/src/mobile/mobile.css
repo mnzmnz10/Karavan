@@ -49,8 +49,8 @@
 .m-largetitle { font-size: 30px; line-height: 1.1; font-weight: 800; letter-spacing: -0.02em; }
 
 /* Kart basış efekti */
-.m-press { transition: transform .12s ease, opacity .12s ease; }
-.m-press:active { transform: scale(0.975); opacity: .85; }
+.m-press { transition: transform .12s ease-out; }
+.m-press:active { transform: scale(0.96); }
 
 /* Slide-in (detay ekranı) */
 @keyframes m-slide-in { from { transform: translateX(100%); } to { transform: translateX(0); } }
@@ -78,7 +78,7 @@
 
 /* Segmented control */
 .m-seg { background: #e9e9ee; border-radius: 10px; padding: 2px; }
-.m-seg-item { border-radius: 8px; transition: all .18s ease; }
+.m-seg-item { border-radius: 8px; transition: background-color .18s ease, color .18s ease, box-shadow .18s ease; }
 .m-seg-item[data-on="true"] { background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
 
 /* Girişte odak halkasını yumuşat */
@@ -148,3 +148,16 @@
 /* Servis listesi araç görseli kutusu: açık zemin; koyu temada hafif aydınlık yüzey (beyaz araçlar okunur kalsın) */
 #mobile-root .m-vehicle { background: #f1f5f9; }
 #mobile-root.theme-dark .m-vehicle { background: #2a2d33; }
+
+/* Panel kapanışı: açılıştan daha yumuşak, kısa (ease-out) */
+@keyframes m-sheet-out { from { transform: translateY(0); opacity: 1; } to { transform: translateY(24px); opacity: 0; } }
+@keyframes m-fade-out { from { opacity: 1; } to { opacity: 0; } }
+.m-sheet-exit { animation: m-sheet-out .2s ease-out both; }
+.m-backdrop-exit { animation: m-fade-out .2s ease-out both; }
+
+/* Fotoğraf kenarı: saf siyah/beyaz %10 iç çizgi (renkli nötr değil — zemin rengini almasın) */
+#mobile-root .m-img { outline: 1px solid rgba(0, 0, 0, .1); outline-offset: -1px; }
+#mobile-root.theme-dark .m-img { outline-color: rgba(255, 255, 255, .1); }
+
+/* Başlıklarda dengeli satır kırma */
+#mobile-root .m-largetitle, #mobile-root .m-balance { text-wrap: balance; }

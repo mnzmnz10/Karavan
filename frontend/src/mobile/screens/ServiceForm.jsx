@@ -296,7 +296,7 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
             <button onClick={() => set("is_trailer", !f.is_trailer)}
               className="relative h-7 w-12 rounded-full transition-colors"
               style={{ background: f.is_trailer ? "var(--m-primary-2)" : "#d1d5db" }}>
-              <span className="absolute top-0.5 h-6 w-6 rounded-full bg-white transition-all" style={{ left: f.is_trailer ? 22 : 2 }} />
+              <span className="absolute top-0.5 h-6 w-6 rounded-full bg-white transition-[left] duration-200 ease-out" style={{ left: f.is_trailer ? 22 : 2 }} />
             </button>
           </div>
         </Field>
@@ -428,7 +428,7 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
           <div className="grid grid-cols-3 gap-2">
             {f.photos.map((src, i) => (
               <div key={i} className="relative aspect-square overflow-hidden rounded-xl bg-slate-100">
-                <img src={src} alt="" className="h-full w-full object-cover" />
+                <img src={src} alt="" className="m-img h-full w-full object-cover" />
                 <button onClick={() => set("photos", f.photos.filter((_, j) => j !== i))}
                   className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/55 text-white">
                   <X className="h-3.5 w-3.5" />

@@ -137,7 +137,7 @@ function Row({ p, onOpen, onAdd, onDec, qty, showDisc }) {
     <Card onClick={() => onOpen(p)} className="p-3">
       <div className="flex items-center gap-3">
         {p.image_url ? (
-          <img src={p.image_url} alt="" loading="lazy" decoding="async" className="h-14 w-14 shrink-0 rounded-xl object-cover" onError={(e) => (e.target.style.visibility = "hidden")} />
+          <img src={p.image_url} alt="" loading="lazy" decoding="async" className="m-img h-14 w-14 shrink-0 rounded-xl object-cover" onError={(e) => (e.target.style.visibility = "hidden")} />
         ) : (
           <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-slate-100">
             <Package className="h-6 w-6 text-slate-300" />

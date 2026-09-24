@@ -64,7 +64,7 @@ export function Card({ children, onClick, className = "" }) {
   return (
     <div
       onClick={onClick}
-      className={`m-press rounded-2xl bg-white ${onClick ? "cursor-pointer" : ""} ${className}`}
+      className={`rounded-2xl bg-white ${onClick ? "m-press cursor-pointer" : ""} ${className}`}
       style={{ boxShadow: "0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.05)" }}
     >
       {children}
@@ -233,11 +233,12 @@ export function Sheet({ open, onClose, title, children, full = false }) {
     return () => clearTimeout(t);
   }, [open]);
   if (!mounted && !open) return null;
+  const closing = !open; // kapanış: 200ms hafif aşağı kayma + solma, sonra unmount
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center">
-      <div className="m-backdrop-enter absolute inset-0 bg-black/40" onClick={onClose} />
+    <div className={`fixed inset-0 z-50 flex items-end justify-center ${closing ? "pointer-events-none" : ""}`}>
+      <div className={`${closing ? "m-backdrop-exit" : "m-backdrop-enter"} absolute inset-0 bg-black/40`} onClick={onClose} />
       <div
-        className={`m-sheet-enter relative w-full max-w-[560px] rounded-t-3xl bg-[var(--m-bg)] ${full ? "h-[92dvh]" : "max-h-[88dvh]"} flex flex-col`}
+        className={`${closing ? "m-sheet-exit" : "m-sheet-enter"} relative w-full max-w-[560px] rounded-t-3xl bg-[var(--m-bg)] ${full ? "h-[92dvh]" : "max-h-[88dvh]"} flex flex-col`}
       >
         <div className="flex items-center justify-center pt-2.5">
           <div className="h-1.5 w-10 rounded-full bg-slate-300" />

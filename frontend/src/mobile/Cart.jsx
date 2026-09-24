@@ -272,7 +272,7 @@ function CartSheet({ open, onClose }) {
           return (
             <div key={p.id} className="flex items-center gap-3 rounded-2xl bg-white p-3">
               {p.image_url ? (
-                <img src={p.image_url} alt="" loading="lazy" decoding="async" className="h-12 w-12 shrink-0 rounded-xl object-cover" />
+                <img src={p.image_url} alt="" loading="lazy" decoding="async" className="m-img h-12 w-12 shrink-0 rounded-xl object-cover" />
               ) : (
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-slate-100"><Package className="h-5 w-5 text-slate-300" /></div>
               )}
@@ -296,7 +296,7 @@ function CartSheet({ open, onClose }) {
                 <button onClick={() => cart.setQty(p.id, x.qty - 1)} className="m-press flex h-7 w-7 items-center justify-center rounded-full bg-slate-100"><Minus className="h-4 w-4" /></button>
                 <span className="m-tnum w-5 text-center text-[15px] font-bold">{x.qty}</span>
                 <button onClick={() => cart.setQty(p.id, x.qty + 1)} className="m-press flex h-7 w-7 items-center justify-center rounded-full bg-slate-100"><Plus className="h-4 w-4" /></button>
-                <button onClick={() => cart.remove(p.id)} aria-label="Sepetten çıkar" className="m-press ml-1 flex h-7 w-7 items-center justify-center text-rose-400"><X className="h-4 w-4" /></button>
+                <button onClick={() => cart.remove(p.id)} aria-label="Sepetten çıkar" className="m-press ml-3 flex h-7 w-7 items-center justify-center text-rose-400"><X className="h-4 w-4" /></button>
               </div>
             </div>
           );

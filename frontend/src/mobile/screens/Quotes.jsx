@@ -468,7 +468,7 @@ function QuoteItemsSheet({ q, open, onClose, onSaved, showCost }) {
         <div className="mt-1 text-[11px] text-slate-400">Katalog ürünleri güncel kur ve fiyatla hesaplanır.</div>
       </div>
       <div className="sticky bottom-0 mt-2 pb-2 pt-2">
-        <button onClick={save} disabled={busy} className="m-press flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-[15px] font-bold text-white disabled:opacity-60" style={{ background: "var(--m-primary)" }}>
+        <button onClick={save} disabled={busy} className="m-press m-tnum flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-[15px] font-bold text-white disabled:opacity-60" style={{ background: "var(--m-primary)" }}>
           {busy && <Loader2 className="h-5 w-5 animate-spin" />} Kaydet · ₺{money(net)}
         </button>
       </div>
