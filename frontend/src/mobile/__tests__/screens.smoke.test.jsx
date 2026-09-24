@@ -774,3 +774,12 @@ test("ürünler: döviz girişli ürün TL yanında €/$ fiyatı da gösterir (
   await click(document.body.querySelector('button[aria-label="Göster/Gizle"]'));
   expect(text()).toContain("$603");
 });
+
+test("özet başlığı: MSZ logosu, isimsiz selam, € ve $ kuru", async () => {
+  await render(<Dashboard go={() => {}} />);
+  expect(document.body.querySelector('img[alt="MSZ Karavan"]')).toBeTruthy();
+  expect(text()).toMatch(/Günaydın|İyi günler|İyi akşamlar|İyi geceler/);
+  expect(text()).not.toContain(", t");
+  expect(text()).toContain("€ 55,90");
+  expect(text()).toContain("$ 48,84");
+});

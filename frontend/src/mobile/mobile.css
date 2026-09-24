@@ -211,3 +211,8 @@
 .m-stagger > *:nth-child(6) { animation-delay: 200ms; } .m-stagger > *:nth-child(7) { animation-delay: 240ms; }
 .m-stagger > *:nth-child(8) { animation-delay: 280ms; } .m-stagger > *:nth-child(9) { animation-delay: 320ms; }
 .m-stagger > *:nth-child(10) { animation-delay: 360ms; } .m-stagger > *:nth-child(n+11) { animation: none; }
+
+/* Özet logosu: açık/koyu tema varyantı */
+.m-logo-dark { display: none; }
+#mobile-root.theme-dark .m-logo-dark { display: block; }
+#mobile-root.theme-dark .m-logo-light { display: none; }

@@ -26,6 +26,7 @@ jest.mock("../api", () => {
   return {
     __esModule: true,
     __calls: calls,
+    rates: { get: () => Promise.resolve({ TRY: 1, EUR: 55.6, USD: 48.85 }) },
     quotes: {
       list: () => Promise.resolve(global.__QUOTES || [global.__QUOTE]),
       update: (id, p) => { calls.update.push(p); return Promise.resolve({ ...global.__QUOTE, ...p }); },

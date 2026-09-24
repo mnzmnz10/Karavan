@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { AccountButton } from "../Account";
 import { Wrench, FileText, ScrollText, Clock, CheckCircle2, TrendingUp, Eye, EyeOff, AlertCircle, Truck } from "lucide-react";
-import http, { services as servicesApi, quotes as quotesApi } from "../api";
-import { Header, SearchBar, Card, SkeletonList, RefreshScroll, OfflineBar, money, ago, todayISO, fmtDate, IconBadge, useCountUp } from "../ui";
+import http, { services as servicesApi, quotes as quotesApi, rates as ratesApi } from "../api";
+import { SearchBar, Card, SkeletonList, RefreshScroll, OfflineBar, money, ago, todayISO, fmtDate, IconBadge, useCountUp } from "../ui";
 import { useSession } from "../session";
 import { cache } from "../cache";
 import { serviceNet, collectedTRY, isLaborItem } from "./Services";
@@ -29,6 +29,57 @@ function Stat({ icon, tone, value, label, sub, onClick, i = 0 }) {
 function HeroAmount({ value }) {
   const v = useCountUp(value);
   return <div className="m-tnum mt-1.5 text-[30px] font-extrabold leading-tight tracking-tight">₺{money(Math.round(v))}</div>;
+}
+
+const ASSET_V = 1; // logo değişince artır (Cloudflare önbelleği)
+const fxFmt = (n) => (Number(n) || 0).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// Güncel kur: önbellekten anında, arka planda tazelenir
+function useRates() {
+  const [r, setR] = useState(() => cache.get("rates") || null);
+  useEffect(() => {
+    ratesApi.get().then((x) => { if (x && x.EUR) { setR(x); cache.set("rates", x); } }).catch(() => {});
+  }, []);
+  return r;
+}
+
+// Özet başlığı: MSZ logosu + güncellenme etiketi + hesap; altında selam, tarih ve € / $ kuru
+function BrandHeader({ greet, at, offline, onRefresh }) {
+  const fx = useRates();
+  const today = new Date().toLocaleDateString("tr-TR", { day: "numeric", month: "long", weekday: "long" });
+  const base = process.env.PUBLIC_URL || "";
+  return (
+    <div className="m-frost m-safe-top sticky top-0 z-20 border-b border-black/5">
+      <div className="flex items-center gap-2 px-4 pt-1" style={{ height: 52 }}>
+        <img src={`${base}/brand/msz-logo.webp?v=${ASSET_V}`} alt="MSZ Karavan" className="m-logo-light h-10 w-auto" />
+        <img src={`${base}/brand/msz-logo-dark.webp?v=${ASSET_V}`} alt="MSZ Karavan" className="m-logo-dark h-10 w-auto" />
+        <div className="ml-auto flex items-center gap-2">
+          {at && (
+            <button onClick={onRefresh} aria-label="Yenile" className="m-press flex h-7 items-center gap-1.5 rounded-full bg-slate-200/70 px-2.5 text-[12px] font-semibold" style={{ color: "var(--m-ink-2)" }}>
+              <span className="h-2 w-2 rounded-full" style={{ background: offline ? "#d9820a" : "#2e8b7a" }} />
+              {offline ? "Çevrimdışı" : ago(at)}
+            </button>
+          )}
+          <AccountButton />
+        </div>
+      </div>
+      <div className="px-4 pb-2.5 pt-1">
+        <h1 className="m-largetitle">{greet}</h1>
+        <div className="mt-1 flex items-center justify-between gap-2">
+          <span className="truncate text-[13px] capitalize" style={{ color: "var(--m-ink-2)" }}>{today}</span>
+          {fx?.EUR && (
+            <div className="flex shrink-0 items-center gap-1.5" aria-label="Döviz kurları">
+              {[["€", fx.EUR], ["$", fx.USD]].filter(([, v]) => v).map(([sym, v]) => (
+                <span key={sym} className="m-tnum rounded-lg px-2 py-0.5 text-[12px] font-bold" style={{ background: "rgba(30,115,190,.1)", color: "#1e73be" }}>
+                  {sym} {fxFmt(v)}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function Dashboard({ go }) {
@@ -138,7 +189,7 @@ export default function Dashboard({ go }) {
 
   return (
     <div className="flex h-full flex-col">
-      <Header title="Özet" right={<AccountButton />} subtitle={`${greet}${s?.username ? ", " + s.username : ""}${data?.at ? " · güncellendi " + ago(data.at) : ""}`} />
+      <BrandHeader greet={greet} at={data?.at} offline={offline} onRefresh={load} />
       <SearchBar value={gq} onChange={setGq} placeholder="Her yerde ara: müşteri, plaka, teklif…" />
       <OfflineBar show={offline} cacheKey="dashboard" />
       <RefreshScroll onRefresh={load} className="flex-1 pb-[calc(var(--m-tabbar-h)+env(safe-area-inset-bottom)+8px)]">
