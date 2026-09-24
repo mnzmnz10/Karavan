@@ -4,6 +4,9 @@
 import React from "react";
 import { Wrench } from "lucide-react";
 
+// Görsel değişince artır: Cloudflare/Safari önbelleğini (max-age 4 sa) atlatır
+const ASSET_V = 2;
+
 export const VEHICLE_KINDS = {
   psa: "PSA (Boxer/Jumper)",
   mercedes: "Mercedes Sprinter",
@@ -39,7 +42,7 @@ export function VehicleIcon({ s }) {
   return (
     <div className="m-vehicle flex h-11 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl" title={k ? VEHICLE_KINDS[k] : undefined}>
       {k ? (
-        <img src={`${process.env.PUBLIC_URL || ""}/vehicles/${k}.webp`} alt={VEHICLE_KINDS[k]} loading="lazy" decoding="async" className="max-h-[36px] w-[52px] object-contain" />
+        <img src={`${process.env.PUBLIC_URL || ""}/vehicles/${k}.webp?v=${ASSET_V}`} alt={VEHICLE_KINDS[k]} loading="lazy" decoding="async" className="max-h-[36px] w-[52px] object-contain" />
       ) : (
         <Wrench className="h-5 w-5" style={{ color: "#e56a1f" }} />
       )}
