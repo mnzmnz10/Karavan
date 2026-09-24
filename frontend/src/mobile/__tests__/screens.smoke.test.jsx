@@ -64,9 +64,9 @@ global.IS_REACT_ACT_ENVIRONMENT = true;
 global.IntersectionObserver = class { observe() {} unobserve() {} disconnect() {} };
 let container, root;
 const flush = () => act(() => new Promise((r) => setTimeout(r, 0)));
-const text = () => container.textContent.replace(/\s+/g, " ");
+const text = () => document.body.textContent.replace(/\s+/g, " ");
 const click = async (el) => { await act(async () => { el.dispatchEvent(new MouseEvent("click", { bubbles: true })); }); await flush(); };
-const btnWith = (t) => Array.from(container.querySelectorAll("button")).find((b) => b.textContent.includes(t));
+const btnWith = (t) => Array.from(document.body.querySelectorAll("button")).find((b) => b.textContent.includes(t));
 const money = (n) => Number(n).toLocaleString("tr-TR", { maximumFractionDigits: 0 });
 const render = async (el) => { await act(async () => { root.render(el); }); await flush(); };
 const setVal = async (input, v) => {
@@ -87,11 +87,11 @@ afterEach(() => { act(() => root.unmount()); container.remove(); });
 test("servis listesi net tutarı, detay iskonto + göz arkasında kâr", async () => {
   await render(<Services />);
   expect(text()).toContain(`₺${money(70000)}`); // satırda net
-  const row = Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
+  const row = Array.from(document.body.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
   await click(row);
   expect(text()).toContain("İskonto");
   expect(text()).not.toContain("BRÜT KAZANÇ");
-  const eyes = container.querySelectorAll('button[aria-label="Göster/Gizle"]');
+  const eyes = document.body.querySelectorAll('button[aria-label="Göster/Gizle"]');
   eyes.forEach((b) => expect(b.textContent.trim()).toBe(""));
   await click(eyes[eyes.length - 1]);
   const cost = 30000 + 18000 + 0;
@@ -102,14 +102,14 @@ test("servis formu: iskonto görünür, % → ₺, net + kâr göz arkasında, k
   await render(<ServiceForm open initial={global.__SERVICE} onClose={() => {}} onSaved={() => {}} prodCost={{}} />);
   expect(text()).toContain(`Net toplam₺${money(70000)}`);
   expect(text()).not.toContain("Brüt kazanç");
-  expect(container.querySelector('input[placeholder="birim"]')).toBeNull(); // geliş girişi gizli
-  await click(container.querySelector('button[aria-label="Göster/Gizle"]'));
+  expect(document.body.querySelector('input[placeholder="birim"]')).toBeNull(); // geliş girişi gizli
+  await click(document.body.querySelector('button[aria-label="Göster/Gizle"]'));
   expect(text()).toContain(`Brüt kazanç₺${money(70000 - 48000)}`);
   expect(text()).toContain("İşçilik (tamamı kâr)");
-  expect(container.querySelectorAll('input[placeholder="birim"]').length).toBe(3);
+  expect(document.body.querySelectorAll('input[placeholder="birim"]').length).toBe(3);
 
   // % alanına 10 yaz + blur → ₺ = 7.773,2
-  const pct = container.querySelector('input[placeholder="%"]');
+  const pct = document.body.querySelector('input[placeholder="%"]');
   await setVal(pct, "10");
   await act(async () => { pct.dispatchEvent(new FocusEvent("focusout", { bubbles: true })); });
   await flush();
@@ -127,7 +127,7 @@ test("teklif aktarımı: taslak yüklenmez, taslak yazılmaz", async () => {
   localStorage.setItem("mz:service_draft", JSON.stringify({ customer_name: "ESKİ TASLAK" }));
   const init = { fromQuote: true, customer_name: "Tekliften", items: [{ name: "X", qty: 1, unit_price: 100, unit_cost: 0, currency: "TRY" }], discount_amount: 10 };
   await render(<ServiceForm open initial={init} onClose={() => {}} onSaved={() => {}} prodCost={{}} />);
-  expect(container.querySelector("input").value).toBe("Tekliften");
+  expect(document.body.querySelector("input").value).toBe("Tekliften");
   expect(text()).toContain(`Net toplam₺${money(90)}`);
   expect(localStorage.getItem("mz:service_draft")).toContain("ESKİ TASLAK");
 });
@@ -142,7 +142,7 @@ test("ürünler: liste fiyatı görünür, göz indirimliyi açar, yazısız", a
   expect(text()).toContain("Solar Panel 450W");
   expect(text()).toContain(money(10000));
   expect(text()).not.toContain(money(7000));
-  const eye = container.querySelector('button[aria-label="Göster/Gizle"]');
+  const eye = document.body.querySelector('button[aria-label="Göster/Gizle"]');
   expect(eye.textContent.trim()).toBe("");
   await click(eye);
   expect(text()).toContain(money(7000));
@@ -160,11 +160,11 @@ test("sepet: hedef net sunucu tabanıyla uzlaştırılır (eski kurlu sepet)", a
     </SessionCtx.Provider>
   );
   await act(() => new Promise((r) => setTimeout(r, 600)));
-  await click(container.querySelector('button[title="Teklife ekle"]'));
+  await click(document.body.querySelector('button[title="Teklife ekle"]'));
   await click(btnWith("Teklif Oluştur"));
-  await setVal(container.querySelector('input[placeholder="Teklif adı *"]'), "Sepet Test");
-  await setVal(container.querySelector('input[placeholder^="Net toplamı ayarla"]'), "9000");
-  const createBtn = Array.from(container.querySelectorAll("button")).filter((b) => b.textContent.includes("Teklif Oluştur")).at(-1);
+  await setVal(document.body.querySelector('input[placeholder="Teklif adı *"]'), "Sepet Test");
+  await setVal(document.body.querySelector('input[placeholder^="Net toplamı ayarla"]'), "9000");
+  const createBtn = Array.from(document.body.querySelectorAll("button")).filter((b) => b.textContent.includes("Teklif Oluştur")).at(-1);
   await click(createBtn);
   const api = require("../api");
   expect(api.__calls.qCreate.length).toBe(1);
@@ -185,32 +185,32 @@ test("ürünler: favoriler kartı + detayda yıldız toggle", async () => {
   expect(text()).not.toContain("Solar Panel 450W");
   await click(btnWith("Tümü"));
   await act(() => new Promise((r) => setTimeout(r, 600)));
-  const row = Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Solar Panel 450W");
+  const row = Array.from(document.body.querySelectorAll("div")).find((d) => d.textContent.trim() === "Solar Panel 450W");
   await click(row);
-  await click(container.querySelector('button[aria-label="Favori"]'));
+  await click(document.body.querySelector('button[aria-label="Favori"]'));
   const api = require("../api");
   expect(api.__calls.fav).toEqual(["p1"]);
-  expect(container.querySelector('button[aria-label="Favori"] svg').getAttribute("style")).toContain("fill");
+  expect(document.body.querySelector('button[aria-label="Favori"] svg').getAttribute("style")).toContain("fill");
 });
 
 test("yeni servis: eski kayıttan müşteri önerisi → telefon/plaka dolar", async () => {
   localStorage.setItem("mz:services", JSON.stringify([{ customer_name: "Mustafa Akçaoluk", phone: "05551112233", plate: "59 AB 123", vehicle_brand: "Fiat", arrival_date: "2026-09-01" }]));
   await render(<ServiceForm open initial={null} onClose={() => {}} onSaved={() => {}} prodCost={{}} />);
-  const nameInput = container.querySelector('input[placeholder="Zorunlu"]');
+  const nameInput = document.body.querySelector('input[placeholder="Zorunlu"]');
   await setVal(nameInput, "must");
   const sug = btnWith("Mustafa Akçaoluk");
   expect(sug).toBeTruthy();
   await click(sug);
   expect(nameInput.value).toBe("Mustafa Akçaoluk");
-  expect(container.querySelector('input[inputmode="tel"]').value).toBe("05551112233");
+  expect(document.body.querySelector('input[inputmode="tel"]').value).toBe("05551112233");
   expect(btnWith("59 AB 123")).toBeFalsy(); // öneri kapandı
 });
 
 test("servis formu: katalogdan ekle → satış liste, geliş indirimli", async () => {
   await render(<ServiceForm open initial={{ id: "s9", customer_name: "X", items: [] }} onClose={() => {}} onSaved={() => {}} prodCost={{}} />);
-  await setVal(container.querySelector('input[placeholder="Katalogdan ürün ekle"]'), "sola");
+  await setVal(document.body.querySelector('input[placeholder="Katalogdan ürün ekle"]'), "sola");
   await click(btnWith("Solar Panel 450W"));
-  const names = Array.from(container.querySelectorAll('input[placeholder="Parça/işlem"]')).map((i) => i.value);
+  const names = Array.from(document.body.querySelectorAll('input[placeholder="Parça/işlem"]')).map((i) => i.value);
   expect(names).toEqual(["Solar Panel 450W"]);
   const api = require("../api");
   await click(btnWith("Kaydet"));
@@ -222,29 +222,29 @@ test("servis tahsilat: kalan hesap, USD tahsilat ekle (kur), sil", async () => {
   global.__SERVICE.collections = [{ id: "c1", date: "2026-09-23", description: "EFT", amount: 30000, currency: "TRY", rate: null }];
   global.confirm = () => true;
   await render(<Services />);
-  const row = Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
+  const row = Array.from(document.body.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
   await click(row);
   expect(text()).toContain(`Tahsil edilen₺${money(30000)}`);
   expect(text()).toContain(`Kalan₺${money(40000)}`);
   await click(btnWith("Tahsilat Ekle"));
-  await setVal(container.querySelector('input[placeholder="Tutar"]'), "500");
-  const sel = container.querySelector("select");
+  await setVal(document.body.querySelector('input[placeholder="Tutar"]'), "500");
+  const sel = document.body.querySelector("select");
   await act(async () => { sel.value = "USD"; sel.dispatchEvent(new Event("change", { bubbles: true })); });
-  expect(container.querySelector('input[placeholder="kur"]').value).toBe("48.84");
-  const saves = Array.from(container.querySelectorAll("button")).filter((b) => b.textContent.trim() === "Kaydet");
+  expect(document.body.querySelector('input[placeholder="kur"]').value).toBe("48.84");
+  const saves = Array.from(document.body.querySelectorAll("button")).filter((b) => b.textContent.trim() === "Kaydet");
   await click(saves.at(-1));
   const api = require("../api");
   const p = api.__calls.svcUpdate.at(-1);
   expect(p.collections.length).toBe(2);
   expect(p.collections[1]).toMatchObject({ amount: 500, currency: "USD", rate: 48.84 });
   expect(text()).toContain(`Kalan₺${money(40000 - 500 * 48.84)}`);
-  await click(container.querySelector('button[aria-label="Tahsilatı sil"]'));
+  await click(document.body.querySelector('button[aria-label="Tahsilatı sil"]'));
   expect(api.__calls.svcUpdate.at(-1).collections.map((c) => c.id)).not.toContain("c1");
 });
 
 test("servis formu: garanti/ödeme hesabı payload", async () => {
   await render(<ServiceForm open initial={{ ...global.__SERVICE, warranty_months: 6 }} onClose={() => {}} onSaved={() => {}} prodCost={{}} />);
-  const w = container.querySelector('input[placeholder="Kapsam…"]');
+  const w = document.body.querySelector('input[placeholder="Kapsam…"]');
   await setVal(w, "Akü 2 yıl");
   const api = require("../api");
   await click(btnWith("Kaydet"));
@@ -271,7 +271,7 @@ test("servis Ödenmemiş filtresi", async () => {
 
 test("durum Teslim'e geçince teslim tarihi bugün", async () => {
   await render(<Services />);
-  const pill = Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim() === "İşlemde");
+  const pill = Array.from(document.body.querySelectorAll("button")).find((b) => b.textContent.trim() === "İşlemde");
   await click(pill);
   const api = require("../api");
   const p = api.__calls.svcUpdate.at(-1);
@@ -286,14 +286,14 @@ test("sepet: liste fiyatı (alış gizli) + özel fiyat custom_price olarak gide
     </SessionCtx.Provider>
   );
   await act(() => new Promise((r) => setTimeout(r, 600)));
-  const addBtns = container.querySelectorAll('button[title="Teklife ekle"]');
+  const addBtns = document.body.querySelectorAll('button[title="Teklife ekle"]');
   await click(addBtns[addBtns.length - 1]); // Solar Panel 450W (liste 10.000, alış 7.000)
   expect(btnWith("Teklif Oluştur").textContent).toContain(money(10000));
   await click(btnWith("Teklif Oluştur"));
   expect(text()).not.toContain(money(7000));
-  await setVal(container.querySelector('input[aria-label="Birim fiyat"]'), "9500");
-  await setVal(container.querySelector('input[placeholder="Teklif adı *"]'), "Özel Fiyat");
-  const createBtn = Array.from(container.querySelectorAll("button")).filter((b) => b.textContent.includes("Teklif Oluştur")).at(-1);
+  await setVal(document.body.querySelector('input[aria-label="Birim fiyat"]'), "9500");
+  await setVal(document.body.querySelector('input[placeholder="Teklif adı *"]'), "Özel Fiyat");
+  const createBtn = Array.from(document.body.querySelectorAll("button")).filter((b) => b.textContent.includes("Teklif Oluştur")).at(-1);
   expect(createBtn.textContent).toContain(money(9500));
   await click(createBtn);
   const api = require("../api");
@@ -309,7 +309,7 @@ test("ürün detayı: göz açıkken son tekliflerdeki fiyat", async () => {
     </SessionCtx.Provider>
   );
   await act(() => new Promise((r) => setTimeout(r, 600)));
-  const row = Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Solar Panel 450W");
+  const row = Array.from(document.body.querySelectorAll("div")).find((d) => d.textContent.trim() === "Solar Panel 450W");
   await click(row);
   expect(text()).toContain("Son tekliflerde (1)");
   expect(text()).toContain("Ahmet Karavan");
@@ -321,8 +321,8 @@ test("sepet formu taslağı kalıcı", async () => {
   localStorage.setItem("mz:cart", JSON.stringify([{ product: global.__PRODUCTS[1], qty: 1 }]));
   await render(<CartProvider><CartBar /></CartProvider>);
   await click(btnWith("Teklif Oluştur"));
-  expect(container.querySelector('input[placeholder="Teklif adı *"]').value).toBe("Yarım Teklif");
-  await setVal(container.querySelector('input[placeholder="Müşteri adı (boşsa teklif adı)"]'), "Veli");
+  expect(document.body.querySelector('input[placeholder="Teklif adı *"]').value).toBe("Yarım Teklif");
+  await setVal(document.body.querySelector('input[placeholder="Müşteri adı (boşsa teklif adı)"]'), "Veli");
   expect(JSON.parse(localStorage.getItem("mz:cart_form")).customer).toBe("Veli");
 });
 
@@ -341,9 +341,9 @@ test("servis hesap özeti WhatsApp: toplam/ödenen/kalan, maliyet yok", async ()
   global.__SERVICE.phone = "05551112233";
   global.__SERVICE.collections = [{ id: "c1", amount: 30000, currency: "TRY" }];
   await render(<Services />);
-  const row = Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
+  const row = Array.from(document.body.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
   await click(row);
-  const a = Array.from(container.querySelectorAll("a")).find((x) => x.textContent.includes("Hesap özeti"));
+  const a = Array.from(document.body.querySelectorAll("a")).find((x) => x.textContent.includes("Hesap özeti"));
   const msg = decodeURIComponent(a.getAttribute("href").split("text=")[1]);
   expect(a.getAttribute("href")).toContain("wa.me/905551112233");
   expect(msg).toContain(`Toplam: ₺${money(70000)}`);
@@ -360,9 +360,9 @@ test("ürün WhatsApp paylaşımı: liste fiyatı var, alış yok", async () => 
     </SessionCtx.Provider>
   );
   await act(() => new Promise((r) => setTimeout(r, 600)));
-  const row = Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Solar Panel 450W");
+  const row = Array.from(document.body.querySelectorAll("div")).find((d) => d.textContent.trim() === "Solar Panel 450W");
   await click(row);
-  const a = container.querySelector('a[aria-label="WhatsApp ile paylaş"]');
+  const a = document.body.querySelector('a[aria-label="WhatsApp ile paylaş"]');
   const msg = decodeURIComponent(a.getAttribute("href").split("text=")[1]);
   expect(msg).toContain("Solar Panel 450W");
   expect(msg).toContain(`Fiyat: ₺${money(10000)}`);
@@ -373,21 +373,21 @@ test("aynı müşteriyle yeni servis: müşteri/araç dolu, kalem boş", async (
   global.__SERVICE.phone = "05551112233";
   global.__SERVICE.plate = "59 AB 1";
   await render(<Services />);
-  const row = Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
+  const row = Array.from(document.body.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
   await click(row);
   await click(btnWith("Aynı müşteriyle yeni kayıt"));
   await act(() => new Promise((r) => setTimeout(r, 250)));
   expect(text()).toContain("Yeni Servis");
-  expect(container.querySelector('input[placeholder="Zorunlu"]').value).toBe("Test Müşteri");
-  expect(container.querySelector('input[inputmode="tel"]').value).toBe("05551112233");
-  expect(container.querySelectorAll('input[placeholder="Parça/işlem"]').length).toBe(0);
+  expect(document.body.querySelector('input[placeholder="Zorunlu"]').value).toBe("Test Müşteri");
+  expect(document.body.querySelector('input[inputmode="tel"]').value).toBe("05551112233");
+  expect(document.body.querySelectorAll('input[placeholder="Parça/işlem"]').length).toBe(0);
 });
 
 test("servisten kaynak teklife git", async () => {
   global.__SERVICE.notes = "not\n\n[Teklif: Kırklareli AFAD]";
   let went = null;
   await render(<Services go={(t) => { went = t; }} />);
-  const row = Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
+  const row = Array.from(document.body.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
   await click(row);
   await click(btnWith("Kaynak teklifi aç"));
   expect(went).toBe("quotes");
@@ -405,12 +405,12 @@ test("servis detay: foto sil (onaylı)", async () => {
   global.__SERVICE.photos = ["data:image/jpeg;base64,AAA", "data:image/jpeg;base64,BBB"];
   global.confirm = () => true;
   await render(<Services />);
-  const row = Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
+  const row = Array.from(document.body.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
   await click(row);
-  await click(container.querySelectorAll('button[aria-label="Fotoğrafı sil"]')[0]);
+  await click(document.body.querySelectorAll('button[aria-label="Fotoğrafı sil"]')[0]);
   const api = require("../api");
   expect(api.__calls.svcUpdate.at(-1)).toEqual({ photos: ["data:image/jpeg;base64,BBB"] });
-  expect(container.querySelectorAll('button[aria-label="Fotoğrafı sil"]').length).toBe(1);
+  expect(document.body.querySelectorAll('button[aria-label="Fotoğrafı sil"]').length).toBe(1);
 });
 
 test("dashboard: son 6 ay ciro grafiği", async () => {
@@ -424,14 +424,14 @@ test("dashboard: son 6 ay ciro grafiği", async () => {
 
 test("servis detay: adetli kalemde birim fiyat", async () => {
   await render(<Services />);
-  const row = Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
+  const row = Array.from(document.body.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
   await click(row);
   expect(text()).toContain(`2 × ₺${money(13866)}`);
 });
 
 test("servis detay: Teslim et → status + teslim tarihi", async () => {
   await render(<Services />);
-  const row = Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
+  const row = Array.from(document.body.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
   await click(row);
   await click(btnWith("Teslim et"));
   const api = require("../api");
@@ -458,12 +458,12 @@ test("servis formu: foto alanı olmayan kayıt düzenlenince photos gönderilmez
 test("Teklifler '+': boş sepetle sadece manuel kalemli teklif", async () => {
   const Quotes = require("../screens/Quotes").default;
   await render(<CartProvider><Quotes go={() => {}} /></CartProvider>);
-  await click(container.querySelector('button[aria-label="Yeni teklif"]'));
+  await click(document.body.querySelector('button[aria-label="Yeni teklif"]'));
   await click(btnWith("Elle Kalem Ekle"));
-  await setVal(container.querySelector('input[placeholder="Kalem adı"]'), "Montaj");
-  await setVal(container.querySelector('input[placeholder="Satış ₺"]'), "3000");
-  await setVal(container.querySelector('input[placeholder="Teklif adı *"]'), "Sadece Manuel");
-  await click(Array.from(container.querySelectorAll("button")).filter((b) => b.textContent.includes("Teklif Oluştur")).at(-1));
+  await setVal(document.body.querySelector('input[placeholder="Kalem adı"]'), "Montaj");
+  await setVal(document.body.querySelector('input[placeholder="Satış ₺"]'), "3000");
+  await setVal(document.body.querySelector('input[placeholder="Teklif adı *"]'), "Sadece Manuel");
+  await click(Array.from(document.body.querySelectorAll("button")).filter((b) => b.textContent.includes("Teklif Oluştur")).at(-1));
   const api = require("../api");
   const p = api.__calls.qCreate.at(-1);
   expect(p.name).toBe("Sadece Manuel");
@@ -473,18 +473,18 @@ test("Teklifler '+': boş sepetle sadece manuel kalemli teklif", async () => {
 test("yeni sözleşme: bilinen müşteri adı telefonu doldurur", async () => {
   localStorage.setItem("mz:services", JSON.stringify([{ customer_name: "Mustafa Akçaoluk", phone: "05551112233" }]));
   await render(<Contracts />);
-  await click(container.querySelector("header button, button")); // başlıktaki +
-  const plus = Array.from(container.querySelectorAll("button")).find((b) => b.querySelector("svg") && b.className.includes("rounded-full") && b.textContent.trim() === "");
-  if (!container.querySelector('input[placeholder="Müşteri adı"]')) await click(plus);
-  await setVal(container.querySelector('input[placeholder="Müşteri adı"]'), "Mustafa Akçaoluk");
-  expect(container.querySelector('input[placeholder="Telefon"]').value).toBe("0555 111 22 33");
+  await click(document.body.querySelector("header button, button")); // başlıktaki +
+  const plus = Array.from(document.body.querySelectorAll("button")).find((b) => b.querySelector("svg") && b.className.includes("rounded-full") && b.textContent.trim() === "");
+  if (!document.body.querySelector('input[placeholder="Müşteri adı"]')) await click(plus);
+  await setVal(document.body.querySelector('input[placeholder="Müşteri adı"]'), "Mustafa Akçaoluk");
+  expect(document.body.querySelector('input[placeholder="Telefon"]').value).toBe("0555 111 22 33");
 });
 
 test("servis Bugün filtresi", async () => {
   const d = new Date(); const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   global.__SERVICE.delivery_date = require("../ui").todayISO();
   await render(<Services />);
-  const chip = Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim().startsWith("Bugün"));
+  const chip = Array.from(document.body.querySelectorAll("button")).find((b) => b.textContent.trim().startsWith("Bugün"));
   expect(chip).toBeTruthy();
   await click(chip);
   expect(text()).toContain("Test Müşteri");
@@ -501,14 +501,14 @@ test("sepet: satırdan ürün çıkar", async () => {
   localStorage.setItem("mz:cart", JSON.stringify([{ product: global.__PRODUCTS[1], qty: 3 }]));
   await render(<CartProvider><CartBar /></CartProvider>);
   await click(btnWith("Teklif Oluştur"));
-  await click(container.querySelector('button[aria-label="Sepetten çıkar"]'));
+  await click(document.body.querySelector('button[aria-label="Sepetten çıkar"]'));
   expect(JSON.parse(localStorage.getItem("mz:cart"))).toEqual([]);
 });
 
 test("servis formu: + İşçilik geliş 0 ile eklenir", async () => {
   await render(<ServiceForm open initial={{ id: "s9", customer_name: "X", items: [] }} onClose={() => {}} onSaved={() => {}} prodCost={{}} />);
-  await click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim() === "İşçilik"));
-  const priceInput = container.querySelector('input[placeholder="Satış"]');
+  await click(Array.from(document.body.querySelectorAll("button")).find((b) => b.textContent.trim() === "İşçilik"));
+  const priceInput = document.body.querySelector('input[placeholder="Satış"]');
   await setVal(priceInput, "2500");
   await click(btnWith("Kaydet"));
   const api = require("../api");
@@ -519,10 +519,10 @@ test("servis düzenle: kaydedilmemiş değişiklikte kapatma onayı", async () =
   let closed = 0, asked = 0;
   global.confirm = () => { asked++; return false; };
   await render(<ServiceForm open initial={global.__SERVICE} onClose={() => { closed++; }} onSaved={() => {}} prodCost={{}} />);
-  const xBtn = () => Array.from(container.querySelectorAll("button")).find((b) => b.className.includes("ml-auto flex h-8 w-8"));
+  const xBtn = () => Array.from(document.body.querySelectorAll("button")).find((b) => b.className.includes("ml-auto flex h-8 w-8"));
   await click(xBtn()); // değişiklik yok → direkt kapanır
   expect(closed).toBe(1); expect(asked).toBe(0);
-  await setVal(container.querySelector('input[placeholder="Zorunlu"]'), "Başka Ad");
+  await setVal(document.body.querySelector('input[placeholder="Zorunlu"]'), "Başka Ad");
   await click(xBtn());
   expect(asked).toBe(1); expect(closed).toBe(1); // reddedildi → açık kaldı
 });
@@ -530,22 +530,22 @@ test("servis düzenle: kaydedilmemiş değişiklikte kapatma onayı", async () =
 test("Android geri: en üstteki sheet kapanır, sheet yoksa false", async () => {
   expect(window.__mzBack()).toBe(false);
   await render(<Services />);
-  const row = Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
+  const row = Array.from(document.body.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
   await click(row);
   expect(text()).toContain("Servis Kaydı");
   await click(btnWith("Tahsilat Ekle"));
-  expect(container.querySelector('input[placeholder="Tutar"]')).toBeTruthy(); // tahsilat sheet açık (üstte)
+  expect(document.body.querySelector('input[placeholder="Tutar"]')).toBeTruthy(); // tahsilat sheet açık (üstte)
   let handled;
   await act(async () => { handled = window.__mzBack(); });
   await act(() => new Promise((r) => setTimeout(r, 250)));
   expect(handled).toBe(true);
-  expect(container.querySelector('input[placeholder="Tutar"]')).toBeNull(); // üstteki kapandı
+  expect(document.body.querySelector('input[placeholder="Tutar"]')).toBeNull(); // üstteki kapandı
   expect(text()).toContain("Servis Kaydı"); // alttaki açık
 });
 
 test("web geri (popstate): üstteki sheet kapanır; UI'dan kapatınca history geri alınır", async () => {
   await render(<Services />);
-  const row = Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
+  const row = Array.from(document.body.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
   await click(row);
   expect(window.history.state?.mzSheet).toBeGreaterThan(0);
   await act(async () => { window.dispatchEvent(new PopStateEvent("popstate", { state: null })); });
@@ -555,14 +555,14 @@ test("web geri (popstate): üstteki sheet kapanır; UI'dan kapatınca history ge
 
 test("web geri iç içe: sadece üstteki sheet kapanır", async () => {
   await render(<Services />);
-  const row = Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
+  const row = Array.from(document.body.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
   await click(row);
   const detailId = window.history.state.mzSheet;
   await click(btnWith("Tahsilat Ekle"));
-  expect(container.querySelector('input[placeholder="Tutar"]')).toBeTruthy();
+  expect(document.body.querySelector('input[placeholder="Tutar"]')).toBeTruthy();
   await act(async () => { window.dispatchEvent(new PopStateEvent("popstate", { state: { mzSheet: detailId } })); });
   await act(() => new Promise((r) => setTimeout(r, 250)));
-  expect(container.querySelector('input[placeholder="Tutar"]')).toBeNull();
+  expect(document.body.querySelector('input[placeholder="Tutar"]')).toBeNull();
   expect(text()).toContain("Servis Kaydı");
 });
 
@@ -579,7 +579,7 @@ test("servis Garantide filtresi", async () => {
   global.__SERVICE.delivery_date = require("../ui").todayISO();
   global.__SERVICE.warranty_months = 12;
   await render(<Services />);
-  const chip = Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim().startsWith("Garantide"));
+  const chip = Array.from(document.body.querySelectorAll("button")).find((b) => b.textContent.trim().startsWith("Garantide"));
   expect(chip).toBeTruthy();
   await click(chip);
   expect(text()).toContain("Test Müşteri");
@@ -589,7 +589,7 @@ test("servis araması: telefon ve plaka boşluksuz", async () => {
   global.__SERVICE.phone = "0555 111 22 33";
   global.__SERVICE.plate = "59 ABC 123";
   await render(<Services />);
-  const input = container.querySelector('input[placeholder^="Müşteri, plaka"]');
+  const input = document.body.querySelector('input[placeholder^="Müşteri, plaka"]');
   await setVal(input, "5551112233");
   expect(text()).toContain("Test Müşteri");
   await setVal(input, "59abc");
@@ -602,13 +602,13 @@ test("müşteri özeti: servis detayından aç, sayılar + açık bakiye, teklif
   localStorage.setItem("mz:quotes", JSON.stringify([{ id: "qa", name: "Solar Teklifi", customer_name: "test müşteri", created_at: "2026-09-01", total_net_price: 50000, products: [] }]));
   let went = null;
   await render(<Services go={(t) => { went = t; }} />);
-  const row = Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
+  const row = Array.from(document.body.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
   await click(row);
-  await click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim() === "Test Müşteri"));
+  await click(Array.from(document.body.querySelectorAll("button")).find((b) => b.textContent.trim() === "Test Müşteri"));
   expect(text()).toContain("Müşteri");
   expect(text()).toContain("Solar Teklifi");
   expect(text()).toContain(`Açık bakiye₺${money(70000)}`);
-  await click(Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim().startsWith("Solar Teklifi") && d.className.includes("min-w-0")));
+  await click(Array.from(document.body.querySelectorAll("div")).find((d) => d.textContent.trim().startsWith("Solar Teklifi") && d.className.includes("min-w-0")));
   expect(went).toBe("quotes");
   expect(JSON.parse(localStorage.getItem("mz:quote_open"))).toBe("qa");
 });
@@ -617,9 +617,9 @@ test("Özet genel arama: plaka ile servis bul → detay deep-link", async () => 
   global.__SERVICE.plate = "59 ABC 123";
   let went = null;
   await render(<Dashboard go={(t) => { went = t; }} />);
-  await setVal(container.querySelector('input[placeholder^="Her yerde ara"]'), "59 abc");
+  await setVal(document.body.querySelector('input[placeholder^="Her yerde ara"]'), "59 abc");
   expect(text()).toContain("Servisler");
-  await click(Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri"));
+  await click(Array.from(document.body.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri"));
   expect(went).toBe("service");
   expect(JSON.parse(localStorage.getItem("mz:svc_open"))).toBe("s1");
 });
@@ -627,23 +627,23 @@ test("Özet genel arama: plaka ile servis bul → detay deep-link", async () => 
 test("Özet genel arama: ürün bul (liste fiyatı, geliş yok) → Ürünler aramasına geç", async () => {
   let went = null;
   await render(<Dashboard go={(t) => { went = t; }} />);
-  await setVal(container.querySelector('input[placeholder^="Her yerde ara"]'), "panel");
+  await setVal(document.body.querySelector('input[placeholder^="Her yerde ara"]'), "panel");
   await flush();
   expect(text()).toContain("Ürünler");
   expect(text()).toContain(`₺${money(10000)}`);
   expect(text()).not.toContain(money(7000));
-  await click(Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Solar Panel 450W"));
+  await click(Array.from(document.body.querySelectorAll("div")).find((d) => d.textContent.trim() === "Solar Panel 450W"));
   expect(went).toBe("products");
   expect(JSON.parse(localStorage.getItem("mz:prod_search"))).toBe("Solar Panel 450W");
   await render(<CartProvider><Products /></CartProvider>);
-  expect(container.querySelector("input").value).toBe("Solar Panel 450W");
+  expect(document.body.querySelector("input").value).toBe("Solar Panel 450W");
   expect(JSON.parse(localStorage.getItem("mz:prod_search"))).toBe(null);
 });
 
 test("ürün satırı: sepetteyse − ile azalt, 0'da buton kaybolur", async () => {
   await render(<SessionCtx.Provider value={{ username: "t" }}><CartProvider><Products /></CartProvider></SessionCtx.Provider>);
   await act(() => new Promise((r) => setTimeout(r, 600)));
-  const card = () => Array.from(container.querySelectorAll("div")).find((d) => d.className.includes("items-center gap-3") && d.textContent.includes("Solar Panel 450W"));
+  const card = () => Array.from(document.body.querySelectorAll("div")).find((d) => d.className.includes("items-center gap-3") && d.textContent.includes("Solar Panel 450W"));
   const dec = () => card().querySelector('button[aria-label="Sepetten bir azalt"]');
   expect(dec()).toBeFalsy();
   await click(card().querySelector('button[title="Teklife ekle"]'));
@@ -675,7 +675,7 @@ test("Özet teslim takvimi: yarın / gecikmiş etiketi, dokun → servis detayı
   await render(<Dashboard go={(t) => { went = t; }} />);
   expect(text()).toContain("Teslim Takvimi");
   expect(text()).toContain("Yarın");
-  const card = Array.from(container.querySelectorAll("div")).find((d) => d.textContent.includes("Yarın") && d.className.includes("gap-3"));
+  const card = Array.from(document.body.querySelectorAll("div")).find((d) => d.textContent.includes("Yarın") && d.className.includes("gap-3"));
   await click(card);
   expect(went).toBe("service");
   expect(JSON.parse(localStorage.getItem("mz:svc_open"))).toBe("s1");
@@ -690,16 +690,16 @@ test("Özet teslim takvimi: yarın / gecikmiş etiketi, dokun → servis detayı
 test("tahsilat: 'Kalanın tamamı' tutarı doldurur (₺ ve €/kur), açıklama çipi", async () => {
   global.__SERVICE.collections = [{ id: "c1", date: "2026-09-23", description: "EFT", amount: 30000, currency: "TRY", rate: null }];
   await render(<Services />);
-  await click(Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri"));
+  await click(Array.from(document.body.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri"));
   await click(btnWith("Tahsilat Ekle"));
   await click(btnWith("Kalanın tamamı"));
-  expect(container.querySelector('input[placeholder="Tutar"]').value).toBe("40000");
-  const sel = container.querySelector("select");
+  expect(document.body.querySelector('input[placeholder="Tutar"]').value).toBe("40000");
+  const sel = document.body.querySelector("select");
   await act(async () => { sel.value = "EUR"; sel.dispatchEvent(new Event("change", { bubbles: true })); });
   await click(btnWith("Kalanın tamamı"));
-  expect(container.querySelector('input[placeholder="Tutar"]').value).toBe(String(Math.round((40000 / 55.9) * 100) / 100));
-  await click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim() === "Nakit"));
-  expect(container.querySelector('input[placeholder^="Açıklama"]').value).toBe("Nakit");
+  expect(document.body.querySelector('input[placeholder="Tutar"]').value).toBe(String(Math.round((40000 / 55.9) * 100) / 100));
+  await click(Array.from(document.body.querySelectorAll("button")).find((b) => b.textContent.trim() === "Nakit"));
+  expect(document.body.querySelector('input[placeholder^="Açıklama"]').value).toBe("Nakit");
 });
 
 test("servis detayı: plaka + telefon kopyala butonları panoya yazar", async () => {
@@ -707,10 +707,10 @@ test("servis detayı: plaka + telefon kopyala butonları panoya yazar", async ()
   const copied = [];
   Object.defineProperty(navigator, "clipboard", { value: { writeText: (t) => { copied.push(t); return Promise.resolve(); } }, configurable: true });
   await render(<Services />);
-  await click(Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri"));
+  await click(Array.from(document.body.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri"));
   expect(text()).toContain("59 ABC 123");
-  await click(container.querySelector('button[aria-label="Plakayı kopyala"]'));
-  await click(container.querySelector('button[aria-label="Telefonu kopyala"]'));
+  await click(document.body.querySelector('button[aria-label="Plakayı kopyala"]'));
+  await click(document.body.querySelector('button[aria-label="Telefonu kopyala"]'));
   expect(copied).toEqual(["59 ABC 123", "0555 111 22 33"]);
 });
 
@@ -733,13 +733,13 @@ test("tahsilat raporu: özet kartı gözle gizli, rapor ay toplamı + tür kır�
   await render(<Dashboard go={(t) => { went = t; }} />);
   expect(text()).toContain("Bu ay tahsilat");
   expect(text()).toContain("₺ •••");
-  await click(Array.from(container.querySelectorAll("div")).find((x) => x.textContent.startsWith("Bu ay tahsilat") && x.className.includes("justify-between")));
+  await click(Array.from(document.body.querySelectorAll("div")).find((x) => x.textContent.startsWith("Bu ay tahsilat") && x.className.includes("justify-between")));
   expect(text()).toContain("Tahsilat Raporu");
   expect(text()).toContain(`₺${money(55000)}`); // 30000 + 500×50, eski ay hariç
   expect(text()).toContain("Nakit");
   expect(text()).toContain("EFT/Havale");
   expect(text()).not.toContain(money(999));
-  await click(Array.from(container.querySelectorAll("div")).find((x) => x.className.includes("gap-3") && x.textContent.includes("EFT · EFT/Havale")));
+  await click(Array.from(document.body.querySelectorAll("div")).find((x) => x.className.includes("gap-3") && x.textContent.includes("EFT · EFT/Havale")));
   expect(went).toBe("service");
   expect(JSON.parse(localStorage.getItem("mz:svc_open"))).toBe("s1");
 });
@@ -753,8 +753,8 @@ test("eski aktarım: gelişi boş İşçilik kalemi maliyet sayılmaz (kâr = ne
   ];
   global.__SERVICE.discount_amount = 0;
   await render(<Services />);
-  await click(Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri"));
-  const eyes = container.querySelectorAll('button[aria-label="Göster/Gizle"]');
+  await click(Array.from(document.body.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri"));
+  const eyes = document.body.querySelectorAll('button[aria-label="Göster/Gizle"]');
   await click(eyes[eyes.length - 1]);
   expect(text()).toContain(`Maliyet₺${money(7000 + 2000)}`);
   expect(text()).toContain(`Kâr₺${money(22000 - 9000)}`);

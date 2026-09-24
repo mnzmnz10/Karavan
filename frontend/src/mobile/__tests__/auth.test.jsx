@@ -32,18 +32,18 @@ test("ağ hatası + önceki oturum → uygulama açılır (çevrimdışı)", asy
   localStorage.setItem("mz:was_authed", JSON.stringify({ username: "karavan_admin" }));
   global.__AUTH = () => Promise.reject({ response: { status: 0, data: { detail: "İnternet bağlantısı yok" } } });
   await boot();
-  expect(container.textContent).not.toContain("LOGIN_SCREEN");
+  expect(document.body.textContent).not.toContain("LOGIN_SCREEN");
 });
 
 test("401 → giriş ekranı", async () => {
   localStorage.setItem("mz:was_authed", JSON.stringify({ username: "x" }));
   global.__AUTH = () => Promise.reject({ response: { status: 401 } });
   await boot();
-  expect(container.textContent).toContain("LOGIN_SCREEN");
+  expect(document.body.textContent).toContain("LOGIN_SCREEN");
 });
 
 test("ağ hatası, önceki oturum yok → giriş ekranı", async () => {
   global.__AUTH = () => Promise.reject({ response: { status: 0 } });
   await boot();
-  expect(container.textContent).toContain("LOGIN_SCREEN");
+  expect(document.body.textContent).toContain("LOGIN_SCREEN");
 });

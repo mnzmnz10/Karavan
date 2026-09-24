@@ -1,5 +1,6 @@
 // Mobil UI primitifleri — iOS-native his (büyük başlık, kart, sheet, arama, tab bar).
 import React, { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { cache } from "./cache";
 import { ChevronLeft, Search, X, Loader2, WifiOff, RotateCw, Copy, Check } from "lucide-react";
 import { toast } from "./toast";
@@ -234,7 +235,8 @@ export function Sheet({ open, onClose, title, children, full = false }) {
   }, [open]);
   if (!mounted && !open) return null;
   const closing = !open; // kapanış: 200ms hafif aşağı kayma + solma, sonra unmount
-  return (
+  // body'ye portal: transform animasyonlu ata (m-stagger/m-in) fixed'i hapseder → sheet kaymaz/kırpılır
+  return createPortal(
     <div className={`fixed inset-0 z-50 flex items-end justify-center ${closing ? "pointer-events-none" : ""}`}>
       <div className={`${closing ? "m-backdrop-exit" : "m-backdrop-enter"} absolute inset-0 bg-black/40`} onClick={onClose} />
       <div
@@ -249,9 +251,10 @@ export function Sheet({ open, onClose, title, children, full = false }) {
             <X className="h-4 w-4" style={{ color: "var(--m-ink-2)" }} />
           </button>
         </div>
-        <div className="m-scroll m-safe-bottom flex-1 px-4 pb-4">{children}</div>
+        <div className="m-scroll m-safe-bottom min-h-0 flex-1 px-4 pb-4">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -259,13 +262,14 @@ export function Sheet({ open, onClose, title, children, full = false }) {
 export function Lightbox({ src, onClose }) {
   useBackClose(!!src, onClose);
   if (!src) return null;
-  return (
+  return createPortal(
     <div className="m-backdrop-enter fixed inset-0 z-[60] flex items-center justify-center bg-black" onClick={onClose}>
       <img src={src} alt="" className="max-h-[92dvh] max-w-full object-contain" />
       <button onClick={onClose} aria-label="Kapat" className="absolute right-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white" style={{ top: "calc(env(safe-area-inset-top) + 12px)" }}>
         <X className="h-5 w-5" />
       </button>
-    </div>
+    </div>,
+    document.body
   );
 }
 

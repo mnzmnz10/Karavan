@@ -41,12 +41,12 @@ afterEach(() => { act(() => root.unmount()); container.remove(); });
 test("Safari: Düzenle formu açık kalır, geri tuşu formu kapatır ve geçmiş temiz kalır", async () => {
   const Services = require("../screens/Services").default;
   await act(async () => { root.render(<Services go={() => {}} />); }); await wait(20);
-  await click(Array.from(container.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri"));
-  expect(container.textContent).toContain("Servis Kaydı");
-  await click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim() === "Düzenle"));
+  await click(Array.from(document.body.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri"));
+  expect(document.body.textContent).toContain("Servis Kaydı");
+  await click(Array.from(document.body.querySelectorAll("button")).find((b) => b.textContent.trim() === "Düzenle"));
   await wait(300);
-  expect(container.textContent).toContain("Servisi Düzenle"); // hemen kapanmamalı
+  expect(document.body.textContent).toContain("Servisi Düzenle"); // hemen kapanmamalı
   await act(async () => { window.history.back(); }); await wait(300); // kullanıcı geri
-  expect(container.textContent).not.toContain("Servisi Düzenle");
+  expect(document.body.textContent).not.toContain("Servisi Düzenle");
   expect(H.i).toBe(0); // artık kayıt yok
 });

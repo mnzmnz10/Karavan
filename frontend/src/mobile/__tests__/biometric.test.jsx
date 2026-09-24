@@ -32,7 +32,7 @@ jest.mock("@capacitor/haptics", () => ({ ImpactStyle: {}, NotificationType: {}, 
 global.IS_REACT_ACT_ENVIRONMENT = true;
 let container, root;
 const flush = () => act(() => new Promise((r) => setTimeout(r, 0)));
-const btn = (t) => Array.from(container.querySelectorAll("button")).find((b) => b.textContent.includes(t));
+const btn = (t) => Array.from(document.body.querySelectorAll("button")).find((b) => b.textContent.includes(t));
 const setVal = async (input, v) => {
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
   await act(async () => { setter.call(input, v); input.dispatchEvent(new Event("input", { bubbles: true })); });
@@ -51,9 +51,9 @@ test("şifreyle giriş sonrası Face ID teklifi: evet → Anahtar Zinciri'ne biy
   let done = 0;
   await act(async () => { root.render(<Login onDone={() => { done++; }} />); }); await flush();
   expect(btn("Face ID ile giriş")).toBeFalsy(); // kayıt yokken buton yok
-  const [u, p] = container.querySelectorAll("input");
+  const [u, p] = document.body.querySelectorAll("input");
   await setVal(u, "karavan_admin"); await setVal(p, "gizli");
-  await act(async () => { container.querySelector("form").dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); }); await flush();
+  await act(async () => { document.body.querySelector("form").dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); }); await flush();
   expect(done).toBe(1);
   expect(mockBio.set[0]).toMatchObject({ username: "karavan_admin", password: "gizli", server: "corlukaravan.shop", accessControl: 2 });
 });
@@ -62,9 +62,9 @@ test("teklif reddedilirse bir daha sorulmaz", async () => {
   let asked = 0;
   global.confirm = () => { asked++; return false; };
   await act(async () => { root.render(<Login onDone={() => {}} />); }); await flush();
-  const [u, p] = container.querySelectorAll("input");
+  const [u, p] = document.body.querySelectorAll("input");
   await setVal(u, "a"); await setVal(p, "b");
-  await act(async () => { container.querySelector("form").dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); }); await flush();
+  await act(async () => { document.body.querySelector("form").dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); }); await flush();
   expect(asked).toBe(1);
   expect(JSON.parse(localStorage.getItem("mz:bio_declined"))).toBe(true);
   expect(mockBio.set.length).toBe(0);
