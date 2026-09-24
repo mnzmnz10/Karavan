@@ -7134,7 +7134,7 @@ function App() {
                 <div>
                   <Label>Araç Türü</Label>
                   {(() => {
-                    const VEHICLE_TYPES = ['15M³ PSA', '17M³ PSA', 'MERCEDES', 'IVECO', 'VOLKSWAGEN', 'MAN', 'FORD', 'SEMİ ENTEGRE', 'OTOBÜS', 'ÇEKME KARAVAN'];
+                    const VEHICLE_TYPES = ['15M³ PSA', '17M³ PSA', 'MERCEDES', 'IVECO', 'VOLKSWAGEN', 'MAN', 'FORD', 'RENAULT', 'SEMİ ENTEGRE', 'OTOBÜS', 'ÇEKME KARAVAN'];
                     const selected = contractForm.title || '';
                     const choose = (v) => setContractForm({ ...contractForm, title: selected === v ? '' : v });
                     return (
@@ -7297,7 +7297,7 @@ function App() {
                 <div>
                   <Label>Araç Türü *</Label>
                   {(() => {
-                    const VEHICLE_TYPES = ['15M³ PSA', '17M³ PSA', 'MERCEDES', 'IVECO', 'VOLKSWAGEN', 'MAN', 'FORD', 'SEMİ ENTEGRE', 'OTOBÜS', 'ÇEKME KARAVAN'];
+                    const VEHICLE_TYPES = ['15M³ PSA', '17M³ PSA', 'MERCEDES', 'IVECO', 'VOLKSWAGEN', 'MAN', 'FORD', 'RENAULT', 'SEMİ ENTEGRE', 'OTOBÜS', 'ÇEKME KARAVAN'];
                     const selected = newContractForm.title || '';
                     const choose = (v) => setNewContractForm({ ...newContractForm, title: selected === v ? '' : v });
                     return (
@@ -11184,7 +11184,7 @@ function App() {
                         {/* ARAÇ — tür/marka + model TEK panelde; seçim üstte rozetle belli */}
                         <div className="sm:col-span-2">
                           {(() => {
-                            const VEHICLE_TYPES = ['15M³ PSA', '17M³ PSA', 'MERCEDES', 'IVECO', 'VOLKSWAGEN', 'MAN', 'FORD', 'SEMİ ENTEGRE', 'OTOBÜS', 'ÇEKME KARAVAN'];
+                            const VEHICLE_TYPES = ['15M³ PSA', '17M³ PSA', 'MERCEDES', 'IVECO', 'VOLKSWAGEN', 'MAN', 'FORD', 'RENAULT', 'SEMİ ENTEGRE', 'OTOBÜS', 'ÇEKME KARAVAN'];
                             const MODEL_SUGGESTIONS = {
                               'MERCEDES': ['Sprinter', 'Vito'],
                               'VOLKSWAGEN': ['Crafter', 'Transporter', 'Volt', 'Caravelle', 'Caddy'],

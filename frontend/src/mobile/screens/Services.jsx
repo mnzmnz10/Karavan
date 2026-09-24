@@ -7,6 +7,7 @@ import { useCatalog, catRate } from "../catalog";
 import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, Lightbox, RefreshScroll, OfflineBar, todayISO, waNumber, fmtDate, CopyBtn } from "../ui";
 import { cache } from "../cache";
 import ServiceForm, { compressImage, isLaborItem } from "./ServiceForm";
+import { VehicleIcon } from "../vehicleIcons";
 import CustomerSheet from "../CustomerSheet";
 
 const STATUS = {
@@ -88,9 +89,7 @@ function Row({ s, onOpen, onCycle, busy }) {
   return (
     <Card onClick={() => onOpen(s)} className="p-3.5">
       <div className="flex items-start gap-3">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl" style={{ background: "#fef0e8" }}>
-          <Wrench className="h-5 w-5" style={{ color: "#e56a1f" }} />
-        </div>
+        <VehicleIcon s={s} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <div className="truncate text-[15px] font-semibold leading-tight">{s.customer_name || "İsimsiz"}</div>
