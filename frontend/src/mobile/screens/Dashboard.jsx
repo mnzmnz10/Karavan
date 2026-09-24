@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { AccountButton } from "../Account";
 import { Wrench, FileText, ScrollText, Clock, CheckCircle2, TrendingUp, Eye, EyeOff, AlertCircle, Truck } from "lucide-react";
 import http, { services as servicesApi, quotes as quotesApi } from "../api";
 import { Header, SearchBar, Card, SkeletonList, RefreshScroll, OfflineBar, money, ago, todayISO, fmtDate, IconBadge, useCountUp } from "../ui";
@@ -137,7 +138,7 @@ export default function Dashboard({ go }) {
 
   return (
     <div className="flex h-full flex-col">
-      <Header title="Özet" subtitle={`${greet}${s?.username ? ", " + s.username : ""}${data?.at ? " · güncellendi " + ago(data.at) : ""}`} />
+      <Header title="Özet" right={<AccountButton />} subtitle={`${greet}${s?.username ? ", " + s.username : ""}${data?.at ? " · güncellendi " + ago(data.at) : ""}`} />
       <SearchBar value={gq} onChange={setGq} placeholder="Her yerde ara: müşteri, plaka, teklif…" />
       <OfflineBar show={offline} cacheKey="dashboard" />
       <RefreshScroll onRefresh={load} className="flex-1 pb-[calc(var(--m-tabbar-h)+env(safe-area-inset-bottom)+8px)]">

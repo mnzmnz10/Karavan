@@ -4,8 +4,13 @@ import { cache } from "./cache";
 export const THEME_KEY = "theme";
 
 export function getThemePref() {
-  const v = cache.get(THEME_KEY);
-  return v === "light" || v === "dark" ? v : "system";
+  let v = cache.get(THEME_KEY);
+  // Eskiden tercih her açılışta "system" diye yazılıyordu; varsayılan açık oldu → bir kez açığa çevir
+  if (!cache.get("theme_light_default")) {
+    cache.set("theme_light_default", true);
+    if (v === "system") { v = "light"; cache.set(THEME_KEY, v); }
+  }
+  return v === "system" || v === "dark" ? v : "light"; // varsayılan: açık
 }
 
 export function systemPrefersDark() {

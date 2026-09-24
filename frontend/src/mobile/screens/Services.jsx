@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { AccountButton } from "../Account";
 import { Wrench, Car, Phone, MessageCircle, Image as ImageIcon, Loader2, Plus, Pencil, Share2, Trash2, Eye, EyeOff, Wallet, X, FileText, Camera } from "lucide-react";
 import { toast } from "../toast";
 import { services as servicesApi, rates as ratesApi, docUrl, openDoc } from "../api";
@@ -679,11 +680,9 @@ export default function Services({ go }) {
       <Header
         title="Servis"
         subtitle={loading ? "Yükleniyor…" : `${items.length} kayıt${pending ? ` · ${pending} gönderilmedi` : ""}`}
-        right={
-          <button onClick={openNew} aria-label="Yeni servis" className="m-press flex h-9 w-9 items-center justify-center rounded-full" style={{ background: "var(--m-grad)" }}>
+        right={<div className="flex items-center gap-2">{<button onClick={openNew} aria-label="Yeni servis" className="m-press flex h-9 w-9 items-center justify-center rounded-full" style={{ background: "var(--m-grad)" }}>
             <Plus className="h-5 w-5 text-white" strokeWidth={2.6} />
-          </button>
-        }
+          </button>}<AccountButton /></div>}
       />
       <SearchBar value={q} onChange={setQ} placeholder="Müşteri, plaka, araç, parça" />
       <div className="flex gap-2 overflow-x-auto px-4 pb-2" style={{ scrollbarWidth: "none" }}>

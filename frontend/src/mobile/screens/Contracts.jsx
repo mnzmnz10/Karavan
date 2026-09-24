@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { AccountButton } from "../Account";
 import { ScrollText, User, Share2, Loader2, CheckCircle2, Trash2, Plus, Pencil, X, Copy, Phone, MessageCircle } from "lucide-react";
 import { toast } from "../toast";
 import http, { docUrl, openDoc } from "../api";
@@ -555,11 +556,9 @@ export default function Contracts({ go }) {
       <Header
         title="Sözleşmeler"
         subtitle={loading ? "Yükleniyor…" : `${items.length} sözleşme`}
-        right={
-          <button onClick={() => setCreateOpen(true)} aria-label="Yeni sözleşme" className="m-press flex h-9 w-9 items-center justify-center rounded-full" style={{ background: "var(--m-grad)" }}>
+        right={<div className="flex items-center gap-2">{<button onClick={() => setCreateOpen(true)} aria-label="Yeni sözleşme" className="m-press flex h-9 w-9 items-center justify-center rounded-full" style={{ background: "var(--m-grad)" }}>
             <Plus className="h-5 w-5 text-white" strokeWidth={2.6} />
-          </button>
-        }
+          </button>}<AccountButton /></div>}
       />
       <SearchBar value={q} onChange={setQ} placeholder="Müşteri, başlık, telefon" />
       <div className="flex gap-2 overflow-x-auto px-4 pb-2" style={{ scrollbarWidth: "none" }}>

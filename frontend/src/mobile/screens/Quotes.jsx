@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { AccountButton } from "../Account";
 import { FileText, User, Calendar, Share2, Trash2, Loader2, Pencil, Eye, EyeOff, Minus, Plus, Search, ListPlus, Wrench, Copy, MessageCircle } from "lucide-react";
 import ServiceForm from "./ServiceForm";
 import CustomerSheet from "../CustomerSheet";
@@ -700,11 +701,11 @@ export default function Quotes({ go }) {
       <Header
         title="Teklifler"
         subtitle={loading ? "Yükleniyor…" : `${items.length} teklif`}
-        right={cart ? (
+        right={<div className="flex items-center gap-2">{cart ? (
           <button onClick={cart.openSheet} aria-label="Yeni teklif" className="m-press flex h-9 w-9 items-center justify-center rounded-full" style={{ background: "var(--m-grad)" }}>
             <Plus className="h-5 w-5 text-white" strokeWidth={2.6} />
           </button>
-        ) : null}
+        ) : null}<AccountButton /></div>}
       />
       <SearchBar value={q} onChange={setQ} placeholder="Teklif, müşteri veya ürün" />
       <div className="flex gap-2 overflow-x-auto px-4 pb-2" style={{ scrollbarWidth: "none" }}>
