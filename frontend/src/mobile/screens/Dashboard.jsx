@@ -64,7 +64,7 @@ function BrandHeader({ greet, at, offline, onRefresh }) {
         </div>
       </div>
       <div className="px-4 pb-2.5 pt-1">
-        <h1 className="m-largetitle">{greet}</h1>
+        <h1 className="m-largetitle m-greet">{greet}</h1>
         <div className="mt-1 flex items-center justify-between gap-2">
           <span className="truncate text-[13px] capitalize" style={{ color: "var(--m-ink-2)" }}>{today}</span>
           {fx?.EUR && (

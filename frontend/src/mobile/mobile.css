@@ -216,3 +216,6 @@
 .m-logo-dark { display: none; }
 #mobile-root.theme-dark .m-logo-dark { display: block; }
 #mobile-root.theme-dark .m-logo-light { display: none; }
+
+/* Özet selamı: Montserrat (logodaki KARAVAN yazısına yakın) */
+.m-greet { font-family: "Montserrat", -apple-system, sans-serif; font-weight: 800; letter-spacing: -0.015em; }

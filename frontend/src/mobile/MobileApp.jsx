@@ -3,6 +3,8 @@ import { startOutbox } from "./outbox";
 import { startTextSize } from "./textsize";
 import { Toaster } from "sonner";
 import { Wrench, Package, FileText, ScrollText, Home, Loader2 } from "lucide-react";
+import "@fontsource/montserrat/latin-800.css"; // Özet selamı (MSZ logosuyla uyumlu)
+import "@fontsource/montserrat/latin-ext-800.css"; // Türkçe harfler (ğ, ş, ı…)
 import "./mobile.css";
 import { auth } from "./api";
 import Login from "./screens/Login";
