@@ -23,7 +23,7 @@ export default class ErrorBoundary extends React.Component {
           <div className="text-[16px] font-semibold" style={{ color: "var(--m-ink)" }}>Bir sorun oluştu</div>
           <div className="mt-1 text-[13px]" style={{ color: "var(--m-ink-2)" }}>Bu ekran yüklenemedi.</div>
           <div className="mt-2 max-w-full truncate text-[11px] text-slate-400">{String(this.state.err?.message || this.state.err).slice(0, 120)}</div>
-          <button onClick={this.reset} className="m-press mt-4 rounded-2xl px-5 py-2.5 text-[15px] font-bold text-white" style={{ background: "var(--m-primary)" }}>
+          <button onClick={this.reset} className="m-press mt-4 rounded-2xl px-5 py-2.5 text-[15px] font-bold text-white" style={{ background: "var(--m-grad)" }}>
             Tekrar Dene
           </button>
           {/* Bozuk yerel veri tekrar tekrar çökertirse: önbelleği sil (oturum + tema kalır) ve yenile */}

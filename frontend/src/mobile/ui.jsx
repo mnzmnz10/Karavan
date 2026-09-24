@@ -60,12 +60,12 @@ export function SearchBar({ value, onChange, placeholder = "Ara" }) {
 }
 
 // Kart (basılabilir)
-export function Card({ children, onClick, className = "" }) {
+export function Card({ children, onClick, className = "", style }) {
   return (
     <div
       onClick={onClick}
       className={`rounded-2xl bg-white ${onClick ? "m-press cursor-pointer" : ""} ${className}`}
-      style={{ boxShadow: "0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.05)" }}
+      style={{ boxShadow: "var(--m-shadow-card)", ...style }}
     >
       {children}
     </div>
@@ -100,7 +100,7 @@ export function ErrorState({ onRetry, title = "Bağlantı hatası", hint = "Veri
       <div className="text-[16px] font-semibold" style={{ color: "var(--m-ink)" }}>{title}</div>
       <div className="mt-1 text-[13px]" style={{ color: "var(--m-ink-2)" }}>{hint}</div>
       {onRetry && (
-        <button onClick={onRetry} className="m-press mt-4 flex items-center gap-1.5 rounded-full px-4 py-2 text-[14px] font-bold text-white" style={{ background: "var(--m-primary)" }}>
+        <button onClick={onRetry} className="m-press mt-4 flex items-center gap-1.5 rounded-full px-4 py-2 text-[14px] font-bold text-white" style={{ background: "var(--m-grad)" }}>
           <RotateCw className="h-4 w-4" /> Tekrar dene
         </button>
       )}
@@ -361,4 +361,44 @@ export function CopyBtn({ text, label = "Kopyala" }) {
       {done ? <Check className="h-3.5 w-3.5" style={{ color: "var(--m-primary-2)" }} /> : <Copy className="h-3.5 w-3.5" />}
     </button>
   );
+}
+
+// Renkli gradyan ikon rozeti — anlamına göre ton (servis turuncu, teklif mavi, teslim yeşil, gecikme kırmızı…)
+export const BADGE_TONES = {
+  orange: "linear-gradient(135deg,#f59e0b,#e56a1f)",
+  blue: "linear-gradient(135deg,#60a5fa,#1e73be)",
+  indigo: "linear-gradient(135deg,#818cf8,#4f46e5)",
+  green: "linear-gradient(135deg,#34d399,#2e8b7a)",
+  red: "linear-gradient(135deg,#fb7185,#e11d48)",
+  navy: "linear-gradient(135deg,#1f6157,#143a5c)",
+  amber: "linear-gradient(135deg,#fbbf24,#d9820a)",
+};
+export function IconBadge({ icon: Icon, tone = "navy", size = 36 }) {
+  return (
+    <div className="m-badge" style={{ width: size, height: size, borderRadius: Math.round(size * 0.31), background: BADGE_TONES[tone] || BADGE_TONES.navy }}>
+      <Icon style={{ width: size * 0.5, height: size * 0.5 }} strokeWidth={2.2} />
+    </div>
+  );
+}
+
+// Sayı sayarak gelir (ilk görünüm / değer değişimi); Hareketi Azalt açıksa doğrudan son değer
+export function useCountUp(value, ms = 800) {
+  const [v, setV] = useState(value);
+  const from = useRef(0);
+  useEffect(() => {
+    const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+    const target = Number(value) || 0;
+    const jsdom = typeof navigator !== "undefined" && /jsdom/i.test(navigator.userAgent || "");
+    if (reduce || jsdom || typeof requestAnimationFrame === "undefined") { setV(target); from.current = target; return; }
+    const start = from.current, t0 = performance.now();
+    let raf;
+    const step = (t) => {
+      const p = Math.min(1, (t - t0) / ms), e = 1 - Math.pow(1 - p, 3);
+      setV(start + (target - start) * e);
+      if (p < 1) raf = requestAnimationFrame(step); else from.current = target;
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [value, ms]);
+  return v;
 }

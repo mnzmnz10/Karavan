@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { ScrollText, User, Share2, Loader2, CheckCircle2, Trash2, Plus, Pencil, X, Copy, Phone, MessageCircle } from "lucide-react";
 import { toast } from "../toast";
 import http, { docUrl, openDoc } from "../api";
-import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, RefreshScroll, OfflineBar, todayISO, waNumber, fmtDate } from "../ui";
+import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, RefreshScroll, OfflineBar, todayISO, waNumber, fmtDate, IconBadge } from "../ui";
 import { cache, customerNames, phoneForCustomer } from "../cache";
 import { formatPhoneTR } from "./ServiceForm";
 import CustomerSheet from "../CustomerSheet";
@@ -57,9 +57,7 @@ function Row({ c, onOpen }) {
   return (
     <Card onClick={() => onOpen(c)} className="p-3.5">
       <div className="flex items-start gap-3">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl" style={{ background: "#e8f0fb" }}>
-          <ScrollText className="h-5 w-5" style={{ color: "#1e73be" }} />
-        </div>
+        <IconBadge icon={ScrollText} tone="indigo" size={44} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <div className="truncate text-[15px] font-semibold leading-tight">{custName(c) || c.title || "Sözleşme"}</div>
@@ -113,7 +111,7 @@ function Detail({ c, onClose, onStage, staging, onDeleted, onEditItems, onCopy, 
           {staging ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
           {agreed ? "Teklife Al" : "Anlaşıldı"}
         </button>
-        <button onClick={() => openDoc(docUrl.contract(c.id))} className="m-press flex flex-1 items-center justify-center gap-2 rounded-2xl py-3 text-[15px] font-bold text-white" style={{ background: "var(--m-primary)" }}>
+        <button onClick={() => openDoc(docUrl.contract(c.id))} className="m-press flex flex-1 items-center justify-center gap-2 rounded-2xl py-3 text-[15px] font-bold text-white" style={{ background: "var(--m-grad)" }}>
           <Share2 className="h-4 w-4" /> PDF / Excel
         </button>
       </div>
@@ -140,7 +138,7 @@ function Detail({ c, onClose, onStage, staging, onDeleted, onEditItems, onCopy, 
         <div className="mt-1 text-[12px] text-slate-400">{fmtDate(c.created_at)}{custTc(c) ? ` · TC: ${custTc(c)}` : ""}</div>
         {custPhone(c) && (
           <div className="mt-3 flex gap-2">
-            <a href={`tel:${custPhone(c)}`} className="m-press flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2.5 text-[14px] font-bold text-white" style={{ background: "var(--m-primary)" }}>
+            <a href={`tel:${custPhone(c)}`} className="m-press flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2.5 text-[14px] font-bold text-white" style={{ background: "var(--m-grad)" }}>
               <Phone className="h-4 w-4" /> Ara
             </a>
             <a href={`https://wa.me/${waNumber(custPhone(c))}?text=${encodeURIComponent(`Merhaba ${custName(c) || ""}, ${c.title ? c.title + " " : ""}sözleşmeniz hakkında yazıyorum. — Çorlu Karavan`.replace("Merhaba , ", "Merhaba, "))}`} target="_blank" rel="noreferrer" className="m-press flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2.5 text-[14px] font-bold text-white" style={{ background: "#25d366" }}>
@@ -363,7 +361,7 @@ function ItemsEditor({ c, open, onClose, onSaved }) {
               <span className="text-[14px] font-semibold" style={{ color: "var(--m-ink-2)" }}>Genel Toplam</span>
               <span className="m-tnum text-[19px] font-extrabold" style={{ color: "var(--m-primary)" }}>₺{money(grand)}</span>
             </div>
-            <button onClick={save} disabled={busy} className="m-press flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-[15px] font-bold text-white disabled:opacity-60" style={{ background: "var(--m-primary)" }}>
+            <button onClick={save} disabled={busy} className="m-press flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-[15px] font-bold text-white disabled:opacity-60" style={{ background: "var(--m-grad)" }}>
               {busy && <Loader2 className="h-5 w-5 animate-spin" />} Kaydet
             </button>
           </div>
@@ -417,7 +415,7 @@ function CollectionSheet({ c, open, onClose, onSaved }) {
       {currency === "EUR" && kur > 0 && (
         <div className="mt-2 px-1 text-[12px]" style={{ color: "var(--m-ink-2)" }}>≈ ₺{money(amt * kur)} (1 € = ₺{money(kur)})</div>
       )}
-      <button onClick={save} disabled={busy} className="m-press mt-3 flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-[15px] font-bold text-white disabled:opacity-60" style={{ background: "var(--m-primary-2)" }}>
+      <button onClick={save} disabled={busy} className="m-press mt-3 flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-[15px] font-bold text-white disabled:opacity-60" style={{ background: "var(--m-grad-green)" }}>
         {busy && <Loader2 className="h-5 w-5 animate-spin" />} Kaydet
       </button>
     </Sheet>
@@ -487,7 +485,7 @@ function CreateSheet({ open, onClose, onCreated }) {
       <div className="mt-2 px-1 text-[12px] leading-relaxed" style={{ color: "var(--m-ink-2)" }}>
         Karavan genel fiyatlandırma kataloğu otomatik yüklenir. Kalemleri sonra düzenleyebilirsin.
       </div>
-      <button onClick={create} disabled={busy} className="m-press mt-3 flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-[15px] font-bold text-white disabled:opacity-60" style={{ background: "var(--m-primary)" }}>
+      <button onClick={create} disabled={busy} className="m-press mt-3 flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-[15px] font-bold text-white disabled:opacity-60" style={{ background: "var(--m-grad)" }}>
         {busy && <Loader2 className="h-5 w-5 animate-spin" />} Oluştur
       </button>
     </Sheet>
@@ -560,7 +558,7 @@ export default function Contracts({ go }) {
         title="Sözleşmeler"
         subtitle={loading ? "Yükleniyor…" : `${items.length} sözleşme`}
         right={
-          <button onClick={() => setCreateOpen(true)} aria-label="Yeni sözleşme" className="m-press flex h-9 w-9 items-center justify-center rounded-full" style={{ background: "var(--m-primary)" }}>
+          <button onClick={() => setCreateOpen(true)} aria-label="Yeni sözleşme" className="m-press flex h-9 w-9 items-center justify-center rounded-full" style={{ background: "var(--m-grad)" }}>
             <Plus className="h-5 w-5 text-white" strokeWidth={2.6} />
           </button>
         }
@@ -571,7 +569,7 @@ export default function Contracts({ go }) {
           const on = stageF === id;
           return (
             <button key={id || "all"} onClick={() => setStageF(id)} className={`m-press shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-semibold ${on ? "" : "m-fill"}`}
-              style={on ? { background: "var(--m-primary)", color: "#fff" } : { background: "#e9e9ee", color: "var(--m-ink-2)" }}>
+              style={on ? { background: "var(--m-grad)", color: "#fff" } : { background: "#e9e9ee", color: "var(--m-ink-2)" }}>
               {label} {n > 0 && <span className="opacity-70">{n}</span>}
             </button>
           );
@@ -586,7 +584,7 @@ export default function Contracts({ go }) {
         ) : filtered.length === 0 ? (
           <EmptyState icon={ScrollText} title="Sözleşme bulunamadı" hint={q ? "Aramayı değiştir" : "Henüz sözleşme yok"} />
         ) : (
-          <div className="space-y-2 px-4 pt-1">{filtered.map((c) => <Row key={c.id} c={c} onOpen={setSel} />)}</div>
+          <div className="m-stagger space-y-2 px-4 pt-1">{filtered.map((c) => <Row key={c.id} c={c} onOpen={setSel} />)}</div>
         )}
       </RefreshScroll>
       <Detail

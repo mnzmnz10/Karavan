@@ -33,7 +33,7 @@ function AccountButton() {
       <Sheet open={open} onClose={() => setOpen(false)} title="Hesap">
         <div className="rounded-2xl bg-white p-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full" style={{ background: "var(--m-primary)" }}>
+            <div className="flex h-12 w-12 items-center justify-center rounded-full" style={{ background: "var(--m-grad)" }}>
               <User className="h-6 w-6 text-white" />
             </div>
             <div>
@@ -102,7 +102,7 @@ function CategoryCards({ cats, sel, onSel }) {
       <button
         onClick={() => onSel(id)}
         className={`m-press flex min-w-[86px] shrink-0 flex-col items-center gap-1.5 rounded-2xl px-3 py-2.5 ${on ? "" : "bg-white"}`}
-        style={on ? { background: "var(--m-primary)", color: "#fff" } : { color: "var(--m-ink-2)" }}
+        style={on ? { background: "var(--m-grad)", color: "#fff" } : { color: "var(--m-ink-2)" }}
       >
         <div
           className="flex h-9 w-9 items-center justify-center rounded-xl"
@@ -177,7 +177,7 @@ function Row({ p, onOpen, onAdd, onDec, qty, showDisc }) {
         >
           <Plus className="h-5 w-5" strokeWidth={2.6} />
           {qty > 0 && (
-            <span className="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[11px] font-extrabold text-white" style={{ background: "var(--m-primary-2)" }}>{qty}</span>
+            <span className="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[11px] font-extrabold text-white" style={{ background: "var(--m-grad-green)" }}>{qty}</span>
           )}
         </button>
       </div>
@@ -237,7 +237,7 @@ function Detail({ p, onClose, onAdd, showDisc, onFav, inCart = 0 }) {
             <span className="m-tnum w-8 text-center text-[16px] font-bold">{qty}</span>
             <button onClick={() => setQty((q) => q + 1)} className="m-press flex h-8 w-8 items-center justify-center rounded-full bg-white"><Plus className="h-4 w-4" /></button>
           </div>
-          <button onClick={() => { onAdd(p, qty); onClose(); }} className="m-press flex flex-1 items-center justify-center gap-2 rounded-2xl py-3 text-[15px] font-bold text-white" style={{ background: "var(--m-primary-2)" }}>
+          <button onClick={() => { onAdd(p, qty); onClose(); }} className="m-press flex flex-1 items-center justify-center gap-2 rounded-2xl py-3 text-[15px] font-bold text-white" style={{ background: "var(--m-grad-green)" }}>
             <Plus className="h-5 w-5" strokeWidth={2.6} /> Teklife Ekle
           </button>
         </div>
@@ -398,7 +398,7 @@ export default function Products() {
           <EmptyState icon={cat === FAV ? Star : Boxes} title={cat === FAV ? "Favori yok" : "Ürün bulunamadı"} hint={q ? "Aramayı değiştir" : cat === FAV ? "Ürün detayındaki yıldıza dokun" : "Henüz ürün yok"} />
         ) : (
           <>
-            <div className="space-y-2 px-4 pt-1">
+            <div className="m-stagger space-y-2 px-4 pt-1">
               {items.map((p) => <Row key={p.id} p={p} onOpen={setSel} onAdd={cart.add} onDec={(x) => cart.setQty(x.id, (cart.items.get(x.id)?.qty || 0) - 1)} qty={cart.items.get(p.id)?.qty || 0} showDisc={showDisc} />)}
             </div>
             {more && <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>}

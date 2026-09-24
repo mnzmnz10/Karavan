@@ -180,7 +180,7 @@ function CollectionSheet({ open, onClose, onAdd, remaining = 0 }) {
         <input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Açıklama (Nakit, EFT, Kart…)" className={field} />
         <div className="flex gap-1.5">
           {["Nakit", "EFT", "Kart"].map((t) => (
-            <button key={t} type="button" onClick={() => setDesc(t)} className="m-press rounded-full px-3 py-1 text-[12px] font-bold" style={desc === t ? { background: "var(--m-primary-2)", color: "#fff" } : { background: "#f1f5f9", color: "#64748b" }}>{t}</button>
+            <button key={t} type="button" onClick={() => setDesc(t)} className="m-press rounded-full px-3 py-1 text-[12px] font-bold" style={desc === t ? { background: "var(--m-grad-green)", color: "#fff" } : { background: "#f1f5f9", color: "#64748b" }}>{t}</button>
           ))}
         </div>
         <div className="flex gap-2">
@@ -205,7 +205,7 @@ function CollectionSheet({ open, onClose, onAdd, remaining = 0 }) {
       {currency !== "TRY" && amt > 0 && r > 0 && (
         <div className="mt-2 px-1 text-[12px]" style={{ color: "var(--m-ink-2)" }}>≈ ₺{money(amt * r)}</div>
       )}
-      <button onClick={save} disabled={busy} className="m-press mt-3 flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-[15px] font-bold text-white disabled:opacity-60" style={{ background: "var(--m-primary-2)" }}>
+      <button onClick={save} disabled={busy} className="m-press mt-3 flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-[15px] font-bold text-white disabled:opacity-60" style={{ background: "var(--m-grad-green)" }}>
         {busy && <Loader2 className="h-5 w-5 animate-spin" />} Kaydet
       </button>
     </Sheet>
@@ -347,7 +347,7 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuo
             <button onClick={() => onEdit?.(s)} className="m-press flex flex-1 items-center justify-center gap-1.5 rounded-2xl bg-white py-2.5 text-[14px] font-bold" style={{ color: "var(--m-primary)" }}>
               <Pencil className="h-4 w-4" /> Düzenle
             </button>
-            <button onClick={() => openDoc(docUrl.service(s.id))} className="m-press flex flex-1 items-center justify-center gap-1.5 rounded-2xl py-2.5 text-[14px] font-bold text-white" style={{ background: "var(--m-primary)" }}>
+            <button onClick={() => openDoc(docUrl.service(s.id))} className="m-press flex flex-1 items-center justify-center gap-1.5 rounded-2xl py-2.5 text-[14px] font-bold text-white" style={{ background: "var(--m-grad)" }}>
               <Share2 className="h-4 w-4" /> PDF
             </button>
           </div>
@@ -366,7 +366,7 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuo
             </div>
             {s.phone && (
               <div className="mt-3 flex gap-2">
-                <a href={`tel:${s.phone}`} className="m-press flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2.5 text-[14px] font-bold text-white" style={{ background: "var(--m-primary)" }}>
+                <a href={`tel:${s.phone}`} className="m-press flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2.5 text-[14px] font-bold text-white" style={{ background: "var(--m-grad)" }}>
                   <Phone className="h-4 w-4" /> Ara
                 </a>
                 <a href={`https://wa.me/${waNumber(s.phone)}?text=${encodeURIComponent(waText(s))}`} target="_blank" rel="noreferrer" className="m-press flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2.5 text-[14px] font-bold text-white" style={{ background: "#25d366" }}>
@@ -681,7 +681,7 @@ export default function Services({ go }) {
         title="Servis"
         subtitle={loading ? "Yükleniyor…" : `${items.length} kayıt${pending ? ` · ${pending} gönderilmedi` : ""}`}
         right={
-          <button onClick={openNew} aria-label="Yeni servis" className="m-press flex h-9 w-9 items-center justify-center rounded-full" style={{ background: "var(--m-primary)" }}>
+          <button onClick={openNew} aria-label="Yeni servis" className="m-press flex h-9 w-9 items-center justify-center rounded-full" style={{ background: "var(--m-grad)" }}>
             <Plus className="h-5 w-5 text-white" strokeWidth={2.6} />
           </button>
         }
@@ -692,7 +692,7 @@ export default function Services({ go }) {
           const on = statusF === id;
           return (
             <button key={id || "all"} onClick={() => setStatusF(id)} className={`m-press shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-semibold ${on ? "" : "m-fill"}`}
-              style={on ? { background: "var(--m-primary)", color: "#fff" } : { background: "#e9e9ee", color: "var(--m-ink-2)" }}>
+              style={on ? { background: "var(--m-grad)", color: "#fff" } : { background: "#e9e9ee", color: "var(--m-ink-2)" }}>
               {label} {n > 0 && <span className="opacity-70">{n}</span>}
             </button>
           );
@@ -711,7 +711,7 @@ export default function Services({ go }) {
         ) : filtered.length === 0 ? (
           <EmptyState icon={Wrench} title="Servis kaydı yok" hint={q ? "Aramayı değiştir" : "Sağ üstteki + ile ekle"} />
         ) : (
-          <div className="space-y-2 px-4 pt-1">{filtered.map((x) => <Row key={x.id} s={x} onOpen={(r) => setSelId(r.id)} onCycle={cycleStatus} busy={busyId === x.id} />)}</div>
+          <div className="m-stagger space-y-2 px-4 pt-1">{filtered.map((x) => <Row key={x.id} s={x} onOpen={(r) => setSelId(r.id)} onCycle={cycleStatus} busy={busyId === x.id} />)}</div>
         )}
       </RefreshScroll>
       <Detail id={selId} onClose={() => setSelId(null)} onEdit={openEdit} onDeleted={() => { setSelId(null); reload(); }} onChanged={reload} onRepeat={openRepeat} onOpenQuote={(name) => { cache.set("quote_search", name); setSelId(null); go?.("quotes"); }} prodCost={prodCost} go={(t) => { setSelId(null); go?.(t); }} />

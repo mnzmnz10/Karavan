@@ -459,7 +459,7 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
       <div className="sticky bottom-0 mt-4 pb-2 pt-2">
         <button onClick={save} disabled={busy}
           className="m-press flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-[16px] font-bold text-white disabled:opacity-60"
-          style={{ background: "var(--m-primary)" }}>
+          style={{ background: "var(--m-grad)" }}>
           {busy && <Loader2 className="h-5 w-5 animate-spin" />}
           {editing ? "Kaydet" : "Servis Kaydı Oluştur"}
         </button>

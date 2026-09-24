@@ -39,7 +39,7 @@ function TabBar({ active, onChange }) {
               className="m-press flex flex-1 flex-col items-center justify-center gap-0.5"
               style={{ color: on ? "var(--m-primary)" : "#8a94a0" }}
             >
-              <Icon className="h-6 w-6" strokeWidth={on ? 2.5 : 2} />
+              <span className="m-tab-pill" data-on={on}><Icon className="h-6 w-6" strokeWidth={on ? 2.4 : 2} /></span>
               <span className="text-[11px] font-semibold tracking-tight">{t.label}</span>
             </button>
           );
@@ -139,7 +139,7 @@ export default function MobileApp() {
         <CartProvider>
           <div className="flex-1 overflow-hidden">
             <ErrorBoundary key={`${tab}:${reloadKey}`}>
-              <Active go={onTab} />
+              <div className="m-tab-enter h-full"><Active go={onTab} /></div>
             </ErrorBoundary>
           </div>
           <CartBar />

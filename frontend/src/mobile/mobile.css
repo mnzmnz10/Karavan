@@ -161,3 +161,53 @@
 
 /* Başlıklarda dengeli satır kırma */
 #mobile-root .m-largetitle, #mobile-root .m-balance { text-wrap: balance; }
+
+/* ===== Premium görsel dil (2026-09-24) ===== */
+:root {
+  --m-grad: linear-gradient(135deg, #0f2a44 0%, #143a5c 45%, #1f6157 100%);     /* marka: lacivert → yeşil */
+  --m-grad-green: linear-gradient(135deg, #3aa991 0%, #2e8b7a 55%, #1f6157 100%);
+  --m-shadow-card: 0 1px 2px rgba(16, 24, 40, .06), 0 4px 14px rgba(16, 24, 40, .05);
+}
+#mobile-root.theme-dark { --m-shadow-card: 0 1px 2px rgba(0, 0, 0, .4); }
+
+/* Renkli gradyan ikon rozeti */
+.m-badge { display: flex; align-items: center; justify-content: center; color: #fff; flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(16, 24, 40, .12), inset 0 1px 0 rgba(255, 255, 255, .25); }
+
+/* Marka kahraman kartı (ay kartı) */
+.m-hero { position: relative; overflow: hidden; color: #fff; background: var(--m-grad); }
+.m-hero::before { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(140px 90px at 92% 8%, rgba(58, 169, 145, .55), transparent 70%); }
+.m-hero > * { position: relative; }
+
+/* Sıralı giriş: ekran ilk açılışında kartlar hafif yukarı kayarak belirir (--i = sıra) */
+@keyframes m-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.m-in { animation: m-in .45s cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(var(--i, 0) * 55ms); }
+
+/* Sekme değişimi: içerik yumuşak geçiş */
+.m-tab-enter { animation: m-fade-in .22s ease-out both; }
+
+/* Grafik çubukları aşağıdan büyür */
+@keyframes m-grow { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+.m-grow { transform-origin: bottom; animation: m-grow .6s cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(var(--i, 0) * 60ms); }
+
+/* Sekme çubuğu: seçili sekmede yumuşak hap vurgu */
+.m-tab-pill { border-radius: 999px; padding: 3px 16px; transition: background-color .2s ease-out; }
+.m-tab-pill[data-on="true"] { background: rgba(20, 58, 92, .1); }
+#mobile-root.theme-dark .m-tab-pill[data-on="true"] { background: rgba(255, 255, 255, .12); }
+
+/* Hareketi Azalt: tüm animasyon/geçişleri kapat */
+@media (prefers-reduced-motion: reduce) {
+  #mobile-root *, #mobile-root *::before, #mobile-root *::after {
+    animation-duration: .01ms !important; animation-delay: 0ms !important; animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
+
+/* Liste satırları sırayla belirir (ilk 10; sonrası anında) */
+.m-stagger > * { animation: m-in .42s cubic-bezier(.2, .8, .2, 1) both; }
+.m-stagger > *:nth-child(2) { animation-delay: 40ms; } .m-stagger > *:nth-child(3) { animation-delay: 80ms; }
+.m-stagger > *:nth-child(4) { animation-delay: 120ms; } .m-stagger > *:nth-child(5) { animation-delay: 160ms; }
+.m-stagger > *:nth-child(6) { animation-delay: 200ms; } .m-stagger > *:nth-child(7) { animation-delay: 240ms; }
+.m-stagger > *:nth-child(8) { animation-delay: 280ms; } .m-stagger > *:nth-child(9) { animation-delay: 320ms; }
+.m-stagger > *:nth-child(10) { animation-delay: 360ms; } .m-stagger > *:nth-child(n+11) { animation: none; }

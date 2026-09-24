@@ -5,7 +5,7 @@ import CustomerSheet from "../CustomerSheet";
 import { useCatalog, catRate } from "../catalog";
 import { toast } from "../toast";
 import { quotes as quotesApi, docUrl, openDoc } from "../api";
-import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, RefreshScroll, OfflineBar, waNumber, fmtDate } from "../ui";
+import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, RefreshScroll, OfflineBar, waNumber, fmtDate, IconBadge } from "../ui";
 import { cache, customerNames, phoneForCustomer } from "../cache";
 import { useCart } from "../Cart";
 
@@ -32,9 +32,7 @@ function Row({ q, onOpen, transferred }) {
   return (
     <Card onClick={() => onOpen(q)} className="p-3.5">
       <div className="flex items-start gap-3">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl" style={{ background: "#fff5e6" }}>
-          <FileText className="h-5 w-5" style={{ color: "#d9820a" }} />
-        </div>
+        <IconBadge icon={FileText} tone="blue" size={44} />
         <div className="min-w-0 flex-1">
           <div className="truncate text-[15px] font-semibold leading-tight">{q.name || "Teklif"}</div>
           <div className="mt-0.5 flex items-center gap-2 text-[12px]" style={{ color: "var(--m-ink-2)" }}>
@@ -221,7 +219,7 @@ function QuoteEditSheet({ q, open, onClose, onSaved }) {
         <span className="text-[13px]" style={{ color: "var(--m-ink-2)" }}>Yeni net toplam</span>
         <span className="m-tnum text-[17px] font-extrabold" style={{ color: "var(--m-primary)" }}>₺{money(net)}</span>
       </div>
-      <button onClick={save} disabled={busy} className="m-press mt-3 flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-[15px] font-bold text-white disabled:opacity-60" style={{ background: "var(--m-primary)" }}>
+      <button onClick={save} disabled={busy} className="m-press mt-3 flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-[15px] font-bold text-white disabled:opacity-60" style={{ background: "var(--m-grad)" }}>
         {busy && <Loader2 className="h-5 w-5 animate-spin" />} Kaydet
       </button>
     </Sheet>
@@ -468,7 +466,7 @@ function QuoteItemsSheet({ q, open, onClose, onSaved, showCost }) {
         <div className="mt-1 text-[11px] text-slate-400">Katalog ürünleri güncel kur ve fiyatla hesaplanır.</div>
       </div>
       <div className="sticky bottom-0 mt-2 pb-2 pt-2">
-        <button onClick={save} disabled={busy} className="m-press m-tnum flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-[15px] font-bold text-white disabled:opacity-60" style={{ background: "var(--m-primary)" }}>
+        <button onClick={save} disabled={busy} className="m-press m-tnum flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-[15px] font-bold text-white disabled:opacity-60" style={{ background: "var(--m-grad)" }}>
           {busy && <Loader2 className="h-5 w-5 animate-spin" />} Kaydet · ₺{money(net)}
         </button>
       </div>
@@ -550,7 +548,7 @@ function Detail({ q, onClose, onDeleted, onSaved, onCopied, go }) {
         <a href={`https://wa.me/${custPhone ? waNumber(custPhone) : ""}?text=${encodeURIComponent(quoteSummaryText(q))}`} target="_blank" rel="noreferrer" aria-label="WhatsApp" className="m-press flex w-12 items-center justify-center rounded-2xl text-white" style={{ background: "#25d366" }}>
           <MessageCircle className="h-5 w-5" />
         </a>
-        <button onClick={() => openDoc(docUrl.quote(q.id))} className="m-press flex flex-1 items-center justify-center gap-2 rounded-2xl py-3 text-[15px] font-bold text-white" style={{ background: "var(--m-primary)" }}>
+        <button onClick={() => openDoc(docUrl.quote(q.id))} className="m-press flex flex-1 items-center justify-center gap-2 rounded-2xl py-3 text-[15px] font-bold text-white" style={{ background: "var(--m-grad)" }}>
           <Share2 className="h-4 w-4" /> PDF
         </button>
       </div>
@@ -703,7 +701,7 @@ export default function Quotes({ go }) {
         title="Teklifler"
         subtitle={loading ? "Yükleniyor…" : `${items.length} teklif`}
         right={cart ? (
-          <button onClick={cart.openSheet} aria-label="Yeni teklif" className="m-press flex h-9 w-9 items-center justify-center rounded-full" style={{ background: "var(--m-primary)" }}>
+          <button onClick={cart.openSheet} aria-label="Yeni teklif" className="m-press flex h-9 w-9 items-center justify-center rounded-full" style={{ background: "var(--m-grad)" }}>
             <Plus className="h-5 w-5 text-white" strokeWidth={2.6} />
           </button>
         ) : null}
@@ -714,7 +712,7 @@ export default function Quotes({ go }) {
           const on = qf === id;
           return (
             <button key={id || "all"} onClick={() => setQf(id)} className={`m-press shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-semibold ${on ? "" : "m-fill"}`}
-              style={on ? { background: "var(--m-primary)", color: "#fff" } : { background: "#e9e9ee", color: "var(--m-ink-2)" }}>
+              style={on ? { background: "var(--m-grad)", color: "#fff" } : { background: "#e9e9ee", color: "var(--m-ink-2)" }}>
               {label} {n > 0 && <span className="opacity-70">{n}</span>}
             </button>
           );
@@ -736,14 +734,14 @@ export default function Quotes({ go }) {
         ) : (
           <div className="px-4 pt-1">
             {qsort !== "date" ? (
-              <div className="space-y-2 pb-3">{filtered.map((x) => <Row key={x.id} q={x} onOpen={setSel} transferred={transferredNames.has(x.name)} />)}</div>
+              <div className="m-stagger space-y-2 pb-3">{filtered.map((x) => <Row key={x.id} q={x} onOpen={setSel} transferred={transferredNames.has(x.name)} />)}</div>
             ) : groupByMonth(filtered).map((g) => (
               <div key={g.key} className="mb-3">
                 <div className="flex items-baseline justify-between px-1 pb-1.5 text-[12px] font-bold uppercase tracking-wide text-slate-400">
                   <span>{g.label}</span>
                   <span className="m-tnum normal-case">{g.items.length} teklif · ₺{money(g.total)}</span>
                 </div>
-                <div className="space-y-2">{g.items.map((x) => <Row key={x.id} q={x} onOpen={setSel} transferred={transferredNames.has(x.name)} />)}</div>
+                <div className="m-stagger space-y-2">{g.items.map((x) => <Row key={x.id} q={x} onOpen={setSel} transferred={transferredNames.has(x.name)} />)}</div>
               </div>
             ))}
           </div>

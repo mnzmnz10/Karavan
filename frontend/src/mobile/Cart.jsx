@@ -73,7 +73,7 @@ export function CartBar() {
     <button
       onClick={cart.openSheet}
       className="m-press fixed inset-x-3 z-40 flex items-center gap-3 rounded-2xl px-4 py-3 text-white shadow-xl"
-      style={{ bottom: "calc(var(--m-tabbar-h) + env(safe-area-inset-bottom) + 8px)", background: "var(--m-primary)" }}
+      style={{ bottom: "calc(var(--m-tabbar-h) + env(safe-area-inset-bottom) + 8px)", background: "var(--m-grad)" }}
     >
       <div className="relative">
         <ShoppingCart className="h-6 w-6" />
@@ -312,7 +312,7 @@ function CartSheet({ open, onClose }) {
       </button>
 
       <div className="sticky bottom-0 mt-2 pb-2 pt-2">
-        <button onClick={create} disabled={busy} className="m-press flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-[16px] font-bold text-white disabled:opacity-60" style={{ background: "var(--m-primary)" }}>
+        <button onClick={create} disabled={busy} className="m-press flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-[16px] font-bold text-white disabled:opacity-60" style={{ background: "var(--m-grad)" }}>
           {busy && <Loader2 className="h-5 w-5 animate-spin" />}
           Teklif Oluştur · ₺{money(grand)}
         </button>
