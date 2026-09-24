@@ -135,7 +135,25 @@ function priceTRY(p) {
   const list = Number(p.list_price_try) || 0;
   const discRaw = Number(p.discounted_price_try);
   const disc = discRaw > 0 ? discRaw : null;
-  return { list, disc };
+  // Döviz girişli ürün: girilen para biriminden fiyat da (€/$)
+  const cur = p.currency && p.currency !== "TRY" ? p.currency : null;
+  const oList = cur ? Number(p.list_price) || 0 : null;
+  const oDisc = cur && Number(p.discounted_price) > 0 ? Number(p.discounted_price) : null;
+  return { list, disc, cur, oList, oDisc };
+}
+
+const FX_SYM = { EUR: "€", USD: "$" };
+const fx = (cur, n) => `${FX_SYM[cur] || cur + " "}${(Number(n) || 0).toLocaleString("tr-TR", { maximumFractionDigits: 2 })}`;
+
+// Satırda/detayda TL fiyatın yanında girilen döviz fiyatı (göz açık + alış varsa alış dövizi)
+function FxTag({ pr, showDisc, big = false }) {
+  if (!pr.cur) return null;
+  const v = showDisc && pr.disc != null && pr.oDisc != null ? pr.oDisc : pr.oList;
+  return (
+    <span className={`m-tnum rounded-md px-1.5 py-0.5 font-bold ${big ? "text-[14px]" : "text-[12px]"}`} style={{ background: "rgba(30,115,190,.1)", color: "#1e73be" }}>
+      {fx(pr.cur, v)}
+    </span>
+  );
 }
 
 function Row({ p, onOpen, onAdd, onDec, qty, showDisc }) {
@@ -165,6 +183,7 @@ function Row({ p, onOpen, onAdd, onDec, qty, showDisc }) {
             ) : (
               <span className="m-tnum text-[15px] font-extrabold" style={{ color: "var(--m-ink)" }}>₺{money(pr.list)}</span>
             )}
+            <FxTag pr={pr} showDisc={showDisc} />
           </div>
         </div>
         {qty > 0 && onDec && (
@@ -236,6 +255,7 @@ function Detail({ p, onClose, onAdd, showDisc, onFav, inCart = 0 }) {
           ) : (
             <span className="m-tnum text-[24px] font-extrabold" style={{ color: "var(--m-ink)" }}>₺{money(pr.list)}</span>
           )}
+          <FxTag pr={pr} showDisc={showDisc} big />
         </div>
         <div className="mt-3 flex items-center gap-3">
           <div className="flex items-center gap-2 rounded-2xl bg-slate-100 px-2 py-1.5">

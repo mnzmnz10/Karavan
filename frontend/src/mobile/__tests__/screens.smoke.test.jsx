@@ -759,3 +759,18 @@ test("eski aktarım: gelişi boş İşçilik kalemi maliyet sayılmaz (kâr = ne
   expect(text()).toContain(`Maliyet₺${money(7000 + 2000)}`);
   expect(text()).toContain(`Kâr₺${money(22000 - 9000)}`);
 });
+
+test("ürünler: döviz girişli ürün TL yanında €/$ fiyatı da gösterir (alış dövizi yalnız göz açıkken)", async () => {
+  global.__PRODUCTS = [{ id: "fx1", name: "Megacell Akü", currency: "USD", list_price: 870, discounted_price: 603, list_price_try: 37550, discounted_price_try: 26026 }];
+  await render(
+    <SessionCtx.Provider value={{ username: "t" }}>
+      <CartProvider><Products /><CartBar /></CartProvider>
+    </SessionCtx.Provider>
+  );
+  await act(() => new Promise((r) => setTimeout(r, 600)));
+  expect(text()).toContain("$870");
+  expect(text()).toContain(money(37550));
+  expect(text()).not.toContain("$603");
+  await click(document.body.querySelector('button[aria-label="Göster/Gizle"]'));
+  expect(text()).toContain("$603");
+});
