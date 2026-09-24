@@ -71,7 +71,6 @@ const statementText = (s) => {
   L.push("", `*Toplam: ₺${money(net)}*`);
   if (got > 0) L.push(`Ödenen: ₺${money(got)}`);
   L.push(left > 0.5 ? `*Kalan: ₺${money(left)}*` : "Ödeme tamamlandı, teşekkür ederiz.");
-  L.push("", "Çorlu Karavan");
   return L.join("\n");
 };
 

@@ -46,8 +46,6 @@ export function contractStatementText(c) {
     "",
     ...colls.map((x) => `• ${x.date ? fmtDate(x.date) + " " : ""}${x.description || "Tahsilat"}: ${sym(x.currency)}${money(parseFloat(x.amount) || 0)}`),
     `Tahsil edilen: ₺${money(tl)}`,
-    "",
-    "Çorlu Karavan",
   ].filter((l) => l !== null).join("\n");
 }
 const custTc = (c) => c?.customer_tc || c?.data?.customer_tc || "";
@@ -141,7 +139,7 @@ function Detail({ c, onClose, onStage, staging, onDeleted, onEditItems, onCopy, 
             <a href={`tel:${custPhone(c)}`} className="m-press flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2.5 text-[14px] font-bold text-white" style={{ background: "var(--m-grad)" }}>
               <Phone className="h-4 w-4" /> Ara
             </a>
-            <a href={`https://wa.me/${waNumber(custPhone(c))}?text=${encodeURIComponent(`Merhaba ${custName(c) || ""}, ${c.title ? c.title + " " : ""}sözleşmeniz hakkında yazıyorum. — Çorlu Karavan`.replace("Merhaba , ", "Merhaba, "))}`} target="_blank" rel="noreferrer" className="m-press flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2.5 text-[14px] font-bold text-white" style={{ background: "#25d366" }}>
+            <a href={`https://wa.me/${waNumber(custPhone(c))}?text=${encodeURIComponent(`Merhaba ${custName(c) || ""}, ${c.title ? c.title + " " : ""}sözleşmeniz hakkında yazıyorum.`.replace("Merhaba , ", "Merhaba, "))}`} target="_blank" rel="noreferrer" className="m-press flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2.5 text-[14px] font-bold text-white" style={{ background: "#25d366" }}>
               <MessageCircle className="h-4 w-4" /> WhatsApp
             </a>
           </div>

@@ -488,7 +488,7 @@ function quoteSummaryText(q) {
   const disc = Number(q.discount_percentage || 0);
   if (labor > 0) lines.push(`• İşçilik — ₺${money(labor)}`);
   if (disc > 0) lines.push(`İskonto: %${money(disc)}`);
-  lines.push("", `*Toplam: ₺${money(q.total_net_price || 0)}*`, "", "Çorlu Karavan");
+  lines.push("", `*Toplam: ₺${money(q.total_net_price || 0)}*`);
   return lines.join("\n");
 }
 
