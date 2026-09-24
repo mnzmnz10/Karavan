@@ -51,7 +51,7 @@ const waText = (s) => {
   const ad = (s.customer_name || "").trim();
   const hi = ad ? `Merhaba ${ad}, ` : "Merhaba, ";
   const arac = vehicleLine(s) || (s.plate ? s.plate : "aracınız");
-  if (s.status === "delivered") return `${hi}Çorlu Karavan'ı tercih ettiğiniz için teşekkür ederiz.`;
+  if (s.status === "delivered") return hi.trim(); // teslim sonrası: yalnız selam, metni kullanıcı yazar
   if (s.status === "in_progress") return `${hi}${arac} için servis işlemleriniz devam ediyor.`;
   return `${hi}${arac} servisimize ulaştı.`;
 };
