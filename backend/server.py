@@ -12203,7 +12203,7 @@ class PDFContractGenerator(PDFQuoteGenerator):
         st = Table(spec_rows, colWidths=[3.2 * cm, col_w - 3.2 * cm])
         st.setStyle(TableStyle([
             ('SPAN', (0, 0), (1, 0)),
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2F6497')),  # başlıklarla aynı mavi, biraz açık ton
+            ('BACKGROUND', (0, 0), (-1, 0), navy),  # diğer bölüm başlıklarıyla aynı lacivert
             ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#F4F6F9')),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('LINEBELOW', (0, 1), (-1, -1), 0.4, colors.HexColor('#D9E0E8')),
