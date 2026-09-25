@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { AccountButton } from "../Account";
-import { Wrench, FileText, ScrollText, Clock, CheckCircle2, TrendingUp, Eye, EyeOff, AlertCircle, Truck } from "lucide-react";
+import { Wrench, FileText, ScrollText, Clock, CheckCircle2, TrendingUp, Eye, EyeOff, AlertCircle, Truck, BatteryCharging, Sun } from "lucide-react";
+import { BatterySheet, MpptSheet } from "./Tools";
 import http, { services as servicesApi, quotes as quotesApi, rates as ratesApi } from "../api";
 import { SearchBar, Card, SkeletonList, RefreshScroll, OfflineBar, money, ago, todayISO, fmtDate, IconBadge, useCountUp } from "../ui";
 import { useSession } from "../session";
@@ -90,6 +91,7 @@ export default function Dashboard({ go }) {
   const [showProfit, setShowProfit] = useState(() => cache.get("svc_profit") === true);
   const [gq, setGq] = useState(""); // genel arama
   const [repOpen, setRepOpen] = useState(false); // tahsilat raporu
+  const [tool, setTool] = useState(null); // araçlar: "battery" | "mppt"
   const catalog = useCatalog(gq.trim().length >= 2); // ürün sonuçları için (ilk aramada yüklenir)
   useEffect(() => { cache.set("svc_profit", showProfit); }, [showProfit]);
 
@@ -244,6 +246,20 @@ export default function Dashboard({ go }) {
               <Stat i={3} icon={ScrollText} tone="indigo" value={stats.cTotal} label="Sözleşme" sub={`${stats.agreed} anlaşıldı`} onClick={() => go?.("contracts")} />
               <Stat i={4} icon={TrendingUp} tone="green" value={`₺${money(stats.quotesMonthSum)}`} label="Bu ay teklif" sub={`${stats.quotesMonth} teklif`} onClick={() => go?.("quotes")} />
             </div>
+
+            {/* Araçlar: akü testi + MPPT hesaplama (tam ekran sheet) */}
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <Card onClick={() => setTool("battery")} className="flex items-center gap-3 p-3.5">
+                <IconBadge icon={BatteryCharging} tone="red" />
+                <div className="min-w-0"><div className="text-[14px] font-bold">Akü Testi</div><div className="truncate text-[12px] text-slate-400">Fotoğraftan rapor</div></div>
+              </Card>
+              <Card onClick={() => setTool("mppt")} className="flex items-center gap-3 p-3.5">
+                <IconBadge icon={Sun} tone="amber" />
+                <div className="min-w-0"><div className="text-[14px] font-bold">MPPT Hesapla</div><div className="truncate text-[12px] text-slate-400">Panel → şarj cihazı</div></div>
+              </Card>
+            </div>
+            <BatterySheet open={tool === "battery"} onClose={() => setTool(null)} />
+            <MpptSheet open={tool === "mppt"} onClose={() => setTool(null)} />
 
 
             {stats.months.some((mm) => mm.total > 0) && (() => {

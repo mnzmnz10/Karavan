@@ -36,6 +36,23 @@ export const products = {
   toggleFavorite: (id) => http.post(`/products/${id}/toggle-favorite`).then((r) => r.data),
 };
 
+// Akü testi: fotoğraftan değer okuma (AI) + kuralla durum; PDF blob döner
+export const battery = {
+  extract: (files) => {
+    const fd = new FormData();
+    files.forEach((f) => fd.append("files", f, f.name || "foto.jpg"));
+    return http.post("/battery-analysis/extract", fd, { timeout: 120000 }).then((r) => r.data);
+  },
+  assess: (values) => http.post("/battery-analysis/assess", values).then((r) => r.data),
+  pdf: (payload) => http.post("/battery-analysis/pdf", payload, { responseType: "blob", timeout: 60000 }).then((r) => r.data),
+};
+
+// MPPT hesaplama (panel değerleri kayıtlıysa otomatik gelir)
+export const mppt = {
+  specs: (productId) => http.get(`/mppt/panel-specs/${productId}`).then((r) => r.data),
+  recommend: (payload) => http.post("/mppt/recommend", payload, { timeout: 90000 }).then((r) => r.data),
+};
+
 export const rates = {
   get: () => http.get("/exchange-rates").then((r) => r.data?.rates || {}),
 };

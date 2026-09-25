@@ -8811,7 +8811,7 @@ KURALLAR:
 - Yanıtı SADECE JSON olarak ver."""
 
 
-def _excel_to_text(data: bytes) -> str:
+def _excel_to_text(data: bytes, limit: int = 200000) -> str:
     """Excel dosyasini AI'ya metin olarak vermek icin CSV'ye cevir (tum sayfalar)."""
     try:
         sheets = pd.read_excel(BytesIO(data), sheet_name=None, header=None, dtype=str)
@@ -8823,7 +8823,7 @@ def _excel_to_text(data: bytes) -> str:
         chunks.append(f"--- Sayfa: {sheet_name} ---")
         chunks.append(df.fillna('').to_csv(index=False, header=False))
     text = "\n".join(chunks)
-    return text[:200000]  # asiri buyuk dosyalari sinirla
+    return text[:limit]  # asiri buyuk dosyalari sinirla
 
 
 def _doc_image_bytes(data: bytes) -> tuple:
@@ -8919,28 +8919,36 @@ def _extract_products_from_file(data: bytes, filename: str, ext: str, content_ty
     else:
         raise HTTPException(status_code=400, detail="Desteklenmeyen dosya türü.")
 
-    messages = [{"role": "user", "content": content}]
-    raw_text = _call_openai_chat(messages, max_tokens=8192, temperature=0.1, json_mode=True).strip()
+    return _ai_extract_chunk(content[1:])
+
+
+def _ai_parse_json_products(raw_text: str):
+    """AI yanıtını çöz; yanıt yarıda kesildiyse son tam ürüne kadar kurtar."""
+    raw_text = (raw_text or "").strip()
     if not raw_text:
         return []
-
-    try:
-        parsed = json.loads(raw_text)
-    except json.JSONDecodeError:
-        # Modeli ```json ... ``` ile sarmis olabilir; temizleyip tekrar dene
-        cleaned = re.sub(r'^```(?:json)?|```$', '', raw_text.strip(), flags=re.MULTILINE).strip()
+    cleaned = re.sub(r'^```(?:json)?|```$', '', raw_text, flags=re.MULTILINE).strip()
+    for cand in (raw_text, cleaned):
         try:
-            parsed = json.loads(cleaned)
+            return json.loads(cand)
         except json.JSONDecodeError:
-            logger.error(f"AI ürün JSON parse edilemedi: {raw_text[:300]}")
-            raise HTTPException(status_code=502, detail="AI yanıtı çözümlenemedi, tekrar deneyin.")
+            pass
+    cut = cleaned.rfind("},")
+    if cut > 0:
+        try:
+            return json.loads(cleaned[:cut + 1] + "]}")
+        except json.JSONDecodeError:
+            pass
+    logger.error(f"AI ürün JSON parse edilemedi: {raw_text[:300]}")
+    raise HTTPException(status_code=502, detail="AI yanıtı çözümlenemedi, tekrar deneyin.")
 
+
+def _normalize_ai_products(parsed) -> list:
     if isinstance(parsed, dict):
         # tek obje ya da {products:[...]} sarmali olabilir
         parsed = parsed.get('products') or parsed.get('items') or [parsed]
     if not isinstance(parsed, list):
         return []
-
     products = []
     for item in parsed:
         if not isinstance(item, dict):
@@ -8968,6 +8976,172 @@ def _extract_products_from_file(data: bytes, filename: str, ext: str, content_ty
             "description": (str(item.get('description')).strip()[:2000] if item.get('description') else None),
         })
     return products
+
+
+def _ai_extract_chunk(parts: list) -> list:
+    """Bir parça (metin ve/veya sayfa görselleri) → ürün listesi."""
+    prompt = PRODUCT_EXTRACTION_PROMPT + '\n\nYanıtı {"products": [ ... ]} biçiminde tek bir JSON nesnesi olarak ver.'
+    messages = [{"role": "user", "content": [{"type": "text", "text": prompt}] + list(parts)}]
+    raw_text = _call_openai_chat(messages, max_tokens=16000, temperature=0.1, json_mode=True)
+    return _normalize_ai_products(_ai_parse_json_products(raw_text))
+
+
+# ---- Parçalı AI ürün çıkarma işleri (büyük listeler, çoklu dosya, ilerleme) ----
+# Dosyalar parçalara bölünür (metin ~3500 karakter, taranmış sayfalar 3'er), parçalar 4'lü paralel
+# okunur; arayüz GET ile ilerlemeyi sorar. İşler bellekte (tek uvicorn işçisi), 2 saat sonra silinir.
+AI_CHUNK_CHARS = 3500   # ~80 tablo satırı: model listeyi yarıda bırakmaz, istek süresi kısa kalır
+AI_PAGES_PER_IMAGE_CHUNK = 3
+AI_MAX_IMAGE_PAGES = 60
+AI_PARALLEL = 4
+_AI_JOBS: Dict[str, dict] = {}
+
+
+def _split_text_chunks(text: str, limit: int, header: str = "") -> list:
+    out, cur = [], []
+    size = 0
+    for line in text.splitlines():
+        if size + len(line) > limit and cur:
+            out.append("\n".join(cur)); cur, size = [], 0
+        while len(line) > limit:  # tek satır çok uzunsa
+            out.append(line[:limit]); line = line[limit:]
+        cur.append(line); size += len(line) + 1
+    if cur:
+        out.append("\n".join(cur))
+    return [(header + c) if (header and i > 0) else c for i, c in enumerate(out)]
+
+
+def _ai_file_chunks(data: bytes, filename: str, ext: str, content_type: str) -> list:
+    """Dosyayı AI parçalarına böl → [(etiket, [content parts])]."""
+    is_pdf = ext == "pdf" or content_type == "application/pdf"
+    is_excel = ext in ("xlsx", "xls")
+    is_image = content_type.startswith("image/") or ext in ("png", "jpg", "jpeg", "webp")
+    if is_excel:
+        text = _excel_to_text(data, limit=2_000_000)
+        if not text.strip():
+            raise HTTPException(status_code=422, detail=f"{filename}: Excel dosyası boş görünüyor.")
+        head = "\n".join(text.splitlines()[:4])
+        pieces = _split_text_chunks(text, AI_CHUNK_CHARS, header=f"(Tablonun ilk satırları — sütun anlamı için)\n{head}\n---\n")
+        return [(f"{filename} · parça {i + 1}", [{"type": "text", "text": f"\n\nFiyat listesi (Excel) içeriği:\n{c}"}]) for i, c in enumerate(pieces)]
+    if is_pdf:
+        import fitz  # pymupdf
+        try:
+            doc = fitz.open(stream=data, filetype="pdf")
+        except Exception:
+            raise HTTPException(status_code=422, detail=f"{filename}: PDF dosyası okunamadı.")
+        items, img_pages = [], 0
+        try:
+            for i, page in enumerate(doc):
+                t = page.get_text().strip()
+                if len(t) >= 80:
+                    for piece in _split_text_chunks(t, AI_CHUNK_CHARS):
+                        items.append(("text", f"--- Sayfa {i + 1} ---\n{piece}", i + 1))
+                elif img_pages < AI_MAX_IMAGE_PAGES:
+                    items.append(("img", doc[i].get_pixmap(dpi=150).tobytes("jpeg"), i + 1))
+                    img_pages += 1
+        finally:
+            doc.close()
+        if not items:
+            raise HTTPException(status_code=422, detail=f"{filename}: PDF'ten içerik çıkarılamadı.")
+        chunks, cur, cost, pages = [], [], 0.0, []
+        for kind, val, pg in items:
+            c = (len(val) / AI_CHUNK_CHARS) if kind == "text" else (1.0 / AI_PAGES_PER_IMAGE_CHUNK)
+            if cur and cost + c > 1.0001:
+                chunks.append((pages, cur)); cur, cost, pages = [], 0.0, []
+            cur.append({"type": "text", "text": f"\n\nFiyat listesi (PDF) içeriği:\n{val}"} if kind == "text"
+                       else {"type": "image_url", "image_url": {"url": _image_bytes_to_data_url(val, "image/jpeg")}})
+            cost += c
+            if pg not in pages:
+                pages.append(pg)
+        if cur:
+            chunks.append((pages, cur))
+        return [(f"{filename} · sayfa {pg[0]}" + (f"–{pg[-1]}" if len(pg) > 1 else ""), parts) for pg, parts in chunks]
+    if is_image:
+        img_bytes, mime = _doc_image_bytes(data)
+        return [(filename, [{"type": "image_url", "image_url": {"url": _image_bytes_to_data_url(img_bytes, mime)}}])]
+    raise HTTPException(status_code=400, detail=f"{filename}: desteklenmeyen dosya türü.")
+
+
+async def _run_ai_extract_job(job_id: str, tasks: list):
+    job = _AI_JOBS[job_id]
+    sem = asyncio.Semaphore(AI_PARALLEL)
+    loop = asyncio.get_running_loop()
+    results = [None] * len(tasks)
+
+    async def one(i, label, parts):
+        async with sem:
+            for attempt in (1, 2):  # geçici ağ/zaman aşımı hatasında bir kez daha dene
+                try:
+                    results[i] = await loop.run_in_executor(None, _ai_extract_chunk, parts)
+                    break
+                except Exception as e:
+                    if attempt == 2:
+                        results[i] = []
+                        job["errors"].append(f"{label}: {getattr(e, 'detail', None) or str(e)[:160]}")
+                    else:
+                        await asyncio.sleep(2)
+            job["done"] += 1
+            job["found"] += len(results[i] or [])
+
+    await asyncio.gather(*(one(i, label, parts) for i, (label, parts) in enumerate(tasks)))
+    merged, seen = [], set()
+    for chunk in results:
+        for prod in chunk or []:
+            key = (_normalize_product_name_for_match(prod["name"]), round(prod["list_price"], 2))
+            if key in seen:
+                continue  # parça sınırında tekrar eden satır
+            seen.add(key)
+            merged.append(prod)
+    job["products"] = merged
+    job["status"] = "done" if merged else "failed"
+    job["finished_at"] = time.time()
+
+
+@api_router.post("/companies/{company_id}/ai-extract-jobs")
+async def start_ai_extract_job(company_id: str, files: List[UploadFile] = File(...)):
+    """Bir veya birden çok dosyadan parçalı AI ürün çıkarma işini başlat (KAYDETMEZ). İlerleme: GET /ai-extract-jobs/{id}."""
+    if not await db.companies.find_one({"id": company_id}, {"id": 1}):
+        raise HTTPException(status_code=404, detail="Firma bulunamadı")
+    if not OPENAI_API_KEY:
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY tanımlı değil (backend/.env).")
+    if not files or len(files) > 10:
+        raise HTTPException(status_code=400, detail="1–10 dosya yükleyin.")
+    now = time.time()
+    for jid in [k for k, v in _AI_JOBS.items() if now - v["created_at"] > 7200]:
+        _AI_JOBS.pop(jid, None)
+    allowed_ext = {"pdf", "xlsx", "xls", "png", "jpg", "jpeg", "webp"}
+    loop = asyncio.get_running_loop()
+    tasks, names = [], []
+    for f in files:
+        filename = f.filename or "dosya"
+        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+        ctype = (f.content_type or "").lower()
+        if ext not in allowed_ext and not (ctype.startswith("image/") or ctype == "application/pdf"):
+            raise HTTPException(status_code=400, detail=f"{filename}: yalnız PDF, Excel veya görsel.")
+        data = await f.read()
+        if not data:
+            continue
+        if len(data) > MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail=f"{filename}: dosya çok büyük (en fazla {MAX_UPLOAD_BYTES // (1024*1024)} MB).")
+        tasks += await loop.run_in_executor(None, _ai_file_chunks, data, filename, ext, ctype)
+        names.append(filename)
+    if not tasks:
+        raise HTTPException(status_code=400, detail="Okunacak içerik bulunamadı.")
+    job_id = uuid.uuid4().hex
+    _AI_JOBS[job_id] = {"id": job_id, "company_id": company_id, "files": names, "total": len(tasks), "done": 0,
+                        "found": 0, "errors": [], "products": None, "status": "running", "created_at": now}
+    asyncio.create_task(_run_ai_extract_job(job_id, tasks))
+    return {"job_id": job_id, "total": len(tasks), "files": names}
+
+
+@api_router.get("/ai-extract-jobs/{job_id}")
+async def get_ai_extract_job(job_id: str):
+    job = _AI_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="İş bulunamadı (süresi dolmuş olabilir).")
+    out = {k: job[k] for k in ("id", "status", "total", "done", "found", "errors", "files")}
+    if job["status"] != "running":
+        out["products"] = job["products"] or []
+    return out
 
 
 @api_router.post("/battery-analysis")
@@ -9029,7 +9203,8 @@ BATTERY_EXTRACT_PROMPT = """Görseller UNI-T UT673A akü test cihazının ekran 
 Görevin SADECE ekranda görünen ölçüm değerlerini okumak. YORUM YAPMA, değer uydurma.
 
 Şu JSON formatında yanıt ver:
-{"soh": <SOH yüzdesi, sayı>, "soc": <SOC yüzdesi, sayı>, "voltage": <voltaj V, sayı>, "internal_resistance": <iç direnç mΩ, sayı>}
+{"soh": <SOH yüzdesi, sayı>, "soc": <SOC yüzdesi, sayı>, "voltage": <voltaj V, sayı>, "internal_resistance": <iç direnç mΩ, sayı>,
+ "rotations": [<her görsel için sırayla: cihaz ekranındaki yazının düz okunması için görselin SAAT YÖNÜNDE kaç derece döndürülmesi gerektiği: 0, 90, 180 veya 270>]}
 
 KURALLAR:
 - Bir değer hiçbir görselde görünmüyorsa null yaz.
@@ -9062,7 +9237,77 @@ def _call_ai_for_battery_extract(image_bytes_list: list) -> dict:
             out[key] = float(v) if v is not None else None
         except (ValueError, TypeError):
             out[key] = None
+    rots = parsed.get("rotations") if isinstance(parsed.get("rotations"), list) else []
+    out["_rotations"] = [int(r) if str(r).lstrip("-").isdigit() and int(r) % 90 == 0 else 0 for r in rots]
     return out
+
+
+def _rotate_jpeg(img_bytes: bytes, degrees_cw: int) -> bytes:
+    """JPEG'i saat yönünde döndür (ekran yazısı dik okunsun)."""
+    d = int(degrees_cw or 0) % 360
+    if d == 0:
+        return img_bytes
+    try:
+        img = PILImage.open(BytesIO(img_bytes))
+        img = img.rotate(-d, expand=True)
+        out = BytesIO()
+        img.convert("RGB").save(out, format="JPEG", quality=85, optimize=True)
+        return out.getvalue()
+    except Exception as e:
+        logger.warning(f"Görsel döndürülemedi: {e}")
+        return img_bytes
+
+
+def _battery_assess(values: dict) -> dict:
+    """Ölçülen değerlerden KURALLA sağlık durumu + kısa değerlendirme (yapay zekâ yok → tutarlı).
+    status: good | weak | replace | unknown ; charge: şarj seviyesi düşük uyarısı."""
+    def num(k):
+        v = (values or {}).get(k)
+        try:
+            return float(v) if v is not None and str(v).strip() != "" else None
+        except (TypeError, ValueError):
+            return None
+    soh, soc, v, ir = num("soh"), num("soc"), num("voltage"), num("internal_resistance")
+    v12 = (v / 2 if v and v > 18 else v)  # 24 V sistem → 12 V eşdeğeri
+    fmt = lambda x: f"{x:g}".replace(".", ",")
+    lines = []
+    if soh is not None:
+        lines.append(("Sağlık (SOH)", f"%{fmt(soh)}", "Kapasite korunuyor" if soh >= 80 else ("Kapasite azalmış" if soh >= 60 else "Kapasite ciddi ölçüde azalmış")))
+    if soc is not None:
+        lines.append(("Şarj (SOC)", f"%{fmt(soc)}", "Dolu" if soc >= 80 else ("Kısmen dolu" if soc >= 50 else "Düşük")))
+    if v is not None:
+        vs = "Normal" if v12 >= 12.5 else ("Kısmen deşarj" if v12 >= 12.2 else ("Düşük" if v12 >= 11.8 else "Çok düşük"))
+        lines.append(("Voltaj", f"{fmt(v)} V", vs))
+    if ir is not None:
+        lines.append(("İç direnç", f"{fmt(ir)} mΩ", "İyi" if ir <= 8 else ("Normal" if ir <= 15 else "Yüksek")))
+    charge = (soc is not None and soc < 60) or (v12 is not None and v12 < 12.3)
+    if soh is not None:
+        status = "good" if soh >= 80 else ("weak" if soh >= 60 else "replace")
+    elif v12 is not None:
+        status = "good" if v12 >= 12.4 else ("weak" if v12 >= 12.0 else "replace")
+    else:
+        status = "unknown"
+    if status == "good" and ir is not None and ir > 20:
+        status = "weak"
+    label = {"good": "SAĞLAM", "weak": "ZAYIF", "replace": "DEĞİŞTİRİLMELİ", "unknown": "DEĞERLENDİRİLEMEDİ"}[status]
+    advice = {
+        "good": "Akü sağlıklı; herhangi bir işlem gerekmiyor.",
+        "weak": "Akü kullanılabilir ancak kapasitesi azalmış. Yakın takipte tutulmalı, 3–6 ay içinde yeniden test edilmelidir.",
+        "replace": "Akünün sağlık değeri düşük; değiştirilmesi önerilir.",
+        "unknown": "Değerlendirme için yeterli ölçüm yok.",
+    }[status]
+    if charge and status != "replace":
+        advice += " Ölçüm anında şarj seviyesi düşük; akü tam şarj edilip tekrar ölçülmesi önerilir."
+    return {"status": status, "label": label, "charge": bool(charge), "lines": lines, "advice": advice,
+            "values": {"soh": soh, "soc": soc, "voltage": v, "internal_resistance": ir}}
+
+
+def _battery_report_text(a: dict) -> str:
+    """Geçmiş kaydı / eski istemciler için düz metin rapor."""
+    out = ["1. TEKNİK VERİLER:"]
+    out += [f"- {k}: {v} ({d})" for k, v, d in a["lines"]]
+    out += ["", "2. DURUM:", a["label"] + (" · ŞARJ EDİLMELİ" if a["charge"] and a["status"] != "replace" else ""), "", "3. ÖNERİ:", a["advice"]]
+    return "\n".join(out)
 
 
 @api_router.post("/battery-analysis/extract")
@@ -9089,9 +9334,15 @@ async def battery_analysis_extract(files: List[UploadFile] = File(...)):
 
     loop = asyncio.get_event_loop()
     values = await loop.run_in_executor(None, _call_ai_for_battery_extract, image_bytes_list)
+    rotations = values.pop("_rotations", []) or []
 
-    images_b64 = [base64.b64encode(_resize_image_to_720p(img)).decode('utf-8') for img in image_bytes_list]
-    return {"success": True, "values": values, "image_count": len(image_bytes_list), "images_base64": images_b64}
+    images_b64 = []
+    for i, img in enumerate(image_bytes_list):
+        jpg = _resize_image_to_720p(img)
+        jpg = _rotate_jpeg(jpg, rotations[i] if i < len(rotations) else 0)
+        images_b64.append(base64.b64encode(jpg).decode('utf-8'))
+    return {"success": True, "values": values, "assessment": _battery_assess(values),
+            "image_count": len(image_bytes_list), "images_base64": images_b64}
 
 
 class BatteryInterpretRequest(BaseModel):
@@ -9142,11 +9393,19 @@ async def battery_analysis_interpret(request: BatteryInterpretRequest):
     }
 
 
+@api_router.post("/battery-analysis/assess")
+async def battery_analysis_assess(request: BatteryInterpretRequest):
+    """Değerlerden kuralla durum + değerlendirme (yapay zekâ yok, anında; değer düzeltilince çağrılır)."""
+    return _battery_assess(request.dict())
+
+
 # --- PDF Üretimi: Akü Test Raporu ---
 
 class BatteryReportItem(BaseModel):
     battery_number: int
-    report: str
+    report: Optional[str] = None               # eski istemciler (AI metni); yeni: values
+    values: Optional[Dict[str, Any]] = None    # soh/soc/voltage/internal_resistance → kuralla değerlendirilir
+    label: Optional[str] = None                # ör. "Marş aküsü", "Servis aküsü 1"
     images_base64: Optional[List[str]] = None  # Sadece base64 string, prefix yok
 
 
@@ -9259,293 +9518,114 @@ def _decision_color(decision_text: str):
     return colors.HexColor('#eff6ff'), colors.HexColor('#93c5fd'), colors.HexColor('#1e3a8a')
 
 
+def _battery_values_of(batt) -> dict:
+    """PDF/geçmiş için değerler: yeni istemci values gönderir; eskiler rapor metninden ayrıştırılır."""
+    if batt.values:
+        return batt.values
+    values = {}
+    data_pairs, _e, _d = _parse_battery_report(batt.report or "")
+    for k, v in (data_pairs or []):
+        ku = upper_tr(str(k))
+        m = re.search(r'[-+]?\d+(?:[.,]\d+)?', str(v))
+        num = float(m.group(0).replace(',', '.')) if m else None
+        if "SOH" in ku: values["soh"] = num
+        elif "SOC" in ku: values["soc"] = num
+        elif "VOLTAJ" in ku: values["voltage"] = num
+        elif "DİRENÇ" in ku or "DIRENC" in ku: values["internal_resistance"] = num
+    return values
+
+
+_BATT_COLORS = {  # zemin, kenar/vurgu, yazı
+    "good": ("#ECFDF5", "#10B981", "#065F46"),
+    "weak": ("#FFFBEB", "#F59E0B", "#92400E"),
+    "replace": ("#FEF2F2", "#EF4444", "#991B1B"),
+    "unknown": ("#F1F5F9", "#94A3B8", "#334155"),
+}
+
+
 def _build_battery_report_pdf(payload: BatteryReportPDFRequest) -> BytesIO:
-    """Akü test sonuçlarını profesyonel PDF formatında üret."""
-    import re as _re
+    """Akü test raporu: her akü için tek kart — durum şeridi, 4 ölçüm kutusu, kısa değerlendirme,
+    sabit boyutlu fotoğraf şeridi. Kart sayfa arasında bölünmez."""
+    from reportlab.platypus import KeepTogether
+    from xml.sax.saxutils import escape as _esc
     buffer = BytesIO()
-
-    # PDFQuoteGenerator'ın font/stil altyapısını yeniden kullan
     gen = PDFQuoteGenerator()
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=A4,
-        rightMargin=2*cm,
-        leftMargin=2*cm,
-        topMargin=1.8*cm,
-        bottomMargin=1.8*cm,
-        title="Akü Test Raporu",
-        author="MSZ Karavan"
-    )
+    F, FB = gen.get_font_name(), gen.get_font_name(is_bold=True)
+    navy = colors.HexColor('#1B3A5C')
+    W = 17.4 * cm
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=1.8*cm, leftMargin=1.8*cm, topMargin=1.5*cm,
+                            bottomMargin=1.5*cm, title="Akü Test Raporu", author="MSZ Karavan")
+    st = lambda name, **kw: ParagraphStyle(name, parent=gen.styles['Normal'], **kw)
+    story = [gen._create_modern_header(show_badge=False, show_subtitle=False), Spacer(1, 12)]
 
-    story = []
-
-    # Üst başlık (Çorlu Karavan) — akü raporu teklif değil: no rozeti + alt yazı yok
-    story.append(gen._create_modern_header(show_badge=False, show_subtitle=False))
-    story.append(Spacer(1, 14))
-
-    # Rapor başlığı (alt başlık YOK - akü tipi sabit değil)
-    title_style = ParagraphStyle(
-        'BatteryReportTitle',
-        parent=gen.styles['Heading1'],
-        fontName=gen.get_font_name(is_bold=True),
-        fontSize=20,
-        alignment=TA_CENTER,
-        textColor=colors.HexColor('#2F4B68'),
-        spaceAfter=12,
-        leading=24
-    )
-    story.append(Paragraph("AKÜ TEST RAPORU", title_style))
-
-    # Müşteri / araç / tarih bilgi tablosu
-    today_str = datetime.now().strftime('%d.%m.%Y')
-    report_date_str = payload.report_date or today_str
-    info_data = [
-        [
-            Paragraph("<b>Müşteri:</b>", gen.normal_style),
-            Paragraph(payload.customer_name or "-", gen.normal_style),
-            Paragraph("<b>Plaka / Araç:</b>", gen.normal_style),
-            Paragraph(payload.vehicle_plate or "-", gen.normal_style),
-        ],
-        [
-            Paragraph("<b>Rapor Tarihi:</b>", gen.normal_style),
-            Paragraph(report_date_str, gen.normal_style),
-            Paragraph("<b>Toplam Akü:</b>", gen.normal_style),
-            Paragraph(str(len(payload.batteries)), gen.normal_style),
-        ],
-    ]
-    info_table = Table(info_data, colWidths=[3.2*cm, 5.3*cm, 3.2*cm, 5.3*cm])
-    info_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f7fafc')),
-        ('FONTNAME', (0, 0), (-1, -1), gen.get_font_name()),
-        ('FONTSIZE', (0, 0), (-1, -1), 10),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1')),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('TOPPADDING', (0, 0), (-1, -1), 7),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
-        ('LEFTPADDING', (0, 0), (-1, -1), 8),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
-    ]))
-    story.append(info_table)
-    story.append(Spacer(1, 14))
-
-    # Stiller
-    battery_title_style = ParagraphStyle(
-        'BatterySectionTitle',
-        parent=gen.styles['Heading2'],
-        fontName=gen.get_font_name(is_bold=True),
-        fontSize=14,
-        textColor=colors.HexColor('#dc2626'),
-        spaceBefore=4,
-        spaceAfter=8,
-        leading=18
-    )
-    section_label_style = ParagraphStyle(
-        'BatterySectionLabel',
-        parent=gen.styles['Normal'],
-        fontName=gen.get_font_name(is_bold=True),
-        fontSize=11,
-        textColor=colors.HexColor('#2F4B68'),
-        spaceBefore=4,
-        spaceAfter=4,
-        leading=14
-    )
-    section_body_style = ParagraphStyle(
-        'BatterySectionBody',
-        parent=gen.styles['Normal'],
-        fontName=gen.get_font_name(),
-        fontSize=10,
-        textColor=colors.HexColor('#1f2937'),
-        leading=14,
-        alignment=TA_LEFT
-    )
+    today = payload.report_date or datetime.now().strftime('%d.%m.%Y')
+    lab = st('BLab', fontName=FB, fontSize=6.8, textColor=colors.HexColor('#64748B'), leading=9)
+    val = st('BVal', fontName=FB, fontSize=10.5, textColor=navy, leading=13)
+    info = Table([[Paragraph("AKÜ TEST RAPORU", st('BT', fontName=FB, fontSize=15, textColor=colors.white, leading=18)),
+                   [Paragraph("MÜŞTERİ", st('BL1', fontName=FB, fontSize=6.5, textColor=colors.HexColor('#9FB7D1'))),
+                    Paragraph(_esc(payload.customer_name or "-"), st('BV1', fontName=FB, fontSize=10, textColor=colors.white, leading=12))],
+                   [Paragraph("PLAKA / ARAÇ", st('BL2', fontName=FB, fontSize=6.5, textColor=colors.HexColor('#9FB7D1'))),
+                    Paragraph(_esc(payload.vehicle_plate or "-"), st('BV2', fontName=FB, fontSize=10, textColor=colors.white, leading=12))],
+                   [Paragraph("TARİH", st('BL3', fontName=FB, fontSize=6.5, textColor=colors.HexColor('#9FB7D1'))),
+                    Paragraph(_esc(today), st('BV3', fontName=FB, fontSize=10, textColor=colors.white, leading=12))]]],
+                 colWidths=[6.4*cm, 4.6*cm, 3.6*cm, 2.8*cm])
+    info.setStyle(TableStyle([('BACKGROUND', (0, 0), (-1, -1), navy), ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                              ('LINEBEFORE', (0, 0), (0, -1), 4, colors.HexColor('#10B981')),
+                              ('TOPPADDING', (0, 0), (-1, -1), 10), ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+                              ('LEFTPADDING', (0, 0), (-1, -1), 12)]))
+    story += [info, Spacer(1, 14)]
 
     for idx, batt in enumerate(payload.batteries):
-        # Akü başlığı
-        story.append(Paragraph(f"{batt.battery_number}. AKÜ", battery_title_style))
+        a = _battery_assess(_battery_values_of(batt))
+        bg, accent, fg = (colors.HexColor(c) for c in _BATT_COLORS[a["status"]])
+        title = f"{batt.battery_number}. AKÜ" + (f"  ·  {upper_tr(batt.label)}" if batt.label else "")
+        status_txt = a["label"] + ("  ·  ŞARJ EDİLMELİ" if a["charge"] and a["status"] != "replace" else "")
+        head = Table([[Paragraph(_esc(title), st('BH', fontName=FB, fontSize=11.5, textColor=navy, leading=14)),
+                       Paragraph(_esc(status_txt), st('BS', fontName=FB, fontSize=10, textColor=colors.white, alignment=TA_RIGHT, leading=12))]],
+                     colWidths=[W - 6.6*cm, 6.6*cm])
+        head.setStyle(TableStyle([('BACKGROUND', (1, 0), (1, 0), accent), ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                                  ('TOPPADDING', (0, 0), (-1, -1), 6), ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                                  ('LEFTPADDING', (0, 0), (-1, -1), 0), ('RIGHTPADDING', (1, 0), (1, 0), 10)]))
 
-        # Görseller (varsa) — 3 sütunlu küçük thumbnail tablosu
-        if batt.images_base64:
+        # 4 ölçüm kutusu (değer + kısa durum)
+        cells = []
+        for k, v, d in a["lines"]:
+            cells.append([Paragraph(upper_tr(k), lab), Paragraph(_esc(v), st('BMv', fontName=FB, fontSize=15, textColor=navy, leading=18)),
+                          Paragraph(_esc(d), st('BMd', fontName=F, fontSize=8, textColor=colors.HexColor('#475569'), leading=10))])
+        if not cells:
+            cells = [[Paragraph("Ölçüm değeri yok", lab)]]
+        mt = Table([cells], colWidths=[W / len(cells)] * len(cells))
+        mt.setStyle(TableStyle([('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F4F6F9')),
+                                ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#D9E0E8')),
+                                ('LINEAFTER', (0, 0), (-2, -1), 0.5, colors.HexColor('#D9E0E8')),
+                                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                                ('TOPPADDING', (0, 0), (-1, -1), 7), ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
+                                ('LEFTPADDING', (0, 0), (-1, -1), 9)]))
+
+        adv = Table([[Paragraph(_esc(a["advice"]), st('BA', fontName=FB, fontSize=9.5, textColor=fg, leading=13))]], colWidths=[W])
+        adv.setStyle(TableStyle([('BACKGROUND', (0, 0), (-1, -1), bg), ('LINEBEFORE', (0, 0), (0, -1), 4, accent),
+                                 ('TOPPADDING', (0, 0), (-1, -1), 8), ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                                 ('LEFTPADDING', (0, 0), (-1, -1), 12)]))
+
+        block = [head, Spacer(1, 6), mt, Spacer(1, 6), adv]
+        # Fotoğraflar: sabit hücre (4 yan yana), oran korunur, ortalanır → düzenli şerit
+        thumbs = []
+        for b64 in (batt.images_base64 or [])[:4]:
             try:
-                thumbs = []
-                for b64 in batt.images_base64[:6]:
-                    try:
-                        img_bytes = base64.b64decode(b64)
-                        img_io = BytesIO(img_bytes)
-                        img = Image(img_io, width=4.5*cm, height=4.5*cm, kind='proportional')
-                        thumbs.append(img)
-                    except Exception as e:
-                        logger.warning(f"PDF thumbnail decode hatası: {e}")
-                if thumbs:
-                    rows = []
-                    for i in range(0, len(thumbs), 3):
-                        row = thumbs[i:i+3]
-                        while len(row) < 3:
-                            row.append("")
-                        rows.append(row)
-                    img_table = Table(rows, colWidths=[5.5*cm]*3)
-                    img_table.setStyle(TableStyle([
-                        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                        ('TOPPADDING', (0, 0), (-1, -1), 3),
-                        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
-                    ]))
-                    story.append(img_table)
-                    story.append(Spacer(1, 8))
+                thumbs.append(Image(BytesIO(base64.b64decode(b64)), width=3.9*cm, height=3.9*cm, kind='proportional'))
             except Exception as e:
-                logger.warning(f"Görsel ekleme hatası: {e}")
+                logger.warning(f"PDF görsel hatası: {e}")
+        if thumbs:
+            row = thumbs + [""] * (4 - len(thumbs))
+            it = Table([row], colWidths=[W / 4] * 4, rowHeights=[4.2*cm])
+            it.setStyle(TableStyle([('ALIGN', (0, 0), (-1, -1), 'CENTER'), ('VALIGN', (0, 0), (-1, -1), 'MIDDLE')]))
+            block += [Spacer(1, 6), it]
+        story.append(KeepTogether(block))
+        story.append(Spacer(1, 16))
 
-        # Rapor metnini parse et
-        data_pairs, evaluation_text, decision_text = _parse_battery_report(batt.report or "")
-
-        # --- BÖLÜM 1: TEKNİK VERİLER (tablo) ---
-        story.append(Paragraph("1. TEKNİK VERİLER", section_label_style))
-        if data_pairs:
-            # 2 sütunlu: Parametre | Değer (başlık satırı dahil)
-            # Başlık hücreleri Paragraph olduğu için tablo TEXTCOLOR'ı işlemez —
-            # koyu zemin üstünde okunsun diye stile beyaz renk gömülür.
-            header_cell_style = ParagraphStyle(
-                'BatteryTblHeader',
-                parent=gen.normal_style,
-                textColor=colors.white,
-                fontName=gen.get_font_name(is_bold=True),
-            )
-            tbl_data = [[
-                Paragraph("Parametre", header_cell_style),
-                Paragraph("Ölçüm Değeri", header_cell_style),
-            ]]
-            for k, v in data_pairs:
-                tbl_data.append([
-                    Paragraph(k, gen.normal_style),
-                    Paragraph(v, gen.normal_style),
-                ])
-            data_table = Table(tbl_data, colWidths=[7.5*cm, 9.5*cm])
-            data_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2F4B68')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-                ('FONTNAME', (0, 0), (-1, -1), gen.get_font_name()),
-                ('FONTSIZE', (0, 0), (-1, -1), 10),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1')),
-                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                ('TOPPADDING', (0, 0), (-1, -1), 6),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-                ('LEFTPADDING', (0, 0), (-1, -1), 10),
-                ('RIGHTPADDING', (0, 0), (-1, -1), 10),
-                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8fafc')]),
-                # Başlık satırını override
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2F4B68')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ]))
-            story.append(data_table)
-        else:
-            story.append(Paragraph("<i>Ölçüm değerleri okunamadı.</i>", section_body_style))
-        story.append(Spacer(1, 10))
-
-        # --- BÖLÜM 2: TEKNİK DEĞERLENDİRME (renkli kutu) ---
-        story.append(Paragraph("2. TEKNİK DEĞERLENDİRME", section_label_style))
-        if evaluation_text:
-            # Kutuyu tek hücreli tablo olarak yap
-            # AI metni ReportLab markup'ına escape edilerek girer (rapor 09: injection/bozulma)
-            from xml.sax.saxutils import escape as _xml_escape
-            eval_html = _xml_escape(evaluation_text).replace('\r\n', '\n').replace('\n', '<br/>')
-            # Liste işaretlerini de güzel yap
-            eval_html = _re.sub(r'<br/>\s*[\-\*•·]\s+', r'<br/>&nbsp;&nbsp;• ', eval_html)
-            eval_html = _re.sub(r'^\s*[\-\*•·]\s+', r'&nbsp;&nbsp;• ', eval_html)
-            eval_para = Paragraph(eval_html, ParagraphStyle(
-                'EvalBody',
-                parent=section_body_style,
-                fontSize=10,
-                leading=15,
-                textColor=colors.HexColor('#1e3a5f'),
-            ))
-            eval_box = Table([[eval_para]], colWidths=[17*cm])
-            eval_box.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#eff6ff')),
-                ('BOX', (0, 0), (-1, -1), 0.8, colors.HexColor('#93c5fd')),
-                ('LINEBEFORE', (0, 0), (0, -1), 3, colors.HexColor('#2563eb')),
-                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                ('TOPPADDING', (0, 0), (-1, -1), 10),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
-                ('LEFTPADDING', (0, 0), (-1, -1), 14),
-                ('RIGHTPADDING', (0, 0), (-1, -1), 12),
-            ]))
-            story.append(eval_box)
-        story.append(Spacer(1, 10))
-
-        # --- BÖLÜM 3: NİHAİ KARAR (renkli kutu - karara göre renk) ---
-        story.append(Paragraph("3. NİHAİ KARAR VE ÖNERİ", section_label_style))
-        if decision_text:
-            bg_color, border_color, text_color = _decision_color(decision_text)
-            from xml.sax.saxutils import escape as _xml_escape_d
-            dec_html = _xml_escape_d(decision_text).replace('\r\n', '\n').replace('\n', '<br/>')
-            dec_html = _re.sub(r'<br/>\s*[\-\*•·]\s+', r'<br/>&nbsp;&nbsp;• ', dec_html)
-            dec_html = _re.sub(r'^\s*[\-\*•·]\s+', r'&nbsp;&nbsp;• ', dec_html)
-            dec_para = Paragraph(
-                f"<b>{dec_html}</b>" if len(dec_html) < 100 else dec_html,
-                ParagraphStyle(
-                    'DecBody',
-                    parent=section_body_style,
-                    fontSize=11,
-                    leading=16,
-                    textColor=text_color,
-                )
-            )
-            dec_box = Table([[dec_para]], colWidths=[17*cm])
-            dec_box.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, -1), bg_color),
-                ('BOX', (0, 0), (-1, -1), 1.0, border_color),
-                ('LINEBEFORE', (0, 0), (0, -1), 4, border_color),
-                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                ('TOPPADDING', (0, 0), (-1, -1), 12),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
-                ('LEFTPADDING', (0, 0), (-1, -1), 16),
-                ('RIGHTPADDING', (0, 0), (-1, -1), 14),
-            ]))
-            story.append(dec_box)
-        story.append(Spacer(1, 14))
-
-        # Ayraç çizgi (son akü değilse)
-        if idx < len(payload.batteries) - 1:
-            from reportlab.platypus import HRFlowable
-            story.append(HRFlowable(width="100%", thickness=0.6, color=colors.HexColor('#cbd5e1')))
-            story.append(Spacer(1, 10))
-
-    # --- Footer: Çorlu Karavan Teknik Servis - Mehmet Necdet Zamkı ---
-    story.append(Spacer(1, 18))
-    footer_title_style = ParagraphStyle(
-        'BatteryReportFooterTitle',
-        parent=gen.styles['Normal'],
-        fontName=gen.get_font_name(is_bold=True),
-        fontSize=13,
-        textColor=colors.HexColor('#111827'),
-        alignment=TA_CENTER,
-        leading=18,
-        spaceAfter=2
-    )
-    footer_line_style = ParagraphStyle(
-        'BatteryReportFooterLine',
-        parent=gen.styles['Normal'],
-        fontName=gen.get_font_name(is_bold=True),
-        fontSize=11,
-        textColor=colors.HexColor('#1f2937'),
-        alignment=TA_CENTER,
-        leading=16,
-        spaceAfter=2
-    )
-    story.append(Paragraph("MSZ Karavan Teknik Servis - Mehmet Necdet Zamkı", footer_title_style))
-    story.append(Paragraph(f"Tarih: {report_date_str}", footer_line_style))
-    story.append(Paragraph("Kullanılan Test Cihazı: UNI-T UT673A", footer_line_style))
-
-    # Logo (alt-orta)
-    logo_path = Path(__file__).parent / 'images' / 'corlu_karavan_logo_new.png'
-    if logo_path.exists():
-        try:
-            story.append(Spacer(1, 10))
-            footer_logo = Image(str(logo_path), width=3.2*cm, height=3.2*cm, kind='proportional')
-            footer_logo.hAlign = 'CENTER'
-            story.append(footer_logo)
-        except Exception as e:
-            logger.warning(f"Footer logo hatası: {e}")
-
+    foot = st('BF', fontName=FB, fontSize=8.5, textColor=colors.HexColor('#475569'), alignment=TA_CENTER, leading=12)
+    story.append(Paragraph("MSZ Karavan Teknik Servis — Mehmet Necdet Zamkı", foot))
+    story.append(Paragraph(f"Test cihazı: UNI-T UT673A  ·  Değerlendirme ölçüm değerlerine göre yapılmıştır", st('BF2', fontName=F, fontSize=7.5, textColor=colors.HexColor('#94A3B8'), alignment=TA_CENTER)))
     doc.build(story)
     buffer.seek(0)
     return buffer
@@ -9558,22 +9638,9 @@ async def _save_battery_tests(request: "BatteryReportPDFRequest"):
     now = datetime.now(timezone.utc)
     for batt in request.batteries:
         try:
-            data_pairs, _eval, decision = _parse_battery_report(batt.report or "")
-            values = {}
-            for k, v in (data_pairs or []):
-                ku = upper_tr(str(k))
-                num = None
-                m = re.search(r'[-+]?\d+(?:[.,]\d+)?', str(v))
-                if m:
-                    num = float(m.group(0).replace(',', '.'))
-                if "SOH" in ku:
-                    values["soh"] = num
-                elif "SOC" in ku:
-                    values["soc"] = num
-                elif "VOLTAJ" in ku:
-                    values["voltage"] = num
-                elif "DİRENÇ" in ku or "DIRENC" in ku:
-                    values["internal_resistance"] = num
+            values = _battery_values_of(batt)
+            a = _battery_assess(values)
+            decision = a["label"] + (" · ŞARJ EDİLMELİ" if a["charge"] and a["status"] != "replace" else "")
             await db.battery_tests.insert_one({
                 "id": str(uuid.uuid4()),
                 "customer_name": (request.customer_name or "").strip() or None,
@@ -9581,7 +9648,9 @@ async def _save_battery_tests(request: "BatteryReportPDFRequest"):
                 "battery_number": batt.battery_number,
                 "values": values,
                 "decision": (decision or "").strip()[:300] or None,
-                "report": batt.report,
+                "status": a["status"],
+                "label": batt.label,
+                "report": batt.report or _battery_report_text(a),
                 "created_at": now,
             })
         except Exception as e:

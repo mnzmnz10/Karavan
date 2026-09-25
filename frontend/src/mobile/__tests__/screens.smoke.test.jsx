@@ -43,6 +43,14 @@ jest.mock("../api", () => {
     categories: { list: ok([{ id: "c1", name: "Solar" }]) },
     companies: { list: ok([]) },
     rates: { get: ok({ TRY: 1, EUR: 55.9, USD: 48.838 }) },
+    battery: {
+      extract: () => Promise.resolve({ values: { soh: 72, soc: 40, voltage: 12.1, internal_resistance: 11 },
+        assessment: { status: "weak", label: "ZAYIF", charge: true, advice: "Akü kullanılabilir ancak kapasitesi azalmış.", lines: [["Sağlık (SOH)", "%72", "Kapasite azalmış"]] },
+        images_base64: ["AAAA"] }),
+      assess: (v) => { calls.assess = (calls.assess || []).concat([v]); return Promise.resolve({ status: "good", label: "SAĞLAM", charge: false, advice: "Akü sağlıklı.", lines: [] }); },
+      pdf: () => Promise.resolve(new Blob(["%PDF"])),
+    },
+    mppt: { specs: ok({ exists: false }), recommend: ok({ computed: { hesaplanan_sarj_akimi_a: 37.5, toplam_watt: 450, adet: 1, panel_watt: 450 }, recommendation: { onerilen_mppt: { etiket: "100V/40A", secilen_voltaj_v: 100, standart_akim_a: 40 }, uyarilar: [] } }) },
     services: {
       list: () => Promise.resolve([global.__SERVICE]),
       get: () => Promise.resolve(global.__SERVICE),
@@ -804,4 +812,32 @@ test("servis faturası: listelenir, dokununca açılır, yalnız PDF yüklenir",
   expect(api.__calls.invUp).toEqual(["yeni-fatura.pdf"]);
   expect(text()).toContain("yeni-fatura.pdf");
   delete global.__SERVICE.invoices;
+});
+
+test("mobil akü testi: fotoğraf → durum etiketi; değer düzeltilince kuralla yeniden hesaplanır", async () => {
+  const { BatterySheet } = require("../screens/Tools");
+  const api = require("../api");
+  await render(<BatterySheet open onClose={() => {}} />);
+  const input = document.body.querySelector('input[type="file"]');
+  await act(async () => { Object.defineProperty(input, "files", { value: [new File(["x"], "t.jpg", { type: "image/jpeg" })], configurable: true }); input.dispatchEvent(new Event("change", { bubbles: true })); });
+  await act(() => new Promise((r) => setTimeout(r, 20)));
+  expect(text()).toContain("ZAYIF · ŞARJ EDİLMELİ");
+  expect(text()).toContain("Kapasite azalmış");
+  const soh = document.body.querySelector('input[aria-label="Sağlık (SOH)"]');
+  await act(async () => { const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set; set.call(soh, "91"); soh.dispatchEvent(new Event("input", { bubbles: true })); });
+  await act(() => new Promise((r) => setTimeout(r, 450)));
+  expect(api.__calls.assess.pop()).toMatchObject({ soh: 91, soc: 40 });
+  expect(text()).toContain("SAĞLAM");
+});
+
+test("mobil MPPT: panel değeri gir → öneri etiketi", async () => {
+  const { MpptSheet } = require("../screens/Tools");
+  global.__PRODUCTS = [];
+  await render(<MpptSheet open onClose={() => {}} />);
+  const w = Array.from(document.body.querySelectorAll("label")).find((l) => l.textContent.startsWith("Güç (W)")).querySelector("input");
+  await act(async () => { const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set; set.call(w, "450"); w.dispatchEvent(new Event("input", { bubbles: true })); });
+  await click(Array.from(document.body.querySelectorAll("button")).find((b) => b.textContent.includes("MPPT Öner")));
+  await act(() => new Promise((r) => setTimeout(r, 20)));
+  expect(text()).toContain("100V/40A");
+  expect(text()).toContain("37.5 A");
 });

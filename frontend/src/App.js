@@ -16,6 +16,7 @@ import { toast } from 'sonner';
 import { Toaster } from './components/ui/sonner';
 import LazyImage from './components/LazyImage';
 import ServiceInvoices from './components/ServiceInvoices';
+import BatteryTest from './components/BatteryTest';
 import { CacheManager, debounce } from './utils/cache';
 import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors, useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
@@ -57,570 +58,7 @@ function SectionEndDrop({ id, disabled, children }) {
 // ============================================================================
 // AKÜ TEST RAPORU BİLEŞENİ (OpenAI GPT-4o mini ile)
 // ============================================================================
-function BatteryTestSection() {
-  // Her akü: { id, files, previews, values: {soh,soc,voltage,internal_resistance}|null,
-  //            report, imagesBase64, loading (değer okuma), interpreting (rapor üretme), error }
-  // İKİ ADIM: 1) "Değerleri Oku" -> AI görselden değerleri çıkarır, kullanıcı düzeltir
-  //           2) "Raporu Oluştur" -> onaylı değerlerden AI yorum/rapor üretir
-  const [batteries, setBatteries] = useState([
-    { id: 1, files: [], previews: [], values: null, report: null, imagesBase64: null, loading: false, interpreting: false, error: null }
-  ]);
-  const [customerName, setCustomerName] = useState('');
-  const [vehiclePlate, setVehiclePlate] = useState('');
-  const [analyzingAll, setAnalyzingAll] = useState(false);
-  const [pdfLoading, setPdfLoading] = useState(false);
-  // Geçmiş testler (plaka/müşteri ile sorgulanır; PDF üretiminde otomatik kaydedilir)
-  const [testHistory, setTestHistory] = useState(null);
-  const [historyLoading, setHistoryLoading] = useState(false);
-
-  const loadTestHistory = async () => {
-    const plate = vehiclePlate.trim();
-    const cname = customerName.trim();
-    if (!plate && !cname) { toast.error('Geçmiş için plaka veya müşteri adı girin'); return; }
-    try {
-      setHistoryLoading(true);
-      const params = new URLSearchParams();
-      if (plate) params.set('plate', plate); else params.set('customer_name', cname);
-      const res = await axios.get(`${API}/battery-tests?${params.toString()}`);
-      setTestHistory(res.data || []);
-      if ((res.data || []).length === 0) toast.info('Bu plaka/müşteri için kayıtlı test yok.');
-    } catch (e) {
-      toast.error('Geçmiş yüklenemedi');
-    } finally {
-      setHistoryLoading(false);
-    }
-  };
-
-  const MAX_IMAGES = 5;
-
-  const updateBattery = (id, patch) => {
-    setBatteries(prev => prev.map(b => (b.id === id ? { ...b, ...patch } : b)));
-  };
-
-  const addBattery = () => {
-    setBatteries(prev => [
-      ...prev,
-      {
-        id: (prev[prev.length - 1]?.id || 0) + 1,
-        files: [],
-        previews: [],
-        values: null,
-        report: null,
-        imagesBase64: null,
-        loading: false,
-        interpreting: false,
-        error: null
-      }
-    ]);
-  };
-
-  const removeBattery = (id) => {
-    setBatteries(prev => {
-      if (prev.length <= 1) {
-        toast.error('En az bir akü bölümü olmalı');
-        return prev;
-      }
-      const next = prev.filter(b => b.id !== id);
-      // Sayıları yeniden numaralandır (id'yi koru ama görüntüsel sıra zaten array order)
-      return next;
-    });
-  };
-
-  const handleFilesSelected = (batteryId, fileList) => {
-    if (!fileList || fileList.length === 0) return;
-    const battery = batteries.find(b => b.id === batteryId);
-    if (!battery) return;
-
-    const arr = Array.from(fileList);
-    const allowed = arr.filter(f => f.type.startsWith('image/'));
-    if (allowed.length < arr.length) {
-      toast.warning('Yalnızca görsel dosyaları kabul edilir.');
-    }
-
-    const currentCount = battery.files.length;
-    const remaining = MAX_IMAGES - currentCount;
-    if (remaining <= 0) {
-      toast.error(`Maksimum ${MAX_IMAGES} görsel ekleyebilirsiniz.`);
-      return;
-    }
-
-    const toAdd = allowed.slice(0, remaining);
-    const newFiles = [...battery.files, ...toAdd];
-    const newPreviews = [...battery.previews, ...toAdd.map(f => URL.createObjectURL(f))];
-
-    updateBattery(batteryId, {
-      files: newFiles,
-      previews: newPreviews,
-      values: null,
-      report: null,
-      imagesBase64: null,
-      error: null
-    });
-
-    if (allowed.length > remaining) {
-      toast.warning(`Maksimum ${MAX_IMAGES} görsele kadar yüklenebilir. Fazla görseller atlandı.`);
-    }
-  };
-
-  const removeImage = (batteryId, imageIndex) => {
-    const battery = batteries.find(b => b.id === batteryId);
-    if (!battery) return;
-    // Preview URL'sini temizle
-    try { URL.revokeObjectURL(battery.previews[imageIndex]); } catch (e) {}
-    const newFiles = battery.files.filter((_, i) => i !== imageIndex);
-    const newPreviews = battery.previews.filter((_, i) => i !== imageIndex);
-    updateBattery(batteryId, {
-      files: newFiles,
-      previews: newPreviews,
-      values: null,
-      report: null,
-      imagesBase64: null
-    });
-  };
-
-  // ADIM 1: Görsellerden değerleri oku (AI yorum yapmaz, sadece okur)
-  const extractBattery = async (batteryId) => {
-    const battery = batteries.find(b => b.id === batteryId);
-    if (!battery) return;
-    if (battery.files.length === 0) {
-      toast.error('Önce en az bir test görseli yükleyin.');
-      return;
-    }
-    updateBattery(batteryId, { loading: true, error: null, report: null });
-    try {
-      const formData = new FormData();
-      battery.files.forEach(f => formData.append('files', f));
-      const res = await axios.post(`${API}/battery-analysis/extract`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-        timeout: 120000
-      });
-      const data = res.data;
-      updateBattery(batteryId, {
-        values: data.values || { soh: null, soc: null, voltage: null, internal_resistance: null },
-        imagesBase64: data.images_base64 || [],
-        loading: false
-      });
-      toast.success('Değerler okundu. Kontrol edip gerekirse düzeltin, sonra "Raporu Oluştur".');
-    } catch (err) {
-      const detail = err?.response?.data?.detail || err?.message || 'Bilinmeyen hata';
-      updateBattery(batteryId, { loading: false, error: String(detail) });
-      toast.error(`Değer okuma hatası: ${detail}`);
-    }
-  };
-
-  const updateBatteryValue = (batteryId, key, raw) => {
-    // Fonksiyonel update: hızlı ardışık yazmada stale state'e düşme
-    setBatteries(prev => prev.map(b => (
-      b.id === batteryId
-        ? { ...b, values: { ...(b.values || {}), [key]: raw }, report: null } // değer değişti -> eski rapor geçersiz
-        : b
-    )));
-  };
-
-  // ADIM 2: Onaylanan değerlerden raporu üret
-  const interpretBattery = async (batteryId) => {
-    const battery = batteries.find(b => b.id === batteryId);
-    if (!battery || !battery.values) return;
-    const num = (v) => {
-      if (v === '' || v == null) return null;
-      const f = parseFloat(String(v).replace(',', '.'));
-      return isNaN(f) ? null : f;
-    };
-    const payload = {
-      soh: num(battery.values.soh),
-      soc: num(battery.values.soc),
-      voltage: num(battery.values.voltage),
-      internal_resistance: num(battery.values.internal_resistance)
-    };
-    if (Object.values(payload).every(v => v === null)) {
-      toast.error('En az bir ölçüm değeri girin.');
-      return;
-    }
-    updateBattery(batteryId, { interpreting: true, error: null });
-    try {
-      const res = await axios.post(`${API}/battery-analysis/interpret`, payload, { timeout: 120000 });
-      updateBattery(batteryId, { report: res.data.report || '', interpreting: false });
-      toast.success('Rapor oluşturuldu.');
-    } catch (err) {
-      const detail = err?.response?.data?.detail || err?.message || 'Bilinmeyen hata';
-      updateBattery(batteryId, { interpreting: false, error: String(detail) });
-      toast.error(`Rapor hatası: ${detail}`);
-    }
-  };
-
-  const analyzeAll = async () => {
-    setAnalyzingAll(true);
-    try {
-      for (const b of batteries) {
-        if (b.files.length === 0) continue;
-        // Sıralı çalıştır (rate-limit dostu)
-
-        await extractBattery(b.id);
-      }
-    } finally {
-      setAnalyzingAll(false);
-    }
-  };
-
-  const allReportsReady = batteries.length > 0 && batteries.every(b => b.report && b.report.trim().length > 0);
-  const anyReportReady = batteries.some(b => b.report && b.report.trim().length > 0);
-
-  const downloadPdf = async () => {
-    if (!anyReportReady) {
-      toast.error('PDF üretmek için önce analiz yapmalısınız.');
-      return;
-    }
-    setPdfLoading(true);
-    try {
-      const payload = {
-        customer_name: customerName.trim() || null,
-        vehicle_plate: vehiclePlate.trim() || null,
-        report_date: new Date().toLocaleDateString('tr-TR'),
-        batteries: batteries
-          .filter(b => b.report && b.report.trim().length > 0)
-          .map((b, idx) => ({
-            battery_number: idx + 1,
-            report: b.report,
-            images_base64: b.imagesBase64 || []
-          }))
-      };
-      const res = await axios.post(`${API}/battery-analysis/pdf`, payload, {
-        responseType: 'blob',
-        timeout: 60000
-      });
-      const blob = new Blob([res.data], { type: 'application/pdf' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `aku_test_raporu_${new Date().toISOString().slice(0, 10)}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-      toast.success('PDF indirildi.');
-    } catch (err) {
-      const detail = err?.response?.data?.detail || err?.message || 'Bilinmeyen hata';
-      toast.error(`PDF üretim hatası: ${detail}`);
-    } finally {
-      setPdfLoading(false);
-    }
-  };
-
-  // Markdown benzeri rapor metnini güzel görselleştir
-  const renderReport = (text) => {
-    if (!text) return null;
-    const lines = text.split(/\r?\n/);
-    return (
-      <div className="space-y-2 text-sm leading-relaxed text-slate-700">
-        {lines.map((line, idx) => {
-          const trimmed = line.trim();
-          if (!trimmed) return <div key={idx} className="h-1" />;
-          // Başlık: "1. TEKNİK VERİLER:"
-          const headMatch = trimmed.match(/^(\d+\.\s*[A-ZÇĞİÖŞÜ][^:]{2,60}:)(.*)$/);
-          if (headMatch) {
-            return (
-              <div key={idx} className="mt-3">
-                <span className="font-bold text-slate-900">{headMatch[1]}</span>
-                <span className="text-slate-700">{headMatch[2]}</span>
-              </div>
-            );
-          }
-          if (trimmed.startsWith('- ') || trimmed.startsWith('• ') || trimmed.startsWith('* ')) {
-            return (
-              <div key={idx} className="ml-4 flex gap-2">
-                <span className="text-red-500">•</span>
-                <span dangerouslySetInnerHTML={{ __html: trimmed.slice(2).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>') }} />
-              </div>
-            );
-          }
-          return (
-            <p key={idx} dangerouslySetInnerHTML={{ __html: trimmed.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>') }} />
-          );
-        })}
-      </div>
-    );
-  };
-
-  return (
-    <Card className="border-red-100 shadow-sm">
-      <CardHeader className="pb-4">
-        <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div>
-            <CardTitle className="flex items-center gap-2 text-red-600">
-              <Battery className="w-5 h-5" />
-              Akü Test Raporu Oluştur
-            </CardTitle>
-            <CardDescription className="mt-1 text-slate-600">
-              UNI-T UT673A test cihazı görsellerini yükleyin, ChatGPT (OpenAI) değerleri okusun, kontrol edip rapor oluşturun.
-            </CardDescription>
-          </div>
-        </div>
-      </CardHeader>
-
-      <CardContent className="space-y-6">
-        {/* Müşteri/Araç Bilgileri (PDF için opsiyonel) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 rounded-lg bg-slate-50 border border-slate-200">
-          <div>
-            <Label htmlFor="customer-name" className="text-xs font-semibold text-slate-600">Müşteri Adı (PDF için, opsiyonel)</Label>
-            <Input
-              id="customer-name"
-              placeholder="Örn. Ahmet Yılmaz"
-              value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
-              className="mt-1 h-9"
-            />
-          </div>
-          <div>
-            <Label htmlFor="vehicle-plate" className="text-xs font-semibold text-slate-600">Plaka / Araç (PDF için, opsiyonel)</Label>
-            <Input
-              id="vehicle-plate"
-              placeholder="Örn. 59 ABC 123"
-              value={vehiclePlate}
-              onChange={(e) => setVehiclePlate(e.target.value)}
-              className="mt-1 h-9"
-            />
-          </div>
-          <div className="sm:col-span-2">
-            <Button variant="outline" size="sm" onClick={loadTestHistory} disabled={historyLoading} className="border-slate-300 text-slate-600">
-              {historyLoading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Yükleniyor...</> : <><History className="w-4 h-4 mr-2" /> Geçmiş Testleri Gör</>}
-            </Button>
-          </div>
-        </div>
-
-        {/* Geçmiş testler — SOH trendi (PDF üretilen her test otomatik kaydedilir) */}
-        {testHistory && testHistory.length > 0 && (
-          <div className="p-4 rounded-lg bg-indigo-50/60 border border-indigo-200">
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-sm font-bold text-indigo-800 flex items-center gap-2"><History className="w-4 h-4" /> Geçmiş Testler ({testHistory.length})</div>
-              <button type="button" onClick={() => setTestHistory(null)} className="text-indigo-400 hover:text-indigo-600"><X className="w-4 h-4" /></button>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="text-left text-indigo-600 border-b border-indigo-200">
-                    <th className="py-1 pr-3">Tarih</th>
-                    <th className="py-1 pr-3">Akü</th>
-                    <th className="py-1 pr-3">SOH</th>
-                    <th className="py-1 pr-3">SOC</th>
-                    <th className="py-1 pr-3">Voltaj</th>
-                    <th className="py-1 pr-3">İç Direnç</th>
-                    <th className="py-1">Karar</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {testHistory.map((t) => (
-                    <tr key={t.id} className="border-b border-indigo-100 text-slate-700">
-                      <td className="py-1 pr-3 whitespace-nowrap">{t.created_at ? new Date(t.created_at).toLocaleDateString('tr-TR') : '-'}</td>
-                      <td className="py-1 pr-3">{t.battery_number ?? '-'}</td>
-                      <td className="py-1 pr-3 font-semibold tabular-nums">{t.values?.soh != null ? `%${t.values.soh}` : '-'}</td>
-                      <td className="py-1 pr-3 tabular-nums">{t.values?.soc != null ? `%${t.values.soc}` : '-'}</td>
-                      <td className="py-1 pr-3 tabular-nums">{t.values?.voltage != null ? `${t.values.voltage} V` : '-'}</td>
-                      <td className="py-1 pr-3 tabular-nums">{t.values?.internal_resistance != null ? `${t.values.internal_resistance} mΩ` : '-'}</td>
-                      <td className="py-1 truncate max-w-[220px]" title={t.decision || ''}>{t.decision || '-'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* Akü Bölümleri */}
-        {batteries.map((battery, idx) => (
-          <div key={battery.id} className="border border-red-200 rounded-xl p-4 bg-red-50/30">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-lg font-bold text-red-600 flex items-center gap-2">
-                <Battery className="w-5 h-5" />
-                {idx + 1}. Akü
-              </h3>
-              {batteries.length > 1 && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => removeBattery(battery.id)}
-                  className="text-red-600 hover:bg-red-100 h-8 px-2"
-                  disabled={battery.loading}
-                >
-                  <X className="w-4 h-4 mr-1" /> Bölümü Sil
-                </Button>
-              )}
-            </div>
-
-            <div className="space-y-3">
-              <div>
-                <p className="text-xs text-slate-600 mb-2">
-                  Test görsellerini yükleyin (max {MAX_IMAGES} görsel) — <span className="font-semibold">Test Görselleri ({battery.files.length}/{MAX_IMAGES})</span>
-                </p>
-                <Input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={(e) => {
-                    handleFilesSelected(battery.id, e.target.files);
-                    e.target.value = ''; // aynı dosyayı tekrar seçebilmek için reset
-                  }}
-                  disabled={battery.loading || battery.files.length >= MAX_IMAGES}
-                  className="cursor-pointer"
-                />
-              </div>
-
-              {/* Görsel önizlemeleri */}
-              {battery.previews.length > 0 && (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
-                  {battery.previews.map((src, i) => (
-                    <div key={i} className="relative group rounded-lg overflow-hidden border border-slate-200 bg-white">
-                      <img
-                        src={src}
-                        alt={`Akü ${idx + 1} - Görsel ${i + 1}`}
-                        className="w-full h-24 object-cover"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => removeImage(battery.id, i)}
-                        disabled={battery.loading}
-                        className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600 disabled:opacity-50"
-                        aria-label="Görseli kaldır"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                      <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs px-1 py-0.5 text-center">
-                        {i + 1}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* ADIM 1: değerleri oku */}
-              <div className="flex flex-wrap gap-2 pt-1">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => extractBattery(battery.id)}
-                  disabled={battery.loading || battery.interpreting || battery.files.length === 0 || analyzingAll}
-                  className="border-red-300 text-red-700 hover:bg-red-50"
-                >
-                  {battery.loading ? (
-                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Değerler Okunuyor...</>
-                  ) : (
-                    <><ScanSearch className="w-4 h-4 mr-2" /> Değerleri Oku</>
-                  )}
-                </Button>
-              </div>
-
-              {/* ADIM 1.5: okunan değerleri göster — kullanıcı düzeltir, sonra rapor */}
-              {battery.values && (
-                <div className="mt-3 p-4 rounded-lg bg-amber-50 border border-amber-300">
-                  <div className="flex items-center gap-2 mb-3 text-sm font-semibold text-amber-800">
-                    <ScanSearch className="w-4 h-4" />
-                    Okunan Değerler — kontrol edin, yanlışsa düzeltin
-                  </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    {[
-                      { key: 'soh', label: 'SOH (%)' },
-                      { key: 'soc', label: 'SOC (%)' },
-                      { key: 'voltage', label: 'Voltaj (V)' },
-                      { key: 'internal_resistance', label: 'İç Direnç (mΩ)' }
-                    ].map(({ key, label }) => (
-                      <div key={key}>
-                        <label className="block text-xs font-medium text-amber-700 mb-1">{label}</label>
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          value={battery.values[key] ?? ''}
-                          onChange={(e) => updateBatteryValue(battery.id, key, e.target.value)}
-                          placeholder="—"
-                          className="w-full px-2 py-1.5 border border-amber-300 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                  <Button
-                    size="sm"
-                    onClick={() => interpretBattery(battery.id)}
-                    disabled={battery.interpreting || battery.loading}
-                    className="mt-3 bg-emerald-600 hover:bg-emerald-700 text-white"
-                  >
-                    {battery.interpreting ? (
-                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Rapor Oluşturuluyor...</>
-                    ) : (
-                      <><Check className="w-4 h-4 mr-2" /> Değerler Doğru — Raporu Oluştur</>
-                    )}
-                  </Button>
-                </div>
-              )}
-
-              {battery.error && (
-                <div className="p-3 rounded-lg bg-red-100 border border-red-300 text-red-800 text-sm">
-                  <AlertTriangle className="w-4 h-4 inline mr-1" /> {battery.error}
-                </div>
-              )}
-
-              {battery.report && (
-                <div className="mt-3 p-4 rounded-lg bg-white border border-emerald-200 shadow-sm">
-                  <div className="flex items-center gap-2 mb-2 pb-2 border-b border-slate-200">
-                    <Check className="w-4 h-4 text-emerald-600" />
-                    <span className="font-semibold text-emerald-700 text-sm">Analiz Sonucu</span>
-                  </div>
-                  {renderReport(battery.report)}
-                </div>
-              )}
-            </div>
-          </div>
-        ))}
-
-        {/* Yeni Akü Ekle */}
-        <button
-          type="button"
-          onClick={addBattery}
-          className="w-full py-3 border-2 border-dashed border-red-300 rounded-xl text-red-600 hover:bg-red-50 transition-colors font-medium flex items-center justify-center gap-2"
-        >
-          <Plus className="w-5 h-5" /> Yeni Akü Ekle
-        </button>
-
-        {/* Toplu Aksiyonlar */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-          <Button
-            onClick={analyzeAll}
-            disabled={analyzingAll || batteries.every(b => b.files.length === 0)}
-            className="bg-indigo-500 hover:bg-indigo-600 text-white h-12 text-base"
-          >
-            {analyzingAll ? (
-              <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> Değerler Okunuyor...</>
-            ) : (
-              <><ScanSearch className="w-5 h-5 mr-2" /> Tüm Görsellerden Değerleri Oku</>
-            )}
-          </Button>
-
-          <Button
-            onClick={downloadPdf}
-            disabled={pdfLoading || !anyReportReady}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white h-12 text-base"
-          >
-            {pdfLoading ? (
-              <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> PDF Hazırlanıyor...</>
-            ) : (
-              <><Download className="w-5 h-5 mr-2" /> PDF Rapor İndir</>
-            )}
-          </Button>
-        </div>
-
-        {/* Kullanım Bilgisi */}
-        <div className="p-4 rounded-lg bg-blue-50 border border-blue-200">
-          <h4 className="font-semibold text-blue-800 mb-2 flex items-center gap-2 text-sm">
-            <FileText className="w-4 h-4" /> Kullanım Bilgisi:
-          </h4>
-          <ul className="space-y-1.5 text-sm text-blue-900">
-            <li className="flex gap-2"><span className="text-blue-500">•</span> Her akü için UNI-T UT673A cihazından alınan test görsellerini yükleyin.</li>
-            <li className="flex gap-2"><span className="text-blue-500">•</span> Birden fazla akü test ediyorsanız "Yeni Akü Ekle" ile bölüm oluşturun.</li>
-            <li className="flex gap-2"><span className="text-blue-500">•</span> "Değerleri Oku" ile ChatGPT görseldeki değerleri okur; kontrol edip "Raporu Oluştur"a basın.</li>
-            <li className="flex gap-2"><span className="text-blue-500">•</span> Analiz sonrası "PDF Rapor İndir" ile profesyonel rapor oluşturun.</li>
-          </ul>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
+// Akü testi: components/BatteryTest.jsx
 
 function App() {
   // Authentication states
@@ -648,6 +86,9 @@ function App() {
   // AI ürün çıkarma (PDF/Excel/görsel -> önizleme -> onay)
   const [aiExtracting, setAiExtracting] = useState(false); // çıkarma sürüyor mu
   const [aiPreviewProducts, setAiPreviewProducts] = useState(null); // çıkarılan ürünler (önizleme); null = önizleme yok
+  const [uploadFiles, setUploadFiles] = useState([]); // AI: birden çok dosya
+  const [aiProgress, setAiProgress] = useState(null); // { done, total, found } — parçalı okuma ilerlemesi
+  const [aiFilter, setAiFilter] = useState('all'); // önizleme süzgeci: all | new | changed | same
   const [aiImportSession, setAiImportSession] = useState(null); // CRM'e yazmadan once saklanan onizleme oturumu
   const [aiPreviewCompanyId, setAiPreviewCompanyId] = useState(''); // önizlemenin ait olduğu firma
   const [termosaCats, setTermosaCats] = useState(''); // Termosa kategori URL'leri (satır satır)
@@ -1832,13 +1273,15 @@ function App() {
       companyName = uploadCompanyName.trim();
     }
 
-    if (!uploadFile) {
+    const files = uploadFiles.length ? uploadFiles : (uploadFile ? [uploadFile] : []);
+    if (!files.length) {
       toast.error('Lütfen bir dosya seçin (PDF, Excel veya görsel)');
       return;
     }
 
     try {
       setAiExtracting(true);
+      setAiProgress(null);
 
       // Yeni firma ise önce oluştur
       if (!useExistingCompany) {
@@ -1850,12 +1293,20 @@ function App() {
         setUseExistingCompany(true);
       }
 
+      // Parçalı okuma işi: büyük listeler parça parça, çoklu dosya; ilerleme sorgulanır
       const formData = new FormData();
-      formData.append('file', uploadFile);
-
-      const response = await axios.post(`${API}/companies/${companyId}/ai-extract-products`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+      files.forEach((f) => formData.append('files', f));
+      const start = await axios.post(`${API}/companies/${companyId}/ai-extract-jobs`, formData, { timeout: 180000 });
+      setAiProgress({ done: 0, total: start.data.total, found: 0 });
+      let job = null;
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 1500));
+        job = (await axios.get(`${API}/ai-extract-jobs/${start.data.job_id}`)).data;
+        setAiProgress({ done: job.done, total: job.total, found: job.found });
+        if (job.status !== 'running') break;
+      }
+      if ((job.errors || []).length) toast.warning(`${job.errors.length} parça okunamadı: ${job.errors[0]}`);
+      const response = { data: { products: job.products || [], filename: (job.files || []).join(', ') } };
 
       const products = (response.data.products || []).map((p) => ({
         name: p.name || '',
@@ -1886,6 +1337,7 @@ function App() {
       toast.error(error.response?.data?.detail || 'Ürünler çıkarılamadı');
     } finally {
       setAiExtracting(false);
+      setAiProgress(null);
     }
   };
 
@@ -2214,6 +1666,8 @@ function App() {
       setAiImportSession(null);
       setAiPreviewCompanyId('');
       setUploadFile(null);
+      setUploadFiles([]);
+      setAiFilter('all');
       setUploadCompanyName('');
       setUploadDiscount('');
       await loadProducts(1, true);
@@ -8382,8 +7836,9 @@ function App() {
                       id="product-file-input"
                       type="file"
                       accept=".pdf,.xlsx,.xls,image/*"
+                      multiple
                       className="sr-only"
-                      onChange={(e) => setUploadFile(e.target.files && e.target.files[0] ? e.target.files[0] : null)}
+                      onChange={(e) => { const fs = Array.from(e.target.files || []).slice(0, 10); setUploadFiles(fs); setUploadFile(fs[0] || null); e.target.value = ''; }}
                     />
                     <div className="flex items-center gap-3 mt-1">
                       <label
@@ -8392,8 +7847,8 @@ function App() {
                       >
                         <Upload className="w-4 h-4 mr-2" /> Dosya Seç
                       </label>
-                      <span className={`text-sm truncate ${uploadFile ? 'text-emerald-700 font-medium' : 'text-slate-400'}`}>
-                        {uploadFile ? uploadFile.name : 'Henüz dosya seçilmedi'}
+                      <span className={`text-sm truncate ${uploadFile ? 'text-emerald-700 font-medium' : 'text-slate-400'}`} title={uploadFiles.map((f) => f.name).join(', ')}>
+                        {uploadFiles.length > 1 ? `${uploadFiles.length} dosya: ${uploadFiles.map((f) => f.name).join(', ')}` : (uploadFile ? uploadFile.name : 'Henüz dosya seçilmedi (birden çok seçebilirsiniz)')}
                       </span>
                     </div>
                   </div>
@@ -8404,8 +7859,13 @@ function App() {
                     className="w-full"
                   >
                     <Upload className="w-4 h-4 mr-2" />
-                    {aiExtracting ? 'Yapay zekâ okuyor...' : '✨ Ürünleri Çıkar'}
+                    {aiExtracting ? (aiProgress ? `Okunuyor… ${aiProgress.done}/${aiProgress.total} parça · ${aiProgress.found} ürün` : 'Dosya hazırlanıyor…') : '✨ Ürünleri Çıkar'}
                   </Button>
+                  {aiExtracting && aiProgress && (
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                      <div className="h-full rounded-full bg-indigo-500 transition-all duration-500" style={{ width: `${Math.round((aiProgress.done / Math.max(1, aiProgress.total)) * 100)}%` }} />
+                    </div>
+                  )}
 
                   {/* Termosa: çek + fiyat kontrol (yan yana) */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -8524,6 +7984,27 @@ function App() {
                         <div className="text-xs text-slate-500">İstersen aşağıdaki tabloda her ürüne ayrı kategori de seçebilirsin.</div>
                       </div>
                     </div>
+                    {(() => {
+                      const kind = (p) => (!p.matched_product_id ? 'new' : (p.change_type ? 'changed' : 'same'));
+                      const cnt = { all: aiPreviewProducts.length, new: 0, changed: 0, same: 0 };
+                      aiPreviewProducts.forEach((p) => { cnt[kind(p)] += 1; });
+                      return (
+                        <div className="mb-3 flex flex-wrap items-center gap-2">
+                          {[['all', 'Tümü'], ['new', 'Yeni'], ['changed', 'Fiyatı değişen'], ['same', 'Aynı fiyat']].map(([k, l]) => (
+                            <button key={k} type="button" onClick={() => setAiFilter(k)}
+                              className={`rounded-full px-3 py-1 text-xs font-bold ring-1 ${aiFilter === k ? 'bg-slate-800 text-white ring-slate-800' : 'bg-white text-slate-600 ring-slate-200 hover:bg-slate-50'}`}>
+                              {l} ({cnt[k]})
+                            </button>
+                          ))}
+                          {cnt.same > 0 && (
+                            <button type="button" onClick={() => setAiPreviewProducts((prev) => prev.map((p) => (kind(p) === 'same' ? { ...p, action: 'skip' } : p)))}
+                              className="ml-auto rounded-full px-3 py-1 text-xs font-bold text-slate-500 ring-1 ring-slate-200 hover:bg-slate-50" title="Fiyatı değişmeyen eşleşen ürünler kaydedilmez">
+                              Aynı fiyatlıları atla
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })()}
                     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
                       <table className="w-full text-sm">
                         <thead className="bg-slate-50 text-slate-600">
@@ -8539,7 +8020,7 @@ function App() {
                           </tr>
                         </thead>
                         <tbody>
-                          {aiPreviewProducts.map((p, i) => (
+                          {aiPreviewProducts.map((p, i) => (aiFilter !== 'all' && (!p.matched_product_id ? 'new' : (p.change_type ? 'changed' : 'same')) !== aiFilter) ? null : (
                             <tr key={p.row_id || i} className="border-t align-top">
                               <td className="px-1 py-1 min-w-[240px]">
                                 <Input value={p.name} onChange={(e) => updateAiPreviewProduct(i, 'name', e.target.value)} className="h-8 min-w-[220px]" disabled={p.action === 'skip'} />
@@ -8548,6 +8029,9 @@ function App() {
                                     <span className="rounded-full bg-blue-50 px-2 py-0.5 font-semibold text-blue-700 ring-1 ring-blue-100">Eşleşen: {p.matched_product_name || p.name}</span>
                                   ) : (
                                     <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700 ring-1 ring-emerald-100">Yeni ürün</span>
+                                  )}
+                                  {p.matched_product_id && !p.change_type && (
+                                    <span className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-500 ring-1 ring-slate-200">Aynı fiyat</span>
                                   )}
                                   {p.price_change_percent != null && (
                                     <span className={`rounded-full px-2 py-0.5 font-semibold ring-1 ${p.price_change_amount > 0 ? 'bg-rose-50 text-rose-700 ring-rose-100' : 'bg-emerald-50 text-emerald-700 ring-emerald-100'}`}>
@@ -10977,7 +10461,7 @@ function App() {
 
           {/* Akü Test Tab */}
           <TabsContent value="battery-test" className="space-y-6">
-            <BatteryTestSection />
+            <BatteryTest api={API} />
           </TabsContent>
 
           {/* MPPT Hesaplayıcı */}
