@@ -9617,7 +9617,7 @@ def _build_battery_report_pdf(payload: BatteryReportPDFRequest) -> BytesIO:
                 logger.warning(f"PDF görsel hatası: {e}")
         if thumbs:
             row = thumbs + [""] * (4 - len(thumbs))
-            it = Table([row], colWidths=[W / 4] * 4, rowHeights=[4.2*cm])
+            it = Table([row], colWidths=[W / 4] * 4)
             it.setStyle(TableStyle([('ALIGN', (0, 0), (-1, -1), 'CENTER'), ('VALIGN', (0, 0), (-1, -1), 'MIDDLE')]))
             block += [Spacer(1, 6), it]
         story.append(KeepTogether(block))
