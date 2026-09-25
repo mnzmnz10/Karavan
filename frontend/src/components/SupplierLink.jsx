@@ -80,6 +80,24 @@ export function SupplierPrices({ product, kind }) {
   );
 }
 
+// Düzenleme (gruplu): her tedarikçi diliminde kendi girişi. kind = list_price | discounted_price | currency
+export function SupplierEdit({ product, kind, value, onChange }) {
+  return (
+    <SplitCell product={product}>
+      {(s) => (kind === 'currency' ? (
+        <select aria-label={`${s.company_name} para birimi`} value={value(s, kind)} onChange={(e) => onChange(s, kind, e.target.value)}
+          className="h-8 w-20 rounded-md border border-slate-200 bg-white px-1.5 text-sm">
+          <option value="USD">USD</option><option value="EUR">EUR</option><option value="TRY">TRY</option>
+        </select>
+      ) : (
+        <Input type="number" step="0.01" aria-label={`${s.company_name} ${kind === 'list_price' ? 'liste' : 'alış'} fiyatı`}
+          value={value(s, kind)} onChange={(e) => onChange(s, kind, e.target.value)}
+          placeholder={kind === 'discounted_price' ? 'Alış' : ''} className="h-8 w-24" />
+      ))}
+    </SplitCell>
+  );
+}
+
 // İndirimli (alış) hücresi: grupluysa en ucuz tedarikçi
 export function BestCost({ product }) {
   if (!(product.suppliers?.length > 1) || product.best_discounted_price == null) {

@@ -17,7 +17,7 @@ import { Toaster } from './components/ui/sonner';
 import LazyImage from './components/LazyImage';
 import ServiceInvoices from './components/ServiceInvoices';
 import BatteryTest from './components/BatteryTest';
-import { SupplierBadge, BestCost, LinkDialog, SupplierCompanies, SupplierPrices, isGrouped } from './components/SupplierLink';
+import { SupplierBadge, BestCost, LinkDialog, SupplierCompanies, SupplierPrices, SupplierEdit, isGrouped } from './components/SupplierLink';
 import { CacheManager, debounce } from './utils/cache';
 import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors, useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
@@ -2953,9 +2953,20 @@ function App() {
       list_price: product.list_price.toString(),
       discounted_price: product.discounted_price ? product.discounted_price.toString() : '',
       currency: product.currency,
-      category_id: product.category_id || 'none'
+      category_id: product.category_id || 'none',
+      // Tedarikçi grubu: diğer firmaların fiyatları aynı satırda düzenlenir (yalnız değişenler kaydedilir)
+      suppliers: Object.fromEntries((product.suppliers || []).filter((s) => s.id !== product.id).map((s) => {
+        const v = { list_price: String(s.list_price ?? ''), discounted_price: s.discounted_price ? String(s.discounted_price) : '', currency: s.currency || 'TRY' };
+        return [s.id, { ...v, orig: JSON.stringify(v) }];
+      })),
     });
   };
+
+  // Gruplu düzenleme: dilim ana kayıtsa editForm alanı, değilse editForm.suppliers[id]
+  const supplierEditValue = (s, k) => (s.id === editingProduct ? editForm[k] : editForm.suppliers?.[s.id]?.[k] ?? '');
+  const setSupplierEditValue = (s, k, v) => setEditForm((f) => (s.id === editingProduct
+    ? { ...f, [k]: v }
+    : { ...f, suppliers: { ...f.suppliers, [s.id]: { ...f.suppliers[s.id], [k]: v } } }));
 
   const cancelEditProduct = () => {
     setEditingProduct(null);
@@ -2968,7 +2979,8 @@ function App() {
       list_price: '',
       discounted_price: '',
       currency: '',
-      category_id: 'none'
+      category_id: 'none',
+      suppliers: {}
     });
   };
 
@@ -3001,7 +3013,19 @@ function App() {
       }
 
       const response = await axios.patch(`${API}/products/${editingProduct}`, updateData);
-      
+
+      // Diğer tedarikçilerin değişen fiyatları
+      for (const [sid, v] of Object.entries(editForm.suppliers || {})) {
+        const { orig, ...cur } = v;
+        if (JSON.stringify(cur) === orig) continue;
+        const lp = parseFloat(String(cur.list_price).replace(',', '.'));
+        const dp = parseFloat(String(cur.discounted_price).replace(',', '.'));
+        const body = { currency: cur.currency };
+        if (Number.isFinite(lp)) body.list_price = lp;
+        if (Number.isFinite(dp)) body.discounted_price = dp;
+        await axios.patch(`${API}/products/${sid}`, body);
+      }
+
       if (response.data.success) {
         await loadProducts(1, true);
         cancelEditProduct();
@@ -8969,7 +8993,7 @@ function App() {
                                         )}
                                       </TableCell>
                                       <TableCell className="w-32">
-                                        {isEditing ? (
+                                        {isEditing && !isGrouped(product) ? (
                                           <Select
                                             value={editForm.company_id}
                                             onValueChange={(value) => setEditForm({...editForm, company_id: value})}
@@ -9010,7 +9034,9 @@ function App() {
                                         )}
                                       </TableCell>
                                       <TableCell className="w-28">
-                                        {isEditing ? (
+                                        {isEditing && isGrouped(product) ? (
+                                          <SupplierEdit product={product} kind="list_price" value={supplierEditValue} onChange={setSupplierEditValue} />
+                                        ) : isEditing ? (
                                           <Input
                                             type="number"
                                             step="0.01"
@@ -9026,7 +9052,9 @@ function App() {
                                       </TableCell>
                                       {showDiscountedPrices && (
                                         <TableCell>
-                                          {isEditing ? (
+                                          {isEditing && isGrouped(product) ? (
+                                            <SupplierEdit product={product} kind="discounted_price" value={supplierEditValue} onChange={setSupplierEditValue} />
+                                          ) : isEditing ? (
                                             <Input
                                               type="number"
                                               step="0.01"
@@ -9041,7 +9069,9 @@ function App() {
                                         </TableCell>
                                       )}
                                       <TableCell className="w-24">
-                                        {isEditing ? (
+                                        {isEditing && isGrouped(product) ? (
+                                          <SupplierEdit product={product} kind="currency" value={supplierEditValue} onChange={setSupplierEditValue} />
+                                        ) : isEditing ? (
                                           <Select 
                                             value={editForm.currency} 
                                             onValueChange={(value) => setEditForm({...editForm, currency: value})}

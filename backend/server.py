@@ -2619,9 +2619,10 @@ async def update_product(product_id: str, update_data: ProductUpdate):
                 {"$set": update_dict}
             )
             
-            if result.modified_count == 0:
+            # matched: değer aynı kaldıysa (modified=0) hata değil — gruplu düzenlemede yalnız diğer firma değişebilir
+            if result.matched_count == 0:
                 raise HTTPException(status_code=404, detail="Ürün güncellenemedi")
-        
+
         # Get updated product
         updated_product = await db.products.find_one({"id": product_id})
         return {
