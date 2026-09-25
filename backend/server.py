@@ -12090,6 +12090,105 @@ class PDFContractGenerator(PDFQuoteGenerator):
         canvas.drawRightString(width - 1.5 * cm, 1.0 * cm, f"Sayfa {doc.page}")
         canvas.restoreState()
 
+    def create_contract_worklist_pdf(self, contract_data: Dict) -> BytesIO:
+        """Fiyatsız iş listesi (araca asmak için): yalnız ürün/işlem + adet, iki sütun, kompakt.
+        Adedi 0/boş kalemler (sözleşmeye dahil edilmemiş) atlanır; ilaveler ayrı bölüm."""
+        from reportlab.platypus import BaseDocTemplate, PageTemplate, Frame
+        buffer = BytesIO()
+        width, height = A4
+        margin, gap, head_h = 1.0 * cm, 0.6 * cm, 1.55 * cm
+        col_w = (width - 2 * margin - gap) / 2
+        data_block = contract_data.get("data") or {}
+        customer = (contract_data.get("customer_name") or "").strip()
+        vehicle = (contract_data.get("title") or "").strip()
+        dv = contract_data.get("doc_date") or contract_data.get("created_at")
+        try:
+            date_str = (dv if isinstance(dv, datetime) else datetime.fromisoformat(str(dv).replace('Z', '+00:00'))).strftime('%d.%m.%Y')
+        except Exception:
+            date_str = datetime.now().strftime('%d.%m.%Y')
+        font, bold = self.get_font_name(), self.get_font_name(is_bold=True)
+        navy = colors.HexColor('#1B3A5C')
+
+        def on_page(canvas, doc):
+            canvas.saveState()
+            top = height - margin
+            canvas.setFillColor(navy)
+            canvas.roundRect(margin, top - head_h + 0.25 * cm, width - 2 * margin, head_h - 0.25 * cm, 6, stroke=0, fill=1)
+            canvas.setFillColor(colors.HexColor('#9FB7D1'))
+            canvas.setFont(bold, 7)
+            canvas.drawString(margin + 0.45 * cm, top - 0.62 * cm, "İŞ LİSTESİ  ·  ÜRÜN VE ADETLER")
+            canvas.setFillColor(colors.white)
+            canvas.setFont(bold, 12.5)
+            canvas.drawString(margin + 0.45 * cm, top - 1.08 * cm, upper_tr(customer or vehicle or "SÖZLEŞME")[:48])
+            canvas.setFont(bold, 9.5)
+            right = f"{upper_tr(vehicle)}  ·  {date_str}" if (vehicle and customer) else date_str
+            canvas.drawRightString(width - margin - 0.45 * cm, top - 1.08 * cm, right[:60])
+            canvas.setFont(font, 7.5)
+            canvas.setFillColor(colors.HexColor('#718096'))
+            canvas.drawRightString(width - margin, 0.55 * cm, f"Sayfa {doc.page}")
+            canvas.restoreState()
+
+        frame_h = height - 2 * margin - head_h - 0.2 * cm
+        frames = [Frame(margin + i * (col_w + gap), margin, col_w, frame_h, leftPadding=0, rightPadding=0,
+                        topPadding=0, bottomPadding=0, id=f"col{i}") for i in range(2)]
+        doc = BaseDocTemplate(buffer, pagesize=A4, leftMargin=margin, rightMargin=margin, topMargin=margin,
+                              bottomMargin=margin, title=f"İş Listesi - {customer or vehicle}", author="MSZ Karavan")
+        doc.addPageTemplates([PageTemplate(id="cols", frames=frames, onPage=on_page)])
+
+        cell = ParagraphStyle('WLCell', parent=self.styles['Normal'], fontName=font, fontSize=8.6, leading=10.2,
+                              textColor=colors.HexColor('#1F2937'))
+        num = ParagraphStyle('WLNum', parent=cell, fontSize=7.5, textColor=colors.HexColor('#94A3B8'), alignment=TA_CENTER)
+        qty_st = ParagraphStyle('WLQty', parent=cell, fontName=bold, fontSize=9.5, alignment=TA_CENTER, textColor=navy)
+        sec_st = ParagraphStyle('WLSec', parent=cell, fontName=bold, fontSize=8.2, textColor=colors.white)
+
+        def fmt_qty(q):
+            try:
+                f = float(str(q).replace(",", "."))
+                return str(int(f)) if f.is_integer() else str(f).replace(".", ",")
+            except (TypeError, ValueError):
+                return str(q or "")
+
+        def included(q):
+            try:
+                return float(str(q).replace(",", ".")) > 0
+            except (TypeError, ValueError):
+                return bool(str(q or "").strip())
+
+        blocks = []
+        for si, sec in enumerate(data_block.get("sections") or []):
+            items = [it for it in (sec.get("items") or []) if included(it.get("qty"))]
+            if items:
+                blocks.append((f"{si + 1:02d} · {upper_tr(sec.get('name') or '')}", [(it.get("sno", ""), it.get("name", ""), it.get("qty")) for it in items]))
+        addons = [a for a in (data_block.get("addons") or []) if (a.get("name") or "").strip()]
+        if addons:
+            blocks.append(("İLAVELER", [(str(i + 1), a.get("name", ""), a.get("qty") or 1) for i, a in enumerate(addons)]))
+
+        story = []
+        widths = [0.75 * cm, col_w - 0.75 * cm - 1.15 * cm, 1.15 * cm]
+        for title, rows in blocks:
+            data = [[Paragraph(title, sec_st), "", Paragraph("ADET", ParagraphStyle('WLSecR', parent=sec_st, alignment=TA_CENTER, fontSize=7))]]
+            data += [[Paragraph(str(sno), num), Paragraph(upper_tr(name), cell), Paragraph(fmt_qty(q), qty_st)] for sno, name, q in rows]
+            t = Table(data, colWidths=widths, repeatRows=1)
+            t.setStyle(TableStyle([
+                ('SPAN', (0, 0), (1, 0)),
+                ('BACKGROUND', (0, 0), (-1, 0), navy),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('LINEBELOW', (0, 1), (-1, -1), 0.4, colors.HexColor('#CBD5E1')),
+                ('LINEBEFORE', (2, 1), (2, -1), 0.4, colors.HexColor('#CBD5E1')),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F8FAFC')]),
+                ('TOPPADDING', (0, 0), (-1, -1), 2.2),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 2.2),
+                ('LEFTPADDING', (0, 0), (-1, -1), 3),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 3),
+            ]))
+            story.append(t)
+            story.append(Spacer(1, 5))
+        if not story:
+            story.append(Paragraph("Listelenecek kalem yok.", cell))
+        doc.build(story)
+        buffer.seek(0)
+        return buffer
+
     def create_contract_pdf(self, contract_data: Dict) -> BytesIO:
         buffer = BytesIO()
         doc = SimpleDocTemplate(
@@ -12878,8 +12977,8 @@ async def download_service_pdf(service_id: str):
 
 
 @app.get("/api/contracts/{contract_id}/pdf")
-async def download_contract_pdf(contract_id: str):
-    """Sözleşmeyi tasarımlı PDF olarak indir."""
+async def download_contract_pdf(contract_id: str, plain: bool = False):
+    """Sözleşmeyi tasarımlı PDF olarak indir. plain=1 → fiyatsız iş listesi (ürün + adet, iki sütun)."""
     try:
         doc = await db.contracts.find_one({"id": contract_id})
         if not doc:
@@ -12897,10 +12996,10 @@ async def download_contract_pdf(contract_id: str):
             raise HTTPException(status_code=422, detail="Sözleşme verisi PDF için ayrıştırılamadı.")
             
         pdf_generator = PDFContractGenerator()
-        pdf_buffer = pdf_generator.create_contract_pdf(doc)
+        pdf_buffer = pdf_generator.create_contract_worklist_pdf(doc) if plain else pdf_generator.create_contract_pdf(doc)
         
-        raw_name = (doc.get("title") or "sozlesme") + ".pdf"
-        ascii_name = raw_name.encode("ascii", "ignore").decode("ascii") or "sozlesme.pdf"
+        raw_name = ((doc.get("customer_name") or doc.get("title") or "sozlesme") + " - is listesi" if plain else (doc.get("title") or "sozlesme")) + ".pdf"
+        ascii_name = raw_name.translate(str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")).encode("ascii", "ignore").decode("ascii") or "sozlesme.pdf"
         if not ascii_name.lower().endswith(".pdf"):
             ascii_name += ".pdf"
             

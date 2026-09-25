@@ -6403,6 +6403,9 @@ function App() {
                             <Button variant="outline" size="sm" onClick={() => window.open(`${API}/contracts/${viewingContract.id}/pdf`, '_blank')} className="border-blue-300 text-blue-700 hover:bg-blue-50" title="Tasarımlı A4 PDF olarak indir">
                               <Download className="w-4 h-4 mr-2" /> PDF İndir
                             </Button>
+                            <Button variant="outline" size="sm" onClick={() => window.open(`${API}/contracts/${viewingContract.id}/pdf?plain=1`, '_blank')} className="border-slate-300 text-slate-700 hover:bg-slate-50" title="Fiyatsız iş listesi: yalnız ürün ve adet, iki sütun (araca asmak için)">
+                              <FileText className="w-4 h-4 mr-2" /> Fiyatsız PDF
+                            </Button>
                           </>
                         )}
                       </div>
@@ -7137,7 +7140,7 @@ function App() {
                 <div>
                   <Label>Araç Türü</Label>
                   {(() => {
-                    const VEHICLE_TYPES = ['15M³ PSA', '17M³ PSA', 'MERCEDES', 'IVECO', 'VOLKSWAGEN', 'MAN', 'FORD', 'RENAULT', 'SEMİ ENTEGRE', 'OTOBÜS', 'ÇEKME KARAVAN'];
+                    const VEHICLE_TYPES = ['15M³ PSA', '17M³ PSA', 'MERCEDES', 'IVECO', 'VOLKSWAGEN', 'MAN', 'FORD', 'RENAULT', 'TOYOTA', 'SEMİ ENTEGRE', 'OTOBÜS', 'ÇEKME KARAVAN'];
                     const selected = contractForm.title || '';
                     const choose = (v) => setContractForm({ ...contractForm, title: selected === v ? '' : v });
                     return (
@@ -7300,7 +7303,7 @@ function App() {
                 <div>
                   <Label>Araç Türü *</Label>
                   {(() => {
-                    const VEHICLE_TYPES = ['15M³ PSA', '17M³ PSA', 'MERCEDES', 'IVECO', 'VOLKSWAGEN', 'MAN', 'FORD', 'RENAULT', 'SEMİ ENTEGRE', 'OTOBÜS', 'ÇEKME KARAVAN'];
+                    const VEHICLE_TYPES = ['15M³ PSA', '17M³ PSA', 'MERCEDES', 'IVECO', 'VOLKSWAGEN', 'MAN', 'FORD', 'RENAULT', 'TOYOTA', 'SEMİ ENTEGRE', 'OTOBÜS', 'ÇEKME KARAVAN'];
                     const selected = newContractForm.title || '';
                     const choose = (v) => setNewContractForm({ ...newContractForm, title: selected === v ? '' : v });
                     return (
@@ -11187,7 +11190,7 @@ function App() {
                         {/* ARAÇ — tür/marka + model TEK panelde; seçim üstte rozetle belli */}
                         <div className="sm:col-span-2">
                           {(() => {
-                            const VEHICLE_TYPES = ['15M³ PSA', '17M³ PSA', 'MERCEDES', 'IVECO', 'VOLKSWAGEN', 'MAN', 'FORD', 'RENAULT', 'SEMİ ENTEGRE', 'OTOBÜS', 'ÇEKME KARAVAN'];
+                            const VEHICLE_TYPES = ['15M³ PSA', '17M³ PSA', 'MERCEDES', 'IVECO', 'VOLKSWAGEN', 'MAN', 'FORD', 'RENAULT', 'TOYOTA', 'SEMİ ENTEGRE', 'OTOBÜS', 'ÇEKME KARAVAN'];
                             const MODEL_SUGGESTIONS = {
                               'MERCEDES': ['Sprinter', 'Vito'],
                               'VOLKSWAGEN': ['Crafter', 'Transporter', 'Volt', 'Caravelle', 'Caddy'],
@@ -11198,6 +11201,7 @@ function App() {
                               'PEUGEOT': ['Boxer', 'Expert'],
                               'CITROEN': ['Jumper', 'Jumpy'],
                               'RENAULT': ['Master', 'Trafic'],
+                              'TOYOTA': ['Proace', 'Proace Max', 'Proace City'],
                             };
                             const selected = serviceForm.vehicle_brand || '';
                             const model = serviceForm.vehicle_model || '';

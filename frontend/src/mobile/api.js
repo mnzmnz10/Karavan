@@ -100,6 +100,7 @@ export const docUrl = {
   service: (id) => `${API}/services/${id}/pdf`,
   invoice: (id, invId) => `${API}/services/${id}/invoices/${invId}`,
   contract: (id) => `${API}/contracts/${id}/download`,
+  worklist: (id) => `${API}/contracts/${id}/pdf?plain=1`, // fiyatsız iş listesi (ürün + adet)
 };
 export const openDoc = (url) => window.open(url, "_blank");
 

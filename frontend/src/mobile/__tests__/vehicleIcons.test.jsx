@@ -12,6 +12,8 @@ test("tür/marka → ikon tipi (PSA hacimleri ortak, diğerleri ayrı)", () => {
   expect(k("FORD")).toBe("ford");
   expect(k("RENAULT")).toBe("renault");
   expect(k("Renault")).toBe("renault");
+  expect(k("TOYOTA")).toBe("toyota");
+  expect(k("Toyota Proace Max")).toBe("toyota");
   expect(k("SEMİ ENTEGRE")).toBe("semi");
   expect(k("OTOBÜS")).toBe("bus");
   expect(k("ÇEKME KARAVAN", true)).toBe("trailer");

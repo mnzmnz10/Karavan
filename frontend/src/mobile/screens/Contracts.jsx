@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { AccountButton } from "../Account";
-import { ScrollText, User, Share2, Loader2, CheckCircle2, Trash2, Plus, Pencil, X, Copy, Phone, MessageCircle } from "lucide-react";
+import { ScrollText, User, Share2, Loader2, CheckCircle2, Trash2, Plus, Pencil, X, Copy, Phone, MessageCircle, ClipboardList } from "lucide-react";
 import { toast } from "../toast";
 import http, { docUrl, openDoc } from "../api";
 import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, RefreshScroll, OfflineBar, todayISO, waNumber, fmtDate, IconBadge } from "../ui";
@@ -123,6 +123,11 @@ function Detail({ c, onClose, onStage, staging, onDeleted, onEditItems, onCopy, 
         <button onClick={copy} disabled={copying} className="m-press flex flex-1 items-center justify-center gap-1.5 rounded-2xl bg-white py-2.5 text-[14px] font-bold disabled:opacity-60" style={{ color: "var(--m-ink-2)" }}>
           {copying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />} Kopyala
         </button>
+        {Array.isArray(c.data?.sections) && c.data.sections.length > 0 && (
+          <button onClick={() => openDoc(docUrl.worklist(c.id))} className="m-press flex flex-1 items-center justify-center gap-1.5 rounded-2xl bg-white py-2.5 text-[14px] font-bold" style={{ color: "var(--m-ink-2)" }} title="Fiyatsız iş listesi (ürün + adet)">
+            <ClipboardList className="h-4 w-4" /> İş Listesi
+          </button>
+        )}
       </div>
 
       <div className="rounded-2xl bg-white p-4">

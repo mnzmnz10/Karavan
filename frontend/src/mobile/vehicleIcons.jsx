@@ -15,6 +15,7 @@ export const VEHICLE_KINDS = {
   man: "MAN TGE",
   ford: "Ford Transit",
   renault: "Renault Master",
+  toyota: "Toyota Proace",
   semi: "Semi entegre",
   bus: "Otobüs",
   trailer: "Çekme karavan",
@@ -33,6 +34,7 @@ export function vehicleKind(s) {
   if (b === "MAN" || b.startsWith("MAN ")) return "man";
   if (b.includes("FORD")) return "ford";
   if (b.includes("RENAULT")) return "renault";
+  if (b.includes("TOYOTA") || b.includes("PROACE")) return "toyota";
   return null;
 }
 

@@ -52,7 +52,7 @@ jest.mock("../api", () => {
       invoiceUpload: (id, f) => { calls.invUp.push(f.name); return Promise.resolve([...(global.__SERVICE.invoices || []), { id: "i2", name: f.name, size: f.size, uploaded_at: "2026-09-25T10:00:00Z" }]); },
       invoiceRemove: () => Promise.resolve([]),
     },
-    docUrl: { quote: () => "", service: () => "", contract: () => "", invoice: (id, inv) => `/inv/${id}/${inv}` },
+    docUrl: { quote: () => "", service: () => "", contract: () => "", worklist: (id) => `/wl/${id}`, invoice: (id, inv) => `/inv/${id}/${inv}` },
     openDoc: (u) => { calls.openDoc.push(u); },
     default: {
       get: (url) => Promise.resolve({ data: url === "/contracts" ? [{ id: "k1", title: "IVECO Karavan", stage: "proposal", data: { grandTotal: 1000, kur: 40, sections: [] } }] : [] }),
