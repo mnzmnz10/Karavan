@@ -16,7 +16,8 @@ export function useCatalog(open) {
       const arr = (Array.isArray(data) ? data : data?.products || []).map((p) => ({
         id: p.id, name: p.name, currency: p.currency || "TRY",
         list_price: Number(p.list_price) || 0, list_price_try: Number(p.list_price_try) || 0,
-        discounted_price: Number(p.discounted_price) || 0,
+        // tedarikçi grubunda maliyet en ucuz firmadan (bu ürünün para biriminde)
+        discounted_price: Number(p.best_discounted_price ?? p.discounted_price) || 0,
       }));
       if (arr.length) { setCat(arr); cache.set("catalog_min", arr); }
     }).catch(() => {});

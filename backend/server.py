@@ -523,6 +523,13 @@ class Product(BaseModel):
     image_url: Optional[str] = None
     image_cached: Optional[str] = None      # sunucu kopyası (/api/img/{id}) — link ölse de görünür
     image_cached_src: Optional[str] = None  # kopyanın alındığı image_url (değişince kopya geçersiz)
+    # Aynı ürün birden çok tedarikçide: kayıtlar ayrı kalır, link_group ile bağlanır (listede tek satır)
+    link_group: Optional[str] = None
+    link_primary: Optional[bool] = None
+    suppliers: Optional[List[Dict[str, Any]]] = None       # grup üyeleri (firma, alış, liste) — yalnız yanıtta
+    best_discounted_price: Optional[float] = None           # grubun en ucuz alışı, BU ürünün para biriminde
+    best_discounted_price_try: Optional[float] = None
+    best_company_name: Optional[str] = None
     list_price: Decimal
     discounted_price: Optional[Decimal] = None
     currency: str
@@ -2341,6 +2348,7 @@ async def delete_company(company_id: str):
         
         # Also delete all products of this company
         await db.products.delete_many({"company_id": company_id})
+        await _repair_link_groups()
         
         return {"success": True, "message": "Firma silindi"}
     except HTTPException:
@@ -2635,6 +2643,7 @@ async def delete_product(product_id: str):
         result = await db.products.delete_one({"id": product_id})
         if result.deleted_count == 0:
             raise HTTPException(status_code=404, detail="Ürün bulunamadı")
+        await _repair_link_groups()
         
         return {"success": True, "message": "Ürün silindi"}
     except HTTPException:
@@ -2807,6 +2816,7 @@ async def create_quote(quote: QuoteCreate):
             base_list = float(product.get("list_price", 0))
             base_cost = float(product.get("discounted_price")) if product.get("discounted_price") else base_list
             cost_try = base_cost * rate
+            cost_try, base_cost = await _group_best_cost(product, exchange_rates, cost_try, base_cost, rate)
 
             if custom_price is not None:
                 custom_price = float(custom_price)
@@ -2828,7 +2838,7 @@ async def create_quote(quote: QuoteCreate):
                 "company_name": company["name"] if company else "Unknown",
                 "list_price": product["list_price"],
                 "list_price_try": list_price_try,
-                "discounted_price": product.get("discounted_price"),
+                "discounted_price": base_cost if product.get("link_group") else product.get("discounted_price"),
                 "discounted_price_try": discounted_price_try,
                 "currency": product["currency"],
                 "quantity": quantity,
@@ -3013,6 +3023,7 @@ async def update_quote(quote_id: str, quote_update: Dict[str, Any]):
                     base_list = float(product.get("list_price", 0))
                     base_cost = float(product.get("discounted_price")) if product.get("discounted_price") else base_list
                     cost_try = base_cost * rate
+                    cost_try, base_cost = await _group_best_cost(product, exchange_rates, cost_try, base_cost, rate)
                     if custom_price is not None:
                         custom_price = float(custom_price)
                         list_price_try = custom_price * rate
@@ -3034,7 +3045,7 @@ async def update_quote(quote_id: str, quote_update: Dict[str, Any]):
                         "company_name": company["name"] if company else "Unknown",
                         "list_price": product["list_price"],
                         "list_price_try": list_price_try,
-                        "discounted_price": product.get("discounted_price"),
+                        "discounted_price": base_cost if product.get("link_group") else product.get("discounted_price"),
                         "discounted_price_try": discounted_price_try,
                         "currency": product["currency"],
                         "quantity": quantity,
@@ -6873,6 +6884,184 @@ async def get_products_count(
             logger.error(f"Fallback count query failed: {fallback_error}")
             raise HTTPException(status_code=500, detail="Ürün sayısı getirilemedi")
 
+# ==================== TEDARİKÇİ GRUPLARI (aynı ürün birden çok firmada) ====================
+# Her firmanın kaydı ayrı kalır (Excel/Termosa senkronu kendi kaydını günceller); link_group ortak kimlik.
+# link_primary=True olan kayıt listede grubu temsil eder. Maliyet (teklif) grubun en ucuz alışı.
+
+def _cost_try_of(p: dict) -> float:
+    """Ürünün TL alış maliyeti (indirimli varsa o, yoksa liste)."""
+    for k in ("discounted_price_try", "list_price_try"):
+        try:
+            v = float(p.get(k) or 0)
+            if v > 0:
+                return v
+        except (TypeError, ValueError):
+            pass
+    return 0.0
+
+
+def _own_rate(p: dict) -> float:
+    try:
+        lp, lpt = float(p.get("list_price") or 0), float(p.get("list_price_try") or 0)
+        return (lpt / lp) if (p.get("currency") or "TRY") != "TRY" and lp > 0 else 1.0
+    except (TypeError, ValueError):
+        return 1.0
+
+
+async def _attach_supplier_groups(products: list, dedupe: bool = True) -> list:
+    """Gruplu ürünlere tedarikçi listesi + en ucuz alış ekle; dedupe ise grubu tek satıra indir
+    (aramada ana olmayan üye eşleşirse yerine ana kayıt konur)."""
+    gids = list({p.get("link_group") for p in products if p.get("link_group")})
+    if not gids:
+        return products
+    members = await db.products.find({"link_group": {"$in": gids}}, {"_id": 0}).to_list(5000)
+    try:
+        rates = await currency_service.get_exchange_rates()
+    except Exception:
+        rates = {}
+    def own_cost(m):  # alış, kendi para biriminde
+        return float(m.get("discounted_price") or 0) or float(m.get("list_price") or 0)
+    def now_try(m):  # GÜNCEL kurla TL (saklı _try alanları farklı günlerin kuruyla olabilir)
+        cur = m.get("currency") or "TRY"
+        r = 1.0 if cur == "TRY" else float(rates.get(cur) or 0) or _own_rate(m)
+        return own_cost(m) * r if own_cost(m) > 0 else 1e18
+    cids = list({m.get("company_id") for m in members})
+    names = {c["id"]: c.get("name", "") async for c in db.companies.find({"id": {"$in": cids}}, {"_id": 0, "id": 1, "name": 1})}
+    by_group = {}
+    for m in members:
+        by_group.setdefault(m["link_group"], []).append(m)
+    info = {}
+    for gid, ms in by_group.items():
+        ms.sort(key=lambda m: (not m.get("link_primary"), now_try(m)))
+        best = min(ms, key=now_try)
+        info[gid] = {
+            "primary": next((m for m in ms if m.get("link_primary")), ms[0]),
+            "best": best,
+            "suppliers": [{
+                "id": m["id"], "name": m.get("name"), "company_id": m.get("company_id"),
+                "company_name": names.get(m.get("company_id"), ""), "currency": m.get("currency"),
+                "list_price": m.get("list_price"), "discounted_price": m.get("discounted_price"),
+                "list_price_try": m.get("list_price_try"), "discounted_price_try": m.get("discounted_price_try"),
+                "cost_try": round(now_try(m), 2) if now_try(m) < 1e17 else None, "is_best": m["id"] == best["id"], "is_primary": bool(m.get("link_primary")),
+            } for m in ms],
+        }
+    out, seen = [], set()
+    for p in products:
+        gid = p.get("link_group")
+        if gid and gid in info:
+            if dedupe:
+                if gid in seen:
+                    continue
+                seen.add(gid)
+                p = dict(info[gid]["primary"])
+            best = info[gid]["best"]
+            bt = now_try(best)
+            pcur = p.get("currency") or "TRY"
+            prate = 1.0 if pcur == "TRY" else float(rates.get(pcur) or 0) or _own_rate(p)
+            p["suppliers"] = info[gid]["suppliers"]
+            p["best_discounted_price_try"] = round(bt, 2)
+            # aynı para biriminde doğrudan fiyat; farklıysa güncel kurla çevrilir
+            p["best_discounted_price"] = round(own_cost(best) if (best.get("currency") or "TRY") == pcur else bt / (prate or 1.0), 2)
+            p["best_company_name"] = names.get(best.get("company_id"), "")
+        out.append(p)
+    return out
+
+
+async def _group_best_cost(product: dict, exchange_rates: dict, cost_try: float, base_cost: float, rate: float):
+    """Teklif maliyeti: ürün bir tedarikçi grubundaysa GÜNCEL kurla en ucuz üyenin alışı.
+    (cost_try, bu ürünün para birimindeki maliyet) döner."""
+    gid = product.get("link_group")
+    if not gid:
+        return cost_try, base_cost
+    best = cost_try
+    async for m in db.products.find({"link_group": gid}, {"_id": 0}):
+        cur = m.get("currency", "TRY")
+        r = float(exchange_rates.get(cur, 1)) if cur != "TRY" else 1.0
+        c = float(m.get("discounted_price") or 0) or float(m.get("list_price") or 0)
+        if c > 0 and c * r < best:
+            best = c * r
+    return best, (best / rate if rate else base_cost)
+
+
+async def _repair_link_groups():
+    """Silme sonrası: tek üyesi kalan grubu çöz, ana kaydı gideni yeni ana kayda bağla (liste görünmez kalmasın)."""
+    async for g in db.products.aggregate([{"$match": {"link_group": {"$exists": True, "$ne": None}}},
+                                          {"$group": {"_id": "$link_group", "n": {"$sum": 1}, "ids": {"$push": "$id"},
+                                                      "prim": {"$sum": {"$cond": [{"$eq": ["$link_primary", True]}, 1, 0]}}}}]):
+        if g["n"] <= 1:
+            await db.products.update_many({"link_group": g["_id"]}, {"$unset": {"link_group": "", "link_primary": ""}})
+        elif g["prim"] == 0:
+            await db.products.update_one({"id": g["ids"][0]}, {"$set": {"link_primary": True}})
+
+
+@api_router.get("/products/{product_id}/link-candidates")
+async def product_link_candidates(product_id: str, q: Optional[str] = None):
+    """Başka firmalardaki olası aynı ürünler (isim benzerliği). q verilirse ona göre arar."""
+    import difflib
+    p = await db.products.find_one({"id": product_id}, {"_id": 0})
+    if not p:
+        raise HTTPException(status_code=404, detail="Ürün bulunamadı")
+    target = _normalize_product_name_for_match(q or p.get("name", ""))
+    tokens = set(re.findall(r"[\wçğıöşü]+", target))
+    names = {c["id"]: c.get("name", "") async for c in db.companies.find({}, {"_id": 0, "id": 1, "name": 1})}
+    cands = []
+    async for o in db.products.find({"company_id": {"$ne": p.get("company_id")}, "id": {"$ne": product_id}}, {"_id": 0}):
+        if p.get("link_group") and o.get("link_group") == p.get("link_group"):
+            continue
+        on = _normalize_product_name_for_match(o.get("name", ""))
+        ot = set(re.findall(r"[\wçğıöşü]+", on))
+        jacc = len(tokens & ot) / max(1, len(tokens | ot))
+        score = 0.55 * difflib.SequenceMatcher(None, target, on).ratio() + 0.45 * jacc
+        if q and _normalize_product_name_for_match(q) in on:
+            score += 0.3
+        if score >= 0.35:
+            cands.append((score, o))
+    cands.sort(key=lambda x: -x[0])
+    return [{"id": o["id"], "name": o.get("name"), "company_name": names.get(o.get("company_id"), ""),
+             "currency": o.get("currency"), "list_price": o.get("list_price"), "discounted_price": o.get("discounted_price"),
+             "linked": bool(o.get("link_group")), "score": round(sc, 2)} for sc, o in cands[:8]]
+
+
+class ProductLinkRequest(BaseModel):
+    other_id: str
+
+
+@api_router.post("/products/{product_id}/link")
+async def link_products(product_id: str, req: ProductLinkRequest):
+    """İki ürünü aynı tedarikçi grubuna bağla (gruplar varsa birleşir). product_id grubun ana kaydı olur (yoksa)."""
+    if product_id == req.other_id:
+        raise HTTPException(status_code=400, detail="Ürün kendisine bağlanamaz")
+    a = await db.products.find_one({"id": product_id}, {"_id": 0})
+    b = await db.products.find_one({"id": req.other_id}, {"_id": 0})
+    if not a or not b:
+        raise HTTPException(status_code=404, detail="Ürün bulunamadı")
+    gid = a.get("link_group") or b.get("link_group") or uuid.uuid4().hex
+    olds = [g for g in (a.get("link_group"), b.get("link_group")) if g and g != gid]
+    if olds:
+        await db.products.update_many({"link_group": {"$in": olds}}, {"$set": {"link_group": gid, "link_primary": False}})
+    await db.products.update_one({"id": b["id"]}, {"$set": {"link_group": gid, "link_primary": False}})
+    has_primary = await db.products.find_one({"link_group": gid, "link_primary": True, "id": {"$ne": a["id"]}})
+    await db.products.update_one({"id": a["id"]}, {"$set": {"link_group": gid, "link_primary": not bool(has_primary) or bool(a.get("link_primary"))}})
+    group = await db.products.find({"link_group": gid}, {"_id": 0}).to_list(100)
+    return (await _attach_supplier_groups([next(m for m in group if m["id"] == a["id"])], dedupe=False))[0]
+
+
+@api_router.delete("/products/{product_id}/link")
+async def unlink_product(product_id: str):
+    """Ürünü tedarikçi grubundan çıkar; tek üye kalırsa grup çözülür, ana kayıt çıkarsa yenisi seçilir."""
+    p = await db.products.find_one({"id": product_id}, {"_id": 0})
+    if not p or not p.get("link_group"):
+        raise HTTPException(status_code=404, detail="Bağlı ürün bulunamadı")
+    gid = p["link_group"]
+    await db.products.update_one({"id": product_id}, {"$unset": {"link_group": "", "link_primary": ""}})
+    rest = await db.products.find({"link_group": gid}, {"_id": 0}).to_list(100)
+    if len(rest) <= 1:
+        await db.products.update_many({"link_group": gid}, {"$unset": {"link_group": "", "link_primary": ""}})
+    elif not any(m.get("link_primary") for m in rest):
+        await db.products.update_one({"id": rest[0]["id"]}, {"$set": {"link_primary": True}})
+    return {"success": True}
+
+
 @api_router.get("/products", response_model=List[Product])
 async def get_products(
     company_id: Optional[str] = None,
@@ -6936,6 +7125,9 @@ async def get_products(
         # FAVORI ÜRÜNLER ÖNCELİKLİ SIRALAMA: Aggregate ile güçlü sıralama
         pipeline = []
         
+        # Tedarikçi grupları: firma süzgeci yoksa gruptan yalnız ana kayıt listelenir (arama hariç — aşağıda eşlenir)
+        if not company_id and not search:
+            query["link_primary"] = {"$ne": False}
         # Match stage - filtering
         if query:
             pipeline.append({"$match": query})
@@ -6958,9 +7150,11 @@ async def get_products(
         else:
             pipeline.append({"$limit": 5000})  # Max limit
         
+        pipeline.append({"$project": {"_id": 0}})  # ObjectId JSON'a çevrilemiyordu → her istek yedek yola düşüyordu
         # Execute aggregation pipeline
         cursor = db.products.aggregate(pipeline)
         products = await cursor.to_list(None)
+        products = await _attach_supplier_groups(products, dedupe=not company_id)
         
         # Convert Decimal fields to float for JSON serialization
         response_data = []
@@ -6978,11 +7172,12 @@ async def get_products(
             response_data.append(product)
         
         # PERFORMANCE: Cache invalidation for products to ensure fresh sorting
+        from fastapi.encoders import jsonable_encoder as _jenc
         if not search:
-            response = JSONResponse(content=response_data)
+            response = JSONResponse(content=_jenc(response_data))
             response.headers["Cache-Control"] = "public, max-age=60"  # Kısa cache favori sıralama için
         else:
-            response = JSONResponse(content=response_data)
+            response = JSONResponse(content=_jenc(response_data))
             response.headers["Cache-Control"] = "public, max-age=30"  # Arama için daha kısa
             
         return response
@@ -7029,7 +7224,10 @@ async def get_products(
             skip = (page - 1) * limit if not skip_pagination else 0
             # IMPORTANT: Use the same sorting as aggregate pipeline - FAVORITES FIRST!
             query_limit = 5000 if skip_pagination else limit
-            products = await db.products.find(basic_query).sort([("is_favorite", -1), ("name", 1)]).skip(skip).limit(query_limit).to_list(query_limit)
+            if not company_id and not search:
+                basic_query["link_primary"] = {"$ne": False}
+            products = await db.products.find(basic_query, {"_id": 0}).sort([("is_favorite", -1), ("name", 1)]).skip(skip).limit(query_limit).to_list(query_limit)
+            products = await _attach_supplier_groups(products, dedupe=not company_id)
             
             # Convert Decimal fields to float for JSON serialization
             response_data = []

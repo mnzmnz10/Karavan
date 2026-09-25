@@ -10,13 +10,14 @@ import { Badge } from './components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from './components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select';
-import { Trash2, Upload, RefreshCw, Plus, TrendingUp, Building2, Package, DollarSign, Edit, Save, X, FileText, Check, Archive, Download, Wrench, Eye, EyeOff, AlertTriangle, Tags, Copy, Pin, StickyNote, Users, Star, Search, Phone, Mail, MapPin, Calculator, Battery, Loader2, ScanSearch, LogOut, PlusCircle, MinusCircle, History, Settings, ChevronUp, ChevronDown, GripVertical, Cable, Folder, FolderOpen, CheckCircle2, Bell } from 'lucide-react';
+import { Trash2, Upload, RefreshCw, Plus, TrendingUp, Building2, Package, DollarSign, Edit, Save, X, FileText, Check, Archive, Download, Wrench, Eye, EyeOff, AlertTriangle, Tags, Copy, Pin, StickyNote, Users, Star, Search, Phone, Mail, MapPin, Calculator, Battery, Loader2, ScanSearch, LogOut, PlusCircle, MinusCircle, History, Settings, ChevronUp, ChevronDown, GripVertical, Cable, Folder, FolderOpen, CheckCircle2, Bell, Link2 } from 'lucide-react';
 import KabloSemasiSection from '@/features/wiringrf/WiringRfSection';
 import { toast } from 'sonner';
 import { Toaster } from './components/ui/sonner';
 import LazyImage from './components/LazyImage';
 import ServiceInvoices from './components/ServiceInvoices';
 import BatteryTest from './components/BatteryTest';
+import { SupplierBadge, BestCost, SupplierRows, LinkDialog } from './components/SupplierLink';
 import { CacheManager, debounce } from './utils/cache';
 import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors, useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
@@ -232,6 +233,8 @@ function App() {
   const [selectedProductsData, setSelectedProductsData] = useState(new Map()); // Map<productId, productData>
   const [showSelectedPopup, setShowSelectedPopup] = useState(false); // ürünler sekmesi: seçili ürünler popup
   const [openSpecsIds, setOpenSpecsIds] = useState(new Set()); // ürün tablosu: görsele tıklayınca teknik özellik açık ürünler
+  const [expandedGroups, setExpandedGroups] = useState(new Set()); // tedarikçi grubu açık ürünler
+  const [linkingProduct, setLinkingProduct] = useState(null); // 'Başka firmadaki aynı ürünü bağla' penceresi
   const toggleSpecs = (id) => setOpenSpecsIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const [quoteName, setQuoteName] = useState('');
   const [quoteDiscount, setQuoteDiscount] = useState(0);
@@ -1852,7 +1855,9 @@ function App() {
   // Üründen servis kalemi ekle: SATIŞ = liste fiyatı, MALİYET = geliş (indirimli, yoksa liste). Kâr = satış − maliyet.
   const addServiceItemFromProduct = (p) => {
     const list = parseFloat(p.list_price) || 0;
-    const gelis = (parseFloat(p.discounted_price) > 0 ? parseFloat(p.discounted_price) : list) || 0;
+    // Tedarikçi grubunda maliyet en ucuz firmadan (best_discounted_price bu ürünün para biriminde)
+    const own = p.best_discounted_price != null ? parseFloat(p.best_discounted_price) : parseFloat(p.discounted_price);
+    const gelis = (own > 0 ? own : list) || 0;
     const currency = p.currency || 'TRY';
     const item = { name: p.name, qty: 1, unit_price: list, unit_cost: gelis, currency, rate: '' };
     if (currency !== 'TRY') {
@@ -8817,8 +8822,10 @@ function App() {
                                 {visibleProducts.map((product) => {
                                   const company = companies.find(c => c.id === product.company_id);
                                   const isEditing = editingProduct === product.id;
+                                  const groupOpen = expandedGroups.has(product.id) && product.suppliers?.length > 1;
                                   
                                   return (
+                                    <React.Fragment key={product.id}>
                                     <TableRow 
                                       key={product.id}
                                       className={selectedProducts.has(product.id) ? 'bg-blue-50 border-blue-200' : ''}
@@ -8982,7 +8989,8 @@ function App() {
                                           </Select>
                                         ) : (
                                           <div className="space-y-1">
-                                            <Badge variant="outline" className="truncate" title={company?.name || 'Unknown'}>{company?.name || 'Unknown'}</Badge>
+                                            <SupplierBadge product={product} companyName={company?.name || 'Unknown'} open={groupOpen}
+                                              onToggle={() => setExpandedGroups((prev) => { const n = new Set(prev); if (n.has(product.id)) n.delete(product.id); else n.add(product.id); return n; })} />
                                           </div>
                                         )}
                                       </TableCell>
@@ -9027,9 +9035,7 @@ function App() {
                                               placeholder="İndirimli fiyat"
                                             />
                                           ) : (
-                                            product.discounted_price ? (
-                                              `${getCurrencySymbol(product.currency)} ${formatPrice(product.discounted_price)}`
-                                            ) : '-'
+                                            <BestCost product={product} />
                                           )}
                                         </TableCell>
                                       )}
@@ -9062,8 +9068,8 @@ function App() {
                                       </TableCell>
                                       {showDiscountedPrices && (
                                         <TableCell className="w-28">
-                                          {product.discounted_price_try ? (
-                                            `₺ ${formatPrice(product.discounted_price_try)}`
+                                          {(product.suppliers?.length > 1 ? product.best_discounted_price_try : product.discounted_price_try) ? (
+                                            `₺ ${formatPrice(product.suppliers?.length > 1 ? product.best_discounted_price_try : product.discounted_price_try)}`
                                           ) : '-'}
                                         </TableCell>
                                       )}
@@ -9089,6 +9095,14 @@ function App() {
                                             </>
                                           ) : (
                                             <>
+                                              <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() => setLinkingProduct(product)}
+                                                title="Başka firmadaki aynı ürünü bağla"
+                                              >
+                                                <Link2 className="w-4 h-4" />
+                                              </Button>
                                               <Button 
                                                 size="sm" 
                                                 variant="outline" 
@@ -9108,6 +9122,11 @@ function App() {
                                         </div>
                                       </TableCell>
                                     </TableRow>
+                                    {groupOpen && (
+                                      <SupplierRows product={product} api={API} colSpan={8 + (showDiscountedPrices ? 2 : 0)} showCost={showDiscountedPrices}
+                                        onChanged={() => loadProducts(1, true)} />
+                                    )}
+                                    </React.Fragment>
                                   );
                                 })}
                               </TableBody>
@@ -11622,6 +11641,8 @@ function App() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <LinkDialog product={linkingProduct} api={API} onClose={() => setLinkingProduct(null)} onLinked={() => loadProducts(1, true)} />
 
       {/* Hızlı Teklif Oluşturma Dialog'u */}
       <Dialog open={showQuickQuoteDialog} onOpenChange={setShowQuickQuoteDialog}>

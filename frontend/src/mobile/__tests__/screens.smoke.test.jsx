@@ -841,3 +841,20 @@ test("mobil MPPT: panel değeri gir → öneri etiketi", async () => {
   expect(text()).toContain("100V/40A");
   expect(text()).toContain("37.5 A");
 });
+
+test("ürünler: aynı ürün 2 firmada → alış en ucuz tedarikçiden, göz açıkken firmalar görünür", async () => {
+  global.__PRODUCTS = [{ id: "g1", name: "Berhimi Plus Fan 12V Uyku Kliması", currency: "EUR", list_price: 286.8, discounted_price: 206.4, list_price_try: 16000, discounted_price_try: 11515,
+    suppliers: [{ id: "g1", company_name: "Termosa", currency: "EUR", list_price: 286.8, discounted_price: 206.4, is_best: false }, { id: "g2", company_name: "Fermil", currency: "EUR", list_price: 287, discounted_price: 205.2, is_best: true }],
+    best_discounted_price: 205.2, best_discounted_price_try: 11448, best_company_name: "Fermil" }];
+  await render(
+    <SessionCtx.Provider value={{ username: "t" }}>
+      <CartProvider><Products /><CartBar /></CartProvider>
+    </SessionCtx.Provider>
+  );
+  await act(() => new Promise((r) => setTimeout(r, 600)));
+  expect(text()).not.toContain("Fermil"); // müşteri görünümünde tedarikçi yok
+  await click(document.body.querySelector('button[aria-label="Göster/Gizle"]'));
+  expect(text()).toContain("2 firma · en ucuz Fermil");
+  expect(text()).toContain(money(11448));
+  expect(text()).toContain("€205,2");
+});

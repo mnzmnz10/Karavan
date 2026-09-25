@@ -49,12 +49,14 @@ function CategoryCards({ cats, sel, onSel }) {
 // Varsayılan: liste fiyatı gösterilir (müşteriye açık). Göz açıkken indirimli (alış) fiyatı da açılır.
 function priceTRY(p) {
   const list = Number(p.list_price_try) || 0;
-  const discRaw = Number(p.discounted_price_try);
+  const grouped = p.suppliers?.length > 1; // aynı ürün birden çok firmada → alış en ucuzdan
+  const discRaw = Number(grouped ? p.best_discounted_price_try : p.discounted_price_try);
   const disc = discRaw > 0 ? discRaw : null;
   // Döviz girişli ürün: girilen para biriminden fiyat da (€/$)
   const cur = p.currency && p.currency !== "TRY" ? p.currency : null;
   const oList = cur ? Number(p.list_price) || 0 : null;
-  const oDisc = cur && Number(p.discounted_price) > 0 ? Number(p.discounted_price) : null;
+  const oDiscRaw = Number(grouped ? p.best_discounted_price : p.discounted_price);
+  const oDisc = cur && oDiscRaw > 0 ? oDiscRaw : null;
   return { list, disc, cur, oList, oDisc };
 }
 
@@ -90,6 +92,7 @@ function Row({ p, onOpen, onAdd, onDec, qty, showDisc }) {
             <div className="truncate text-[15px] font-semibold leading-tight" style={{ color: "var(--m-ink)" }}>{p.name}</div>
           </div>
           {p.brand && <div className="mt-0.5 truncate text-[12px] font-bold uppercase tracking-wide" style={{ color: "var(--m-ink-2)" }}>{p.brand}</div>}
+          {showDisc && p.suppliers?.length > 1 && <div className="mt-0.5 truncate text-[11px] font-semibold" style={{ color: "#2e8b7a" }}>{p.suppliers.length} firma · en ucuz {p.best_company_name}</div>}
           <div className="mt-1 flex items-baseline gap-1.5">
             {showDisc && pr.disc != null ? (
               <>
@@ -173,6 +176,19 @@ function Detail({ p, onClose, onAdd, showDisc, onFav, inCart = 0 }) {
           )}
           <FxTag pr={pr} showDisc={showDisc} big />
         </div>
+        {showDisc && p.suppliers?.length > 1 && (
+          <div className="mt-3 space-y-1 rounded-xl bg-slate-50 p-2.5">
+            <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Tedarikçiler (alış)</div>
+            {p.suppliers.map((s) => (
+              <div key={s.id} className="flex items-center justify-between text-[13px]">
+                <span className="font-semibold">{s.company_name}</span>
+                <span className="m-tnum" style={{ color: s.is_best ? "#2e8b7a" : "var(--m-ink-2)", fontWeight: s.is_best ? 800 : 500 }}>
+                  {s.currency === "TRY" ? "₺" : s.currency === "EUR" ? "€" : "$"}{(Number(s.discounted_price || s.list_price) || 0).toLocaleString("tr-TR", { maximumFractionDigits: 2 })}{s.is_best ? " · en ucuz" : ""}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="mt-3 flex items-center gap-3">
           <div className="flex items-center gap-2 rounded-2xl bg-slate-100 px-2 py-1.5">
             <button onClick={() => setQty((q) => Math.max(1, q - 1))} className="m-press flex h-8 w-8 items-center justify-center rounded-full bg-white"><Minus className="h-4 w-4" /></button>
