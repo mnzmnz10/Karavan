@@ -12090,6 +12090,32 @@ class PDFContractGenerator(PDFQuoteGenerator):
         canvas.drawRightString(width - 1.5 * cm, 1.0 * cm, f"Sayfa {doc.page}")
         canvas.restoreState()
 
+    SPEC_LABELS = ['KUMAŞ', 'MOBİLYA ANA RENK', 'DOLAP KAPAKLARI', 'KÖŞE DÖNÜŞLER', 'MİNDER', 'PARKE']
+
+    def _contract_specs(self, data_block: Dict):
+        """Müşteri seçimleri (kumaş, dolap kapakları…) + kalan notlar.
+        data.specs yoksa eski sözleşmelerde notlar satırlarından ayrıştırılır."""
+        notes_list = data_block.get("notes") or []
+        specs = data_block.get("specs")
+        if specs:
+            return specs, notes_list
+        sp = {l: '' for l in self.SPEC_LABELS}
+        rem = []
+        for line in notes_list:
+            if not line:
+                continue
+            s = str(line); U = upper_tr(s)
+            found = sorted([(U.find(l), l) for l in self.SPEC_LABELS if U.find(l) >= 0])
+            if not found:
+                rem.append(s); continue
+            for i, (idx, l) in enumerate(found):
+                start = idx + len(l)
+                end = found[i + 1][0] if i + 1 < len(found) else len(s)
+                val = s[start:end].strip(' :-/').strip()
+                if val:
+                    sp[l] = upper_tr(val)
+        return sp, rem
+
     def create_contract_worklist_pdf(self, contract_data: Dict) -> BytesIO:
         """Fiyatsız iş listesi (araca asmak için): yalnız ürün/işlem + adet, iki sütun, kompakt.
         Adedi 0/boş kalemler (sözleşmeye dahil edilmemiş) atlanır; ilaveler ayrı bölüm."""
@@ -12164,6 +12190,29 @@ class PDFContractGenerator(PDFQuoteGenerator):
             blocks.append(("İLAVELER", [(str(i + 1), a.get("name", ""), a.get("qty") or 1) for i, a in enumerate(addons)]))
 
         story = []
+        # Müşteri seçimleri (kumaş, mobilya rengi, dolap kapakları…) — ustanın ilk göreceği yer: en üstte
+        specs, _ = self._contract_specs(data_block)
+        spec_lbl = ParagraphStyle('WLSpecL', parent=cell, fontName=bold, fontSize=7.4, textColor=colors.HexColor('#64748B'))
+        spec_val = ParagraphStyle('WLSpecV', parent=cell, fontName=bold, fontSize=9, textColor=navy)
+        spec_rows = [[Paragraph("MÜŞTERİ SEÇİMLERİ (RENK / MALZEME)", sec_st), ""]]
+        for l in self.SPEC_LABELS:
+            v = (specs or {}).get(l, '') or ''
+            spec_rows.append([Paragraph(l, spec_lbl), Paragraph(upper_tr(v) if v else '______________', spec_val)])
+        extra = [(k, v) for k, v in (specs or {}).items() if k not in self.SPEC_LABELS and str(v or '').strip()]
+        spec_rows += [[Paragraph(upper_tr(k), spec_lbl), Paragraph(upper_tr(v), spec_val)] for k, v in extra]
+        st = Table(spec_rows, colWidths=[3.2 * cm, col_w - 3.2 * cm])
+        st.setStyle(TableStyle([
+            ('SPAN', (0, 0), (1, 0)),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#10B981')),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#F4F6F9')),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('LINEBELOW', (0, 1), (-1, -1), 0.4, colors.HexColor('#D9E0E8')),
+            ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#D9E0E8')),
+            ('TOPPADDING', (0, 0), (-1, -1), 3), ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+            ('LEFTPADDING', (0, 0), (-1, -1), 4), ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+        ]))
+        story.append(st)
+        story.append(Spacer(1, 6))
         widths = [0.75 * cm, col_w - 0.75 * cm - 1.15 * cm, 1.15 * cm]
         for title, rows in blocks:
             data = [[Paragraph(title, sec_st), "", Paragraph("ADET", ParagraphStyle('WLSecR', parent=sec_st, alignment=TA_CENTER, fontSize=7))]]
@@ -12183,7 +12232,7 @@ class PDFContractGenerator(PDFQuoteGenerator):
             ]))
             story.append(t)
             story.append(Spacer(1, 5))
-        if not story:
+        if not blocks:
             story.append(Paragraph("Listelenecek kalem yok.", cell))
         doc.build(story)
         buffer.seek(0)
@@ -12569,29 +12618,8 @@ class PDFContractGenerator(PDFQuoteGenerator):
             story.append(Spacer(1, 14))
 
         # --- Müşteri Seçimleri (renk/malzeme) kutuları — notlardan ayrıştırılır, en üstte ---
-        SPEC_LABELS = ['KUMAŞ', 'MOBİLYA ANA RENK', 'DOLAP KAPAKLARI', 'KÖŞE DÖNÜŞLER', 'MİNDER', 'PARKE']
-        def _parse_specs(arr):
-            sp = {l: '' for l in SPEC_LABELS}
-            rem = []
-            for line in (arr or []):
-                if not line:
-                    continue
-                s = str(line); U = upper_tr(s)
-                found = sorted([(U.find(l), l) for l in SPEC_LABELS if U.find(l) >= 0])
-                if not found:
-                    rem.append(s); continue
-                for i, (idx, l) in enumerate(found):
-                    start = idx + len(l)
-                    end = found[i + 1][0] if i + 1 < len(found) else len(s)
-                    val = s[start:end].strip(' :-/').strip()
-                    if val:
-                        sp[l] = upper_tr(val)
-            return sp, rem
-
-        specs = data_block.get("specs")
-        notes_list = data_block.get("notes") or []
-        if not specs:
-            specs, notes_list = _parse_specs(notes_list)
+        SPEC_LABELS = self.SPEC_LABELS
+        specs, notes_list = self._contract_specs(data_block)
 
         spec_lbl_style = ParagraphStyle('SpecLbl', parent=self.styles['Normal'], fontName=self.get_font_name(is_bold=True), fontSize=7, textColor=colors.HexColor('#64748B'), leading=10)
         spec_val_style = ParagraphStyle('SpecVal', parent=self.styles['Normal'], fontName=self.get_font_name(is_bold=True), fontSize=9, textColor=colors.HexColor('#1B3A5C'), leading=12)
