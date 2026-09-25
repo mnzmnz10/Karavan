@@ -10586,7 +10586,59 @@ async def delete_service(service_id: str):
     result = await db.services.delete_one({"id": service_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Servis kaydı bulunamadı")
+    await db.service_invoices.delete_many({"service_id": service_id})
     return {"success": True, "message": "Servis kaydı silindi"}
+
+
+# ---- Servis faturaları (PDF) ----
+# Dosya içeriği ayrı koleksiyonda (service_invoices, base64); servis kaydında yalnız
+# hafif liste (invoices: id/name/size/uploaded_at) tutulur → liste/detay payload'ı büyümez.
+# PUT /services (ServiceUpdate) invoices alanını bilmez, düzenleme faturaları silmez.
+INVOICE_MAX_BYTES = 10 * 1024 * 1024  # base64 ile Mongo 16 MB belge sınırının altında kalır
+
+
+@api_router.post("/services/{service_id}/invoices")
+async def upload_service_invoice(service_id: str, file: UploadFile = File(...)):
+    service = await db.services.find_one({"id": service_id}, {"id": 1})
+    if not service:
+        raise HTTPException(status_code=404, detail="Servis kaydı bulunamadı")
+    data = await file.read(INVOICE_MAX_BYTES + 1)
+    if len(data) > INVOICE_MAX_BYTES:
+        raise HTTPException(status_code=400, detail="Fatura en fazla 10 MB olabilir")
+    if not data.startswith(b"%PDF"):
+        raise HTTPException(status_code=400, detail="Yalnız PDF fatura yüklenebilir")
+    name = (file.filename or "fatura.pdf").replace("\\", "/").split("/")[-1][:120] or "fatura.pdf"
+    if not name.lower().endswith(".pdf"):
+        name += ".pdf"
+    meta = {"id": uuid.uuid4().hex, "name": name, "size": len(data),
+            "uploaded_at": datetime.now(timezone.utc).isoformat()}
+    await db.service_invoices.insert_one({**meta, "service_id": service_id,
+                                          "data_b64": base64.b64encode(data).decode("ascii")})
+    await db.services.update_one({"id": service_id}, {"$push": {"invoices": meta}})
+    updated = await db.services.find_one({"id": service_id}, {"invoices": 1})
+    return {"invoices": updated.get("invoices", [])}
+
+
+@api_router.get("/services/{service_id}/invoices/{invoice_id}")
+async def get_service_invoice(service_id: str, invoice_id: str, download: bool = False):
+    rec = await db.service_invoices.find_one({"id": invoice_id, "service_id": service_id}, {"_id": 0})
+    if not rec:
+        raise HTTPException(status_code=404, detail="Fatura bulunamadı")
+    raw = rec.get("name") or "fatura.pdf"
+    ascii_fallback = re.sub(r"[^A-Za-z0-9._-]+", "_", raw) or "fatura.pdf"
+    cd = f'{"attachment" if download else "inline"}; filename="{ascii_fallback}"; filename*=UTF-8\'\'{_urlquote(raw, safe="")}'
+    return _Response(content=base64.b64decode(rec["data_b64"]), media_type="application/pdf",
+                     headers={"Content-Disposition": cd, "Cache-Control": "private, max-age=3600"})
+
+
+@api_router.delete("/services/{service_id}/invoices/{invoice_id}")
+async def delete_service_invoice(service_id: str, invoice_id: str):
+    res = await db.service_invoices.delete_one({"id": invoice_id, "service_id": service_id})
+    await db.services.update_one({"id": service_id}, {"$pull": {"invoices": {"id": invoice_id}}})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Fatura bulunamadı")
+    updated = await db.services.find_one({"id": service_id}, {"invoices": 1})
+    return {"invoices": (updated or {}).get("invoices", [])}
 
 
 # ==================== SÖZLEŞMELER ENDPOINT'LERI ====================

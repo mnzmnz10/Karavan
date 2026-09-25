@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { AccountButton } from "../Account";
-import { Wrench, Car, Phone, MessageCircle, Image as ImageIcon, Loader2, Plus, Pencil, Share2, Trash2, Eye, EyeOff, Wallet, X, FileText, Camera } from "lucide-react";
+import { Wrench, Car, Phone, MessageCircle, Image as ImageIcon, Loader2, Plus, Pencil, Share2, Trash2, Eye, EyeOff, Wallet, X, FileText, Camera, Receipt } from "lucide-react";
 import { toast } from "../toast";
 import { services as servicesApi, rates as ratesApi, docUrl, openDoc } from "../api";
-import { applyPending, onOutbox, pendingCount } from "../outbox";
+import { applyPending, onOutbox, pendingCount, isTmpId } from "../outbox";
 import { useCatalog, catRate } from "../catalog";
 import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, Lightbox, RefreshScroll, OfflineBar, todayISO, waNumber, fmtDate, CopyBtn } from "../ui";
 import { cache } from "../cache";
@@ -94,6 +94,7 @@ function Row({ s, onOpen, onCycle, busy }) {
           <div className="flex items-center gap-2">
             <div className="truncate text-[15px] font-semibold leading-tight">{s.customer_name || "İsimsiz"}</div>
             {s._pending && <span className="shrink-0"><Pill color="amber">Gönderilmedi</Pill></span>}
+            {(s.invoices || []).length > 0 && <Receipt className="h-3.5 w-3.5 shrink-0" style={{ color: "#2e8b7a" }} aria-label="Faturalı" />}
             <button
               onClick={(e) => { e.stopPropagation(); if (!busy) onCycle(s); }}
               className="m-press ml-auto shrink-0"
@@ -223,6 +224,36 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuo
   const [collOpen, setCollOpen] = useState(false);
   // Hızlı foto ekleme (düzenleme formuna girmeden): sıkıştır → photos'a ekle → PUT
   const [photoBusy, setPhotoBusy] = useState(false);
+  // Fatura (PDF): ayrı uç nokta; dokununca yeni sekmede / uygulamada önizleme
+  const [invBusy, setInvBusy] = useState(false);
+  const addInvoices = async (files) => {
+    if (!files?.length || !s) return;
+    setInvBusy(true);
+    let added = 0;
+    try {
+      for (const f of Array.from(files)) {
+        if (!/pdf$/i.test(f.type || "") && !/\.pdf$/i.test(f.name || "")) { toast.error(`${f.name}: yalnız PDF`); continue; }
+        if (f.size > 10 * 1024 * 1024) { toast.error(`${f.name}: en fazla 10 MB`); continue; }
+        const invoices = await servicesApi.invoiceUpload(s.id, f);
+        setS((prev) => ({ ...prev, invoices }));
+        added++;
+      }
+      if (added) { onChanged?.(); toast.success(added === 1 ? "Fatura eklendi" : `${added} fatura eklendi`, { haptic: "success" }); }
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Fatura yüklenemedi");
+    } finally { setInvBusy(false); }
+  };
+  const removeInvoice = async (inv) => {
+    if (!s || !window.confirm(`"${inv.name}" silinsin mi?`)) return;
+    try {
+      const invoices = await servicesApi.invoiceRemove(s.id, inv.id);
+      setS((prev) => ({ ...prev, invoices }));
+      onChanged?.();
+      toast.success("Fatura silindi");
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Silinemedi");
+    }
+  };
   // Durumu ilerlet: Geldi → İşlemde → Teslim (teslimde boş teslim tarihi = bugün)
   const [advancing, setAdvancing] = useState(false);
   const advance = async () => {
@@ -512,6 +543,34 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuo
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {!isTmpId(s.id) && (
+            <div className="mt-3 rounded-2xl bg-white p-3">
+              <div className="mb-1.5 flex items-center gap-1.5 px-1 text-[12px] font-bold uppercase tracking-wide text-slate-400">
+                <Receipt className="h-3.5 w-3.5" /> Faturalar{(s.invoices || []).length ? ` (${s.invoices.length})` : ""}
+              </div>
+              {(s.invoices || []).map((inv) => (
+                <div key={inv.id} className="flex items-center gap-2 border-b border-black/5 py-1.5 last:border-0">
+                  <button onClick={() => openDoc(docUrl.invoice(s.id, inv.id))} className="m-press flex min-w-0 flex-1 items-center gap-2.5 rounded-xl px-1 py-1 text-left">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" style={{ background: "rgba(214,69,65,.1)" }}>
+                      <FileText className="h-[18px] w-[18px]" style={{ color: "#d64541" }} />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-[14px] font-semibold">{inv.name}</span>
+                      <span className="block text-[12px] text-slate-400">{fmtDate(String(inv.uploaded_at || "").slice(0, 10))} · {Math.max(1, Math.round((inv.size || 0) / 1024))} KB</span>
+                    </span>
+                  </button>
+                  <button onClick={() => removeInvoice(inv)} aria-label="Faturayı sil" className="m-press flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-400">
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+              <label className="m-press mt-1 flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-slate-100 py-2.5 text-[14px] font-bold" style={{ color: "var(--m-primary)" }}>
+                {invBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Fatura ekle (PDF)
+                <input type="file" accept="application/pdf,.pdf" multiple className="hidden" disabled={invBusy} onChange={(e) => { addInvoices(e.target.files); e.target.value = ""; }} />
+              </label>
             </div>
           )}
 

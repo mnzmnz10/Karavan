@@ -84,6 +84,13 @@ export const services = {
     return svcRaw.update(rid, payload).catch((e) => { if (offlineErr(e)) return enqueue("svc:update", rid, payload); throw e; });
   },
   remove: (id) => http.delete(`/services/${realId(id)}`).then((r) => r.data),
+  // Fatura (PDF): yükle / sil → güncel fatura listesi { invoices }
+  invoiceUpload: (id, file) => {
+    const fd = new FormData();
+    fd.append("file", file, file.name || "fatura.pdf");
+    return http.post(`/services/${realId(id)}/invoices`, fd, { timeout: 120000 }).then((r) => r.data.invoices || []);
+  },
+  invoiceRemove: (id, invId) => http.delete(`/services/${realId(id)}/invoices/${invId}`).then((r) => r.data.invoices || []),
 };
 
 // Belge (PDF/Excel) URL'leri. Native'de window.open -> mobileDownload köprüsü
@@ -91,6 +98,7 @@ export const services = {
 export const docUrl = {
   quote: (id) => `${API}/quotes/${id}/pdf`,
   service: (id) => `${API}/services/${id}/pdf`,
+  invoice: (id, invId) => `${API}/services/${id}/invoices/${invId}`,
   contract: (id) => `${API}/contracts/${id}/download`,
 };
 export const openDoc = (url) => window.open(url, "_blank");

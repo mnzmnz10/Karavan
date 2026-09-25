@@ -15,6 +15,7 @@ import KabloSemasiSection from '@/features/wiringrf/WiringRfSection';
 import { toast } from 'sonner';
 import { Toaster } from './components/ui/sonner';
 import LazyImage from './components/LazyImage';
+import ServiceInvoices from './components/ServiceInvoices';
 import { CacheManager, debounce } from './utils/cache';
 import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors, useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
@@ -11739,6 +11740,11 @@ function App() {
                           </div>
                         </div>
                       )}
+
+                      <ServiceInvoices api={API} service={s} onChange={(invoices) => {
+                        setViewingService((prev) => (prev && prev.id === s.id ? { ...prev, invoices } : prev));
+                        setServices((prev) => prev.map((x) => (x.id === s.id ? { ...x, invoices } : x)));
+                      }} />
 
                       {photoLightbox && (
                         <div className="fixed inset-0 z-[200] bg-black/80 flex items-center justify-center p-4 cursor-zoom-out"

@@ -25,7 +25,7 @@ const PRODUCTS = [
 ];
 
 jest.mock("../api", () => {
-  const calls = { svcUpdate: [], svcCreate: [], qCreate: [], qUpdate: [], fav: [] };
+  const calls = { svcUpdate: [], svcCreate: [], qCreate: [], qUpdate: [], fav: [], invUp: [], openDoc: [] };
   const ok = (v) => () => Promise.resolve(v);
   return {
     __esModule: true,
@@ -49,9 +49,11 @@ jest.mock("../api", () => {
       update: (id, p) => { calls.svcUpdate.push(p); return Promise.resolve({ ...global.__SERVICE, ...p }); },
       create: (p) => { calls.svcCreate.push(p); return Promise.resolve({ id: "s2", ...p }); },
       remove: ok({}),
+      invoiceUpload: (id, f) => { calls.invUp.push(f.name); return Promise.resolve([...(global.__SERVICE.invoices || []), { id: "i2", name: f.name, size: f.size, uploaded_at: "2026-09-25T10:00:00Z" }]); },
+      invoiceRemove: () => Promise.resolve([]),
     },
-    docUrl: { quote: () => "", service: () => "", contract: () => "" },
-    openDoc: () => {},
+    docUrl: { quote: () => "", service: () => "", contract: () => "", invoice: (id, inv) => `/inv/${id}/${inv}` },
+    openDoc: (u) => { calls.openDoc.push(u); },
     default: {
       get: (url) => Promise.resolve({ data: url === "/contracts" ? [{ id: "k1", title: "IVECO Karavan", stage: "proposal", data: { grandTotal: 1000, kur: 40, sections: [] } }] : [] }),
       put: ok({ data: {} }), post: ok({ data: {} }), delete: ok({ data: {} }),
@@ -782,4 +784,24 @@ test("özet başlığı: MSZ logosu, isimsiz selam, € ve $ kuru", async () => 
   expect(text()).not.toContain(", t");
   expect(text()).toContain("€ 55,90");
   expect(text()).toContain("$ 48,84");
+});
+
+test("servis faturası: listelenir, dokununca açılır, yalnız PDF yüklenir", async () => {
+  global.__SERVICE.invoices = [{ id: "i1", name: "fatura-123.pdf", size: 48000, uploaded_at: "2026-09-24T09:00:00Z" }];
+  const api = require("../api");
+  await render(<Services />);
+  expect(document.body.querySelector('[aria-label="Faturalı"]')).toBeTruthy();
+  const row = Array.from(document.body.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
+  await click(row);
+  expect(text()).toContain("fatura-123.pdf");
+  await click(Array.from(document.body.querySelectorAll("button")).find((b) => b.textContent.includes("fatura-123.pdf")));
+  expect(api.__calls.openDoc.pop()).toBe(`/inv/${global.__SERVICE.id}/i1`);
+  const input = document.body.querySelector('input[accept="application/pdf,.pdf"]');
+  const bad = new File(["x"], "foto.jpg", { type: "image/jpeg" });
+  const good = new File(["%PDF-1.4"], "yeni-fatura.pdf", { type: "application/pdf" });
+  await act(async () => { Object.defineProperty(input, "files", { value: [bad, good], configurable: true }); input.dispatchEvent(new Event("change", { bubbles: true })); });
+  await act(() => new Promise((r) => setTimeout(r, 20)));
+  expect(api.__calls.invUp).toEqual(["yeni-fatura.pdf"]);
+  expect(text()).toContain("yeni-fatura.pdf");
+  delete global.__SERVICE.invoices;
 });
