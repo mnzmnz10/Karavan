@@ -12117,12 +12117,23 @@ class PDFContractGenerator(PDFQuoteGenerator):
         return sp, rem
 
     def create_contract_worklist_pdf(self, contract_data: Dict) -> BytesIO:
-        """Fiyatsız iş listesi (araca asmak için): yalnız ürün/işlem + adet, iki sütun, kompakt.
-        Adedi 0/boş kalemler (sözleşmeye dahil edilmemiş) atlanır; ilaveler ayrı bölüm."""
+        """Fiyatsız iş listesi (araca asmak için): yalnız ürün/işlem + adet, iki sütun, TEK SAYFA.
+        Adedi 0/boş kalemler atlanır; ilaveler ayrı bölüm. Müşteri seçimleri (kumaş, renkler…)
+        sayfa altında yatay şerit. Tek sayfaya sığana kadar yazı/boşluk ölçeği küçültülür."""
+        last = None
+        for scale in (1.0, 0.94, 0.88, 0.82, 0.77, 0.72, 0.67, 0.62, 0.58, 0.54):
+            buf, pages = self._build_worklist(contract_data, scale)
+            last = buf
+            if pages <= 1:
+                break
+        last.seek(0)
+        return last
+
+    def _build_worklist(self, contract_data: Dict, k: float):
         from reportlab.platypus import BaseDocTemplate, PageTemplate, Frame
         buffer = BytesIO()
         width, height = A4
-        margin, gap, head_h = 1.0 * cm, 0.6 * cm, 1.55 * cm
+        margin, gap, head_h = 0.9 * cm, 0.5 * cm, 1.45 * cm
         col_w = (width - 2 * margin - gap) / 2
         data_block = contract_data.get("data") or {}
         customer = (contract_data.get("customer_name") or "").strip()
@@ -12135,37 +12146,65 @@ class PDFContractGenerator(PDFQuoteGenerator):
         font, bold = self.get_font_name(), self.get_font_name(is_bold=True)
         navy = colors.HexColor('#1B3A5C')
 
+        # --- Alt şerit: müşteri seçimleri yatay (etiket küçük, değer altında) ---
+        specs, _ = self._contract_specs(data_block)
+        pairs = [(l, (specs or {}).get(l, '') or '') for l in self.SPEC_LABELS]
+        pairs += [(kk, vv) for kk, vv in (specs or {}).items() if kk not in self.SPEC_LABELS and str(vv or '').strip()]
+        lbl = ParagraphStyle('WLSpecL', parent=self.styles['Normal'], fontName=bold, fontSize=5.8, leading=7, textColor=colors.HexColor('#64748B'))
+        val = ParagraphStyle('WLSpecV', parent=self.styles['Normal'], fontName=bold, fontSize=7.4, leading=8.6, textColor=navy)
+        strip_w = width - 2 * margin
+        cw = strip_w / max(1, len(pairs))
+        strip = Table([[Paragraph(upper_tr(l), lbl) for l, _ in pairs],
+                       [Paragraph(upper_tr(v) if v else '________', val) for _, v in pairs]],
+                      colWidths=[cw] * len(pairs))
+        strip.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F4F6F9')),
+            ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#D9E0E8')),
+            ('LINEAFTER', (0, 0), (-2, -1), 0.4, colors.HexColor('#D9E0E8')),
+            ('LINEABOVE', (0, 0), (-1, 0), 1.6, navy),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('TOPPADDING', (0, 0), (-1, -1), 2), ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+            ('LEFTPADDING', (0, 0), (-1, -1), 4), ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+        ]))
+        _, strip_h = strip.wrap(strip_w, height)
+        strip_title_h = 0.36 * cm
+
         def on_page(canvas, doc):
             canvas.saveState()
             top = height - margin
             canvas.setFillColor(navy)
-            canvas.roundRect(margin, top - head_h + 0.25 * cm, width - 2 * margin, head_h - 0.25 * cm, 6, stroke=0, fill=1)
+            canvas.roundRect(margin, top - head_h + 0.2 * cm, width - 2 * margin, head_h - 0.2 * cm, 6, stroke=0, fill=1)
             canvas.setFillColor(colors.HexColor('#9FB7D1'))
-            canvas.setFont(bold, 7)
-            canvas.drawString(margin + 0.45 * cm, top - 0.62 * cm, "İŞ LİSTESİ  ·  ÜRÜN VE ADETLER")
+            canvas.setFont(bold, 6.8)
+            canvas.drawString(margin + 0.4 * cm, top - 0.55 * cm, "İŞ LİSTESİ  ·  ÜRÜN VE ADETLER")
             canvas.setFillColor(colors.white)
-            canvas.setFont(bold, 12.5)
-            canvas.drawString(margin + 0.45 * cm, top - 1.08 * cm, upper_tr(customer or vehicle or "SÖZLEŞME")[:48])
-            canvas.setFont(bold, 9.5)
+            canvas.setFont(bold, 12)
+            canvas.drawString(margin + 0.4 * cm, top - 1.0 * cm, upper_tr(customer or vehicle or "SÖZLEŞME")[:48])
+            canvas.setFont(bold, 9.2)
             right = f"{upper_tr(vehicle)}  ·  {date_str}" if (vehicle and customer) else date_str
-            canvas.drawRightString(width - margin - 0.45 * cm, top - 1.08 * cm, right[:60])
-            canvas.setFont(font, 7.5)
-            canvas.setFillColor(colors.HexColor('#718096'))
-            canvas.drawRightString(width - margin, 0.55 * cm, f"Sayfa {doc.page}")
+            canvas.drawRightString(width - margin - 0.4 * cm, top - 1.0 * cm, right[:60])
+            # alt şerit
+            canvas.setFillColor(navy)
+            canvas.setFont(bold, 6.5)
+            canvas.drawString(margin, margin + strip_h + 0.1 * cm, "MÜŞTERİ SEÇİMLERİ (RENK / MALZEME)")
+            strip.drawOn(canvas, margin, margin)
             canvas.restoreState()
 
-        frame_h = height - 2 * margin - head_h - 0.2 * cm
-        frames = [Frame(margin + i * (col_w + gap), margin, col_w, frame_h, leftPadding=0, rightPadding=0,
+        frame_bottom = margin + strip_h + strip_title_h + 0.15 * cm
+        frame_h = height - margin - head_h - 0.15 * cm - frame_bottom
+        frames = [Frame(margin + i * (col_w + gap), frame_bottom, col_w, frame_h, leftPadding=0, rightPadding=0,
                         topPadding=0, bottomPadding=0, id=f"col{i}") for i in range(2)]
         doc = BaseDocTemplate(buffer, pagesize=A4, leftMargin=margin, rightMargin=margin, topMargin=margin,
                               bottomMargin=margin, title=f"İş Listesi - {customer or vehicle}", author="MSZ Karavan")
         doc.addPageTemplates([PageTemplate(id="cols", frames=frames, onPage=on_page)])
 
-        cell = ParagraphStyle('WLCell', parent=self.styles['Normal'], fontName=font, fontSize=8.6, leading=10.2,
+        cell = ParagraphStyle('WLCell', parent=self.styles['Normal'], fontName=font, fontSize=8.6 * k, leading=10.2 * k,
                               textColor=colors.HexColor('#1F2937'))
-        num = ParagraphStyle('WLNum', parent=cell, fontSize=7.5, textColor=colors.HexColor('#94A3B8'), alignment=TA_CENTER)
-        qty_st = ParagraphStyle('WLQty', parent=cell, fontName=bold, fontSize=9.5, alignment=TA_CENTER, textColor=navy)
-        sec_st = ParagraphStyle('WLSec', parent=cell, fontName=bold, fontSize=8.2, textColor=colors.white)
+        num = ParagraphStyle('WLNum', parent=cell, fontSize=7.5 * k, textColor=colors.HexColor('#94A3B8'), alignment=TA_CENTER)
+        qty_st = ParagraphStyle('WLQty', parent=cell, fontName=bold, fontSize=9.5 * k, alignment=TA_CENTER, textColor=navy)
+        sec_st = ParagraphStyle('WLSec', parent=cell, fontName=bold, fontSize=8.2 * k, textColor=colors.white)
+        sec_r = ParagraphStyle('WLSecR', parent=sec_st, alignment=TA_CENTER, fontSize=6.8 * k)
+        pad = 2.2 * k
 
         def fmt_qty(q):
             try:
@@ -12190,32 +12229,9 @@ class PDFContractGenerator(PDFQuoteGenerator):
             blocks.append(("İLAVELER", [(str(i + 1), a.get("name", ""), a.get("qty") or 1) for i, a in enumerate(addons)]))
 
         story = []
-        # Müşteri seçimleri (kumaş, mobilya rengi, dolap kapakları…) — ustanın ilk göreceği yer: en üstte
-        specs, _ = self._contract_specs(data_block)
-        spec_lbl = ParagraphStyle('WLSpecL', parent=cell, fontName=bold, fontSize=7.4, textColor=colors.HexColor('#64748B'))
-        spec_val = ParagraphStyle('WLSpecV', parent=cell, fontName=bold, fontSize=9, textColor=navy)
-        spec_rows = [[Paragraph("MÜŞTERİ SEÇİMLERİ (RENK / MALZEME)", sec_st), ""]]
-        for l in self.SPEC_LABELS:
-            v = (specs or {}).get(l, '') or ''
-            spec_rows.append([Paragraph(l, spec_lbl), Paragraph(upper_tr(v) if v else '______________', spec_val)])
-        extra = [(k, v) for k, v in (specs or {}).items() if k not in self.SPEC_LABELS and str(v or '').strip()]
-        spec_rows += [[Paragraph(upper_tr(k), spec_lbl), Paragraph(upper_tr(v), spec_val)] for k, v in extra]
-        st = Table(spec_rows, colWidths=[3.2 * cm, col_w - 3.2 * cm])
-        st.setStyle(TableStyle([
-            ('SPAN', (0, 0), (1, 0)),
-            ('BACKGROUND', (0, 0), (-1, 0), navy),  # diğer bölüm başlıklarıyla aynı lacivert
-            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#F4F6F9')),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('LINEBELOW', (0, 1), (-1, -1), 0.4, colors.HexColor('#D9E0E8')),
-            ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#D9E0E8')),
-            ('TOPPADDING', (0, 0), (-1, -1), 3), ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
-            ('LEFTPADDING', (0, 0), (-1, -1), 4), ('RIGHTPADDING', (0, 0), (-1, -1), 4),
-        ]))
-        story.append(st)
-        story.append(Spacer(1, 6))
-        widths = [0.75 * cm, col_w - 0.75 * cm - 1.15 * cm, 1.15 * cm]
+        widths = [0.7 * cm, col_w - 0.7 * cm - 1.05 * cm, 1.05 * cm]
         for title, rows in blocks:
-            data = [[Paragraph(title, sec_st), "", Paragraph("ADET", ParagraphStyle('WLSecR', parent=sec_st, alignment=TA_CENTER, fontSize=7))]]
+            data = [[Paragraph(title, sec_st), "", Paragraph("ADET", sec_r)]]
             data += [[Paragraph(str(sno), num), Paragraph(upper_tr(name), cell), Paragraph(fmt_qty(q), qty_st)] for sno, name, q in rows]
             t = Table(data, colWidths=widths, repeatRows=1)
             t.setStyle(TableStyle([
@@ -12225,18 +12241,17 @@ class PDFContractGenerator(PDFQuoteGenerator):
                 ('LINEBELOW', (0, 1), (-1, -1), 0.4, colors.HexColor('#CBD5E1')),
                 ('LINEBEFORE', (2, 1), (2, -1), 0.4, colors.HexColor('#CBD5E1')),
                 ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F8FAFC')]),
-                ('TOPPADDING', (0, 0), (-1, -1), 2.2),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 2.2),
+                ('TOPPADDING', (0, 0), (-1, -1), pad),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), pad),
                 ('LEFTPADDING', (0, 0), (-1, -1), 3),
                 ('RIGHTPADDING', (0, 0), (-1, -1), 3),
             ]))
             story.append(t)
-            story.append(Spacer(1, 5))
+            story.append(Spacer(1, 4.5 * k))
         if not blocks:
             story.append(Paragraph("Listelenecek kalem yok.", cell))
         doc.build(story)
-        buffer.seek(0)
-        return buffer
+        return buffer, doc.page
 
     def create_contract_pdf(self, contract_data: Dict) -> BytesIO:
         buffer = BytesIO()
