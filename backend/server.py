@@ -507,6 +507,7 @@ thread_pool = ThreadPoolExecutor(max_workers=4)
 class Company(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
+    tax_id: Optional[str] = None  # VKN/TCKN — alış faturası ilk eşleştirmede öğrenilir
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class CompanyCreate(BaseModel):
@@ -9380,6 +9381,462 @@ async def get_ai_extract_job(job_id: str):
     if job["status"] != "running":
         out["products"] = job["products"] or []
     return out
+
+
+# ==================== ALIŞ FATURASINDAN FİYAT GÜNCELLEME ====================
+# e-Fatura/e-Arşiv UBL-TR XML'i (tek dosya ya da ZIP içinde) doğrudan okunur; PDF/fotoğraf fatura AI ile.
+# Satırlar ürünlerle eşlenir (önce öğrenilmiş eşleşme, sonra isim benzerliği). Onayla: seçilen firmanın
+# ürününde alış fiyatı güncellenir, olmayan ürün eklenir, başka firmadaki ürüne tedarikçi olarak bağlanır.
+INVOICE_MAX_ZIP_BYTES = 60 * 1024 * 1024
+INVOICE_MAX_DOCS = 30
+_TR_FOLD = str.maketrans("çğıöşüâîû", "cgiosuaiu")
+_CO_STOPWORDS = {"ltd", "sti", "san", "tic", "ve", "as", "a", "s", "limited", "sirketi", "sanayi", "ticaret",
+                 "anonim", "dis", "ith", "ihr", "paz", "ins", "ltdsti", "sn", "tc"}
+
+
+def _fold(s: str) -> str:
+    """Türkçe duyarsız karşılaştırma anahtarı: küçük harf, aksansız, noktalama → boşluk."""
+    s = (s or "").replace("İ", "i").replace("I", "ı").lower().translate(_TR_FOLD)
+    return re.sub(r"\s+", " ", re.sub(r"[^\w]+", " ", s)).strip()
+
+
+def _xml_local(tag) -> str:
+    return tag.rsplit("}", 1)[-1] if isinstance(tag, str) else ""
+
+
+def _xml_child(el, *path):
+    """Namespace'ten bağımsız alt öğe yolu."""
+    cur = el
+    for name in path:
+        if cur is None:
+            return None
+        cur = next((c for c in cur if _xml_local(c.tag) == name), None)
+    return cur
+
+
+def _xml_children(el, name) -> list:
+    return [] if el is None else [c for c in el if _xml_local(c.tag) == name]
+
+
+def _xml_text(el, *path) -> str:
+    node = _xml_child(el, *path) if path else el
+    return node.text.strip() if node is not None and node.text else ""
+
+
+def _xml_num(el, *path):
+    try:
+        t = _xml_text(el, *path)
+        return float(t) if t else None
+    except ValueError:
+        return None
+
+
+def _norm_cur(c) -> str:
+    c = str(c or "TRY").upper().strip()
+    c = {"TL": "TRY", "YTL": "TRY", "EURO": "EUR"}.get(c, c)
+    return c if c in ("TRY", "EUR", "USD") else "TRY"
+
+
+def _parse_ubl_invoice(data: bytes, filename: str) -> dict:
+    """UBL-TR fatura XML'i → satıcı + kalemler (birim fiyat KDV hariç, satır ve belge iskontosu düşülmüş)."""
+    import xml.etree.ElementTree as ET
+    if b"<!doctype" in data[:4096].lower() or b"<!entity" in data.lower():
+        raise ValueError("XML DTD/ENTITY içeriyor, okunmadı")  # UBL'de DTD olmaz; varlık genişletmeye kapı açma
+    root = ET.fromstring(data)
+    if _xml_local(root.tag) != "Invoice":
+        raise ValueError("e-Fatura (UBL Invoice) XML'i değil")
+    party = _xml_child(root, "AccountingSupplierParty", "Party")
+    tax_id = ""
+    for pid in _xml_children(party, "PartyIdentification"):
+        idel = _xml_child(pid, "ID")
+        if idel is not None and (idel.get("schemeID") or "").upper() in ("VKN", "TCKN") and idel.text:
+            tax_id = idel.text.strip()
+            break
+    name = _xml_text(party, "PartyName", "Name")
+    if not name:
+        person = _xml_child(party, "Person")
+        name = " ".join(x for x in (_xml_text(person, "FirstName"), _xml_text(person, "FamilyName")) if x)
+    currency = _norm_cur(_xml_text(root, "DocumentCurrencyCode"))
+    totals = _xml_child(root, "LegalMonetaryTotal")
+    line_sum, tax_excl = _xml_num(totals, "LineExtensionAmount"), _xml_num(totals, "TaxExclusiveAmount")
+    # belge geneli iskonto satırlara oransal yayılır (satır toplamı → vergisiz toplam)
+    factor = (tax_excl / line_sum) if line_sum and tax_excl and 0 < tax_excl < line_sum else 1.0
+    lines = []
+    for ln in _xml_children(root, "InvoiceLine"):
+        item = _xml_child(ln, "Item")
+        lname = _xml_text(item, "Name") or _xml_text(item, "Description")
+        if not lname:
+            continue
+        qel = _xml_child(ln, "InvoicedQuantity")
+        qty = _xml_num(ln, "InvoicedQuantity") or 0
+        ext = _xml_num(ln, "LineExtensionAmount")
+        gross = _xml_num(ln, "Price", "PriceAmount")
+        unit = ((ext / qty) if (ext is not None and qty) else (gross or 0)) * factor
+        if unit <= 0:
+            continue
+        vat = next((v for v in (_xml_num(st, "Percent") for st in _xml_children(_xml_child(ln, "TaxTotal"), "TaxSubtotal")) if v is not None), None)
+        extel = _xml_child(ln, "LineExtensionAmount")
+        disc = round((1 - unit / gross) * 100, 1) if gross and gross > unit * 1.0005 else None
+        lines.append({
+            "name": lname[:500],
+            "code": (_xml_text(item, "SellersItemIdentification", "ID") or _xml_text(item, "ManufacturersItemIdentification", "ID"))[:100],
+            "brand": _xml_text(item, "BrandName")[:200], "qty": qty, "unit": (qel.get("unitCode") if qel is not None else "") or "",
+            "unit_price": round(unit, 4), "gross_price": round(gross, 4) if gross else None, "discount": disc, "vat": vat,
+            "currency": _norm_cur(extel.get("currencyID") if extel is not None and extel.get("currencyID") else currency),
+        })
+    return {"file": filename, "source": "xml", "supplier_name": name, "tax_id": tax_id,
+            "invoice_no": _xml_text(root, "ID"), "date": _xml_text(root, "IssueDate"),
+            "type": _xml_text(root, "InvoiceTypeCode"), "currency": currency,
+            "total": _xml_num(totals, "PayableAmount"), "lines": lines}
+
+
+INVOICE_EXTRACTION_PROMPT = """Bu bir Türk alış faturası (e-Fatura / e-Arşiv). Faturayı KESEN satıcıyı ve ürün kalemlerini çıkar.
+Yanıt tek JSON nesnesi: {"supplier_name": str, "tax_id": str (satıcının VKN/TCKN'si, 10-11 hane), "invoice_no": str,
+"date": "YYYY-MM-DD", "currency": "TRY"|"EUR"|"USD", "total": number|null,
+"lines": [{"name": str, "code": str, "qty": number, "unit_price": number, "gross_price": number|null, "discount": number|null, "vat": number|null}]}
+- unit_price: KDV HARİÇ, iskontolar düşülmüş NET birim fiyat. gross_price: iskontosuz birim fiyat. discount/vat: yüzde.
+- Satıcı faturayı kesen firmadır, alıcı (SAYIN ... bölümü) değil.
+- Türk sayı biçimini çevir (1.234,56 → 1234.56). Okunamayan alanı boş bırak, uydurma."""
+
+
+def _ai_parse_invoice(data: bytes, filename: str, kind: str) -> dict:
+    if not OPENAI_API_KEY:
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY tanımlı değil (backend/.env).")
+    parts = []
+    if kind == "pdf":
+        text, imgs = _pdf_extract_for_ai(data)
+        if text:
+            parts.append({"type": "text", "text": f"\n\nFatura metni:\n{text[:30000]}"})
+        for jpeg in imgs[:4]:
+            parts.append({"type": "image_url", "image_url": {"url": _image_bytes_to_data_url(jpeg, "image/jpeg")}})
+    else:
+        img, mime = _doc_image_bytes(data)
+        parts.append({"type": "image_url", "image_url": {"url": _image_bytes_to_data_url(img, mime)}})
+    if not parts:
+        raise HTTPException(status_code=422, detail="Faturadan içerik çıkarılamadı.")
+    raw = _call_openai_chat([{"role": "user", "content": [{"type": "text", "text": INVOICE_EXTRACTION_PROMPT}] + parts}],
+                            max_tokens=8000, temperature=0.1, json_mode=True)
+    d = _ai_parse_json_products(raw)
+    if not isinstance(d, dict):
+        raise HTTPException(status_code=502, detail="Fatura okunamadı.")
+    currency = _norm_cur(d.get("currency"))
+    lines = []
+    for it in d.get("lines") or []:
+        if not isinstance(it, dict) or not str(it.get("name") or "").strip():
+            continue
+        unit = _safe_float(it.get("unit_price"))
+        if unit <= 0:
+            continue
+        gross = _safe_float(it.get("gross_price")) or None
+        lines.append({"name": str(it["name"]).strip()[:500], "code": str(it.get("code") or "")[:100], "brand": "",
+                      "qty": _safe_float(it.get("qty"), 1.0), "unit": "", "unit_price": round(unit, 4),
+                      "gross_price": gross, "discount": _safe_float(it.get("discount")) or None,
+                      "vat": _safe_float(it.get("vat")) or None, "currency": currency})
+    return {"file": filename, "source": "ai", "supplier_name": str(d.get("supplier_name") or "")[:300],
+            "tax_id": re.sub(r"\D", "", str(d.get("tax_id") or ""))[:11], "invoice_no": str(d.get("invoice_no") or "")[:60],
+            "date": str(d.get("date") or "")[:10], "type": "", "currency": currency,
+            "total": _safe_float(d.get("total")) or None, "lines": lines}
+
+
+def _invoice_docs(data: bytes, filename: str) -> list:
+    """Yüklenen dosya → [(ad, bayt, tür)]; ZIP açılır (XML varsa yalnız XML'ler, yoksa PDF'ler)."""
+    import zipfile
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext in ("xlsx", "xls", "docx", "doc"):
+        raise HTTPException(status_code=400, detail="Excel/Word fatura değil; XML, ZIP, PDF veya fotoğraf yükleyin.")
+    if ext == "zip" or data[:2] == b"PK":
+        try:
+            z = zipfile.ZipFile(io.BytesIO(data))
+        except zipfile.BadZipFile:
+            raise HTTPException(status_code=422, detail="ZIP açılamadı.")
+        with z:
+            infos = [i for i in z.infolist() if not i.is_dir()]
+            if len(infos) > 300 or sum(i.file_size for i in infos) > INVOICE_MAX_ZIP_BYTES:
+                raise HTTPException(status_code=413, detail="ZIP çok büyük.")
+            by = {"xml": [], "pdf": []}
+            for i in infos:
+                e = i.filename.rsplit(".", 1)[-1].lower() if "." in i.filename else ""
+                if e in by:
+                    by[e].append((i.filename.rsplit("/", 1)[-1], z.read(i), e))
+            return by["xml"] or by["pdf"]
+    if ext == "xml" or data.lstrip()[:5] == b"<?xml":
+        return [(filename, data, "xml")]
+    if ext == "pdf" or data[:4] == b"%PDF":
+        return [(filename, data, "pdf")]
+    if ext in ("png", "jpg", "jpeg", "webp", "heic"):
+        return [(filename, data, "img")]
+    raise HTTPException(status_code=400, detail="Yalnız XML, ZIP, PDF veya fotoğraf.")
+
+
+async def _suggest_invoice_company(name: str, tax_id: str):
+    companies = await db.companies.find({}, {"_id": 0, "id": 1, "name": 1, "tax_id": 1}).to_list(1000)
+    if tax_id:
+        for c in companies:
+            if c.get("tax_id") == tax_id:
+                return {"id": c["id"], "name": c["name"], "by": "vkn"}
+    toks = set(_fold(name).split()) - _CO_STOPWORDS
+    best, best_sc = None, 0.0
+    for c in companies:
+        ct = set(_fold(c["name"]).split()) - _CO_STOPWORDS
+        if ct and toks:
+            sc = len(ct & toks) / len(ct)  # firma adındaki kelimelerin faturadaki unvanda geçme oranı
+            if sc > best_sc:
+                best, best_sc = c, sc
+    # 0.66: "Çorlu Karavan" gibi iki kelimelik adın tek kelimesi ("karavan") tutunca eşleşmesin
+    return {"id": best["id"], "name": best["name"], "by": "isim"} if best and best_sc >= 0.66 else None
+
+
+def _invoice_keys(ln: dict) -> list:
+    keys = [f"code:{_fold(ln['code'])}"] if ln.get("code") else []
+    return keys + [f"name:{_fold(ln.get('name', ''))}"]
+
+
+def _score_invoice_lines(prods: list, names: dict, mem: dict, company_id: Optional[str], lines: list) -> list:
+    import difflib
+    byid = {p["id"]: p for p in prods}
+    pre = [(p, _fold(p.get("name", ""))) for p in prods]
+    pre = [(p, pn, set(pn.split())) for p, pn in pre]
+
+    def cand(p, sc):
+        return {"id": p["id"], "name": p.get("name"), "company_id": p.get("company_id"),
+                "company_name": names.get(p.get("company_id"), ""), "currency": p.get("currency") or "TRY",
+                "list_price": p.get("list_price"), "discounted_price": p.get("discounted_price"), "score": round(sc, 2)}
+
+    out = []
+    for raw in lines:
+        ln = {k: v for k, v in raw.items() if k not in ("match", "candidates", "action", "product_id")}
+        target = _fold(ln.get("name", ""))
+        toks = set(target.split())
+        code = _fold(ln.get("code") or "")
+        match = None
+        for key in _invoice_keys(ln):
+            pid = mem.get(key)
+            if pid in byid:
+                match = (1.0, byid[pid], "önceki fatura")
+                break
+        cands = []
+        for p, pn, pt in pre:
+            inter = toks & pt
+            if not inter:
+                continue
+            sc = 0.55 * difflib.SequenceMatcher(None, target, pn).ratio() + 0.45 * len(inter) / len(toks | pt)
+            if code and len(code) >= 3 and code in pn:
+                sc += 0.2
+            if company_id and p.get("company_id") == company_id:
+                sc += 0.05
+            if sc >= 0.4:
+                cands.append((sc, p))
+        cands.sort(key=lambda x: -x[0])
+        if match is None and cands and cands[0][0] >= 0.6:
+            match = (cands[0][0], cands[0][1], "benzer isim")
+        if match and company_id and match[1].get("company_id") != company_id and match[1].get("link_group"):
+            # başka firmadaki eşleşmenin grubunda bu firmanın kaydı varsa doğrudan onu güncelle
+            own = next((p for p in prods if p.get("link_group") == match[1]["link_group"] and p.get("company_id") == company_id), None)
+            if own:
+                match = (match[0], own, match[2])
+        ln["candidates"] = [cand(p, sc) for sc, p in cands[:6]]
+        if match:
+            ln["match"] = {**cand(match[1], match[0]), "by": match[2]}
+            ln["action"] = "update" if match[1].get("company_id") == company_id else "add_supplier"
+            ln["product_id"] = match[1]["id"]
+        else:
+            ln["action"] = "create"
+        out.append(ln)
+    return out
+
+
+async def _match_invoice_lines(company_id: Optional[str], lines: list) -> list:
+    prods = await db.products.find({}, {"_id": 0, "id": 1, "name": 1, "company_id": 1, "currency": 1, "list_price": 1,
+                                        "discounted_price": 1, "link_group": 1}).to_list(50000)
+    names = {c["id"]: c.get("name", "") async for c in db.companies.find({}, {"_id": 0, "id": 1, "name": 1})}
+    mem = {}
+    if company_id:
+        async for m in db.invoice_item_map.find({"company_id": company_id}, {"_id": 0}):
+            mem[m["key"]] = m["product_id"]
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _score_invoice_lines, prods, names, mem, company_id, lines)
+
+
+async def _invoice_duplicate(invoice_no: str, tax_id: str, company_id: Optional[str]):
+    if not invoice_no:
+        return None
+    ors = [{"tax_id": tax_id}] if tax_id else []
+    if company_id:
+        ors.append({"company_id": company_id})
+    if not ors:
+        return None
+    rec = await db.purchase_invoices.find_one({"invoice_no": invoice_no, "$or": ors}, {"_id": 0, "applied_at": 1})
+    if not rec:
+        return None
+    at = rec.get("applied_at")
+    return at.isoformat() if isinstance(at, datetime) else str(at)
+
+
+async def _invoice_rates() -> dict:
+    try:
+        r = await currency_service.get_exchange_rates()
+    except Exception:
+        r = {}
+    return {"TRY": 1.0, "EUR": float(r.get("EUR") or 0) or None, "USD": float(r.get("USD") or 0) or None}
+
+
+@api_router.post("/purchase-invoices/parse")
+async def parse_purchase_invoices(files: List[UploadFile] = File(...)):
+    """Alış faturalarını oku + firma ve ürün eşleştir (KAYDETMEZ). XML/ZIP doğrudan, PDF/foto AI ile."""
+    if not files or len(files) > 10:
+        raise HTTPException(status_code=400, detail="1–10 dosya yükleyin.")
+    loop = asyncio.get_running_loop()
+    invoices, errors = [], []
+    for f in files:
+        fname = f.filename or "fatura"
+        data = await f.read()
+        if not data:
+            continue
+        if len(data) > MAX_UPLOAD_BYTES:
+            errors.append(f"{fname}: dosya çok büyük")
+            continue
+        try:
+            docs = _invoice_docs(data, fname)
+        except HTTPException as e:
+            errors.append(f"{fname}: {e.detail}")
+            continue
+        for name, blob, kind in docs:
+            if len(invoices) >= INVOICE_MAX_DOCS:
+                errors.append(f"En fazla {INVOICE_MAX_DOCS} fatura okunur; kalanlar atlandı.")
+                break
+            try:
+                inv = _parse_ubl_invoice(blob, name) if kind == "xml" else await loop.run_in_executor(None, _ai_parse_invoice, blob, name, kind)
+                if not inv["lines"]:
+                    errors.append(f"{name}: ürün kalemi bulunamadı")
+                    continue
+                invoices.append(inv)
+            except Exception as e:
+                errors.append(f"{name}: {getattr(e, 'detail', None) or str(e)[:160]}")
+    for inv in invoices:
+        inv["company"] = await _suggest_invoice_company(inv["supplier_name"], inv["tax_id"])
+        cid = inv["company"]["id"] if inv["company"] else None
+        inv["lines"] = await _match_invoice_lines(cid, inv["lines"])
+        inv["duplicate"] = await _invoice_duplicate(inv["invoice_no"], inv["tax_id"], cid)
+    return {"invoices": invoices, "errors": errors, "rates": await _invoice_rates()}
+
+
+class InvoiceMatchRequest(BaseModel):
+    company_id: str
+    invoice_no: Optional[str] = ""
+    tax_id: Optional[str] = ""
+    lines: List[Dict[str, Any]]
+
+
+@api_router.post("/purchase-invoices/match")
+async def rematch_purchase_invoice(req: InvoiceMatchRequest):
+    """Firma değişince satırları yeniden eşle."""
+    if len(req.lines) > 500:
+        raise HTTPException(status_code=400, detail="Çok fazla satır")
+    return {"lines": await _match_invoice_lines(req.company_id, req.lines),
+            "duplicate": await _invoice_duplicate(req.invoice_no or "", req.tax_id or "", req.company_id)}
+
+
+class InvoiceApplyLine(BaseModel):
+    action: str  # update | create | add_supplier | skip
+    product_id: Optional[str] = None
+    name: str = Field(..., min_length=1, max_length=500)
+    code: Optional[str] = ""
+    brand: Optional[str] = ""
+    qty: Optional[float] = None
+    unit_price: float = Field(..., ge=0)
+    currency: str = "TRY"
+    list_price: Optional[float] = Field(None, ge=0)  # yeni kayıt için liste fiyatı (boşsa alış)
+    category_id: Optional[str] = None
+
+
+class InvoiceApplyRequest(BaseModel):
+    company_id: str
+    supplier_name: Optional[str] = ""
+    tax_id: Optional[str] = ""
+    invoice_no: Optional[str] = ""
+    date: Optional[str] = ""
+    file: Optional[str] = ""
+    lines: List[InvoiceApplyLine]
+
+
+@api_router.post("/purchase-invoices/apply")
+async def apply_purchase_invoice(req: InvoiceApplyRequest):
+    """Onaylanan satırları uygula: alış fiyatı güncelle / ürün ekle / başka firmadaki ürüne tedarikçi ekle."""
+    company = await db.companies.find_one({"id": req.company_id}, {"_id": 0})
+    if not company:
+        raise HTTPException(status_code=404, detail="Firma bulunamadı")
+    rates = await _invoice_rates()
+
+    def conv(amount: float, frm: str, to: str) -> float:
+        if frm == to:
+            return amount
+        try_ = amount * (rates.get(frm) or 1.0)
+        return try_ / (rates.get(to) or 1.0)
+
+    counts = {"updated": 0, "created": 0, "added": 0, "skipped": 0}
+    errors, done = [], []
+    for ln in req.lines:
+        cur = _norm_cur(ln.currency)
+        pid = None
+        try:
+            if ln.action == "skip" or ln.unit_price <= 0:
+                counts["skipped"] += 1
+                continue
+            target = await db.products.find_one({"id": ln.product_id}, {"_id": 0}) if ln.product_id else None
+            action = ln.action
+            if action == "update" and target and target.get("company_id") != req.company_id:
+                action = "add_supplier"  # başka firmanın kaydı bu faturayla güncellenmez
+            if action in ("update", "add_supplier") and not target:
+                raise HTTPException(status_code=404, detail="eşleşen ürün bulunamadı")
+            if action == "add_supplier" and target.get("link_group"):
+                own = await db.products.find_one({"link_group": target["link_group"], "company_id": req.company_id}, {"_id": 0})
+                if own:  # bu firma grupta zaten var → kendi kaydını güncelle
+                    target, action = own, "update"
+            lp = ln.list_price if ln.list_price else ln.unit_price
+            if action == "update":
+                pcur = target.get("currency") or "TRY"
+                new_dp = round(conv(ln.unit_price, cur, pcur), 4)
+                # doğrudan yazılır: "update_product" adı PUT uç noktasınca gölgeleniyor (iki tanım var)
+                dp_try = float(await currency_service.convert_to_try(Decimal(str(new_dp)), pcur))
+                await db.products.update_one({"id": target["id"]}, {"$set": {"discounted_price": new_dp, "discounted_price_try": dp_try}})
+                pid = target["id"]
+                counts["updated"] += 1
+            elif action == "add_supplier":
+                res = await add_supplier_to_product(target["id"], AddSupplierRequest(
+                    company_id=req.company_id, list_price=Decimal(str(lp)), discounted_price=Decimal(str(ln.unit_price)), currency=cur))
+                pid = next((s["id"] for s in res.get("suppliers", []) if s.get("company_id") == req.company_id), None)
+                counts["added"] += 1
+            elif action == "create":
+                created = await create_product(ProductCreate(
+                    name=ln.name, company_id=req.company_id, brand=ln.brand or "",
+                    category_id=ln.category_id if ln.category_id and ln.category_id != "none" else None,
+                    list_price=Decimal(str(lp)), discounted_price=Decimal(str(ln.unit_price)), currency=cur))
+                pid = created.id
+                counts["created"] += 1
+            else:
+                raise HTTPException(status_code=400, detail="geçersiz işlem")
+        except HTTPException as e:
+            errors.append(f"{ln.name[:60]}: {e.detail}")
+            continue
+        except Exception as e:
+            logger.error(f"Fatura satırı uygulanamadı: {e}")
+            errors.append(f"{ln.name[:60]}: {str(e)[:120]}")
+            continue
+        if pid:
+            for key in _invoice_keys(ln.dict()):
+                await db.invoice_item_map.update_one({"company_id": req.company_id, "key": key},
+                                                     {"$set": {"product_id": pid, "updated_at": datetime.now(timezone.utc)}}, upsert=True)
+            done.append({"name": ln.name, "qty": ln.qty, "unit_price": ln.unit_price, "currency": cur, "action": action, "product_id": pid})
+    if req.tax_id and not company.get("tax_id"):
+        await db.companies.update_one({"id": req.company_id}, {"$set": {"tax_id": req.tax_id}})
+        invalidate_cache("/api/companies")
+    if done:
+        await db.purchase_invoices.insert_one({
+            "id": str(uuid.uuid4()), "company_id": req.company_id, "supplier_name": req.supplier_name, "tax_id": req.tax_id,
+            "invoice_no": req.invoice_no, "date": req.date, "file": req.file, "lines": done,
+            "applied_at": datetime.now(timezone.utc)})
+    invalidate_cache("/api/products")
+    return {**counts, "errors": errors}
 
 
 @api_router.post("/battery-analysis")

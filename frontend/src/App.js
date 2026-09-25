@@ -18,6 +18,7 @@ import LazyImage from './components/LazyImage';
 import ServiceInvoices from './components/ServiceInvoices';
 import BatteryTest from './components/BatteryTest';
 import { SupplierBadge, BestCost, LinkDialog, SupplierCompanies, SupplierPrices, SupplierEdit, isGrouped } from './components/SupplierLink';
+import InvoiceImport from './components/InvoiceImport';
 import { CacheManager, debounce } from './utils/cache';
 import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors, useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
@@ -5142,7 +5143,7 @@ function App() {
                       className="group flex items-center justify-start gap-3 w-full h-11 px-4 text-sm font-semibold text-slate-700 transition-all duration-200 hover:bg-violet-50 rounded-xl data-[state=active]:bg-violet-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
                     >
                       <Upload className="w-4 h-4 text-violet-500 group-data-[state=active]:text-white" />
-                      <span>Ürün Ekle (AI)</span>
+                      <span>Ürün / Fatura Yükle</span>
                     </TabsTrigger>
 
                     <TabsTrigger
@@ -7740,6 +7741,9 @@ function App() {
             )}
           </TabsContent>
           <TabsContent value="upload" className="space-y-6">
+            <InvoiceImport api={API} companies={companies} categories={categories}
+              onCompaniesChanged={() => { CacheManager.remove('companies'); loadCompanies(); }}
+              onDone={() => loadProducts(1, true)} />
             <Card>
               <CardHeader>
                 <CardTitle>Yapay Zekâ ile Ürün Ekle</CardTitle>
