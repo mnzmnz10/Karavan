@@ -23,6 +23,63 @@ export function SupplierBadge({ product, companyName, open, onToggle }) {
   );
 }
 
+export const isGrouped = (p) => (p?.suppliers?.length || 0) > 1;
+
+// Gruplu satır: hücre tedarikçi sayısınca yatay bölünür. Her dilim sabit yükseklikte → sütunlar hizalı,
+// -mx-2 px-2 ile çizgi hücre dolgusunu da geçer (yan yana bölünmüş hücrelerde kesintisiz görünür).
+export function SplitCell({ product, className = '', children }) {
+  return (
+    <div className="-mx-2 divide-y divide-slate-200">
+      {product.suppliers.map((s) => (
+        <div key={s.id} className={`h-9 px-2 flex items-center tabular-nums ${className}`}>{children(s)}</div>
+      ))}
+    </div>
+  );
+}
+
+// Firma hücresi (gruplu): her tedarikçi kendi diliminde; üzerine gelince gruptan çıkarma
+export function SupplierCompanies({ product, api, showCost, onChanged }) {
+  const [busy, setBusy] = useState(null);
+  const unlink = async (s) => {
+    if (!window.confirm(`"${s.name}" (${s.company_name}) bu gruptan çıkarılsın mı? Ürün silinmez, ayrı satır olarak görünür.`)) return;
+    setBusy(s.id);
+    try { await axios.delete(`${api}/products/${s.id}/link`); toast.success('Bağlantı kaldırıldı'); onChanged?.(); }
+    catch (e) { toast.error(e?.response?.data?.detail || 'Kaldırılamadı'); } finally { setBusy(null); }
+  };
+  return (
+    <SplitCell product={product}>
+      {(s) => (
+        <span className="group inline-flex items-center gap-1 min-w-0">
+          <Badge variant="outline" title={s.name}
+            className={`truncate ${showCost && s.is_best ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : ''}`}>{s.company_name}</Badge>
+          <button type="button" onClick={() => unlink(s)} disabled={busy === s.id} aria-label={`${s.company_name} gruptan çıkar`}
+            className="shrink-0 p-0.5 text-slate-400 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-rose-600" title="Gruptan çıkar">
+            {busy === s.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Unlink className="w-3.5 h-3.5" />}
+          </button>
+        </span>
+      )}
+    </SplitCell>
+  );
+}
+
+// Fiyat hücreleri (gruplu): kind = list | cost | list_try | cost_try | currency
+export function SupplierPrices({ product, kind }) {
+  return (
+    <SplitCell product={product}>
+      {(s) => {
+        const sym = SYM[s.currency] || '';
+        if (kind === 'currency') return <Badge variant="secondary" className="text-[11px]">{s.currency}</Badge>;
+        if (kind === 'list') return `${sym} ${fmt(s.list_price)}`;
+        if (kind === 'list_try') return s.list_price_try ? `₺ ${fmt(s.list_price_try)}` : '-';
+        const val = kind === 'cost' ? `${sym} ${fmt(s.discounted_price || s.list_price)}` : (s.cost_try ? `₺ ${fmt(s.cost_try)}` : '-');
+        return s.is_best
+          ? <span className="font-semibold text-emerald-700" title="En ucuz tedarikçi">{val} ✓</span>
+          : <span className="text-slate-600">{val}</span>;
+      }}
+    </SplitCell>
+  );
+}
+
 // İndirimli (alış) hücresi: grupluysa en ucuz tedarikçi
 export function BestCost({ product }) {
   if (!(product.suppliers?.length > 1) || product.best_discounted_price == null) {
@@ -33,40 +90,6 @@ export function BestCost({ product }) {
       {SYM[product.currency] || ''} {fmt(product.best_discounted_price)}
       <span className="block text-[10px] font-semibold text-emerald-700">{product.best_company_name} · en ucuz</span>
     </span>
-  );
-}
-
-// Açılır tedarikçi satırları (tablo altı)
-export function SupplierRows({ product, api, colSpan, showCost, onChanged }) {
-  const [busy, setBusy] = useState(null);
-  const unlink = async (s) => {
-    if (!window.confirm(`"${s.name}" (${s.company_name}) bu gruptan çıkarılsın mı? Ürün silinmez, ayrı satır olarak görünür.`)) return;
-    setBusy(s.id);
-    try { await axios.delete(`${api}/products/${s.id}/link`); toast.success('Bağlantı kaldırıldı'); onChanged?.(); }
-    catch (e) { toast.error(e?.response?.data?.detail || 'Kaldırılamadı'); } finally { setBusy(null); }
-  };
-  return (
-    <tr className="bg-slate-50/70">
-      <td colSpan={colSpan} className="px-4 py-2">
-        <div className="space-y-1">
-          {product.suppliers.map((s) => (
-            <div key={s.id} className="flex items-center gap-3 text-sm">
-              <span className="w-24 shrink-0 font-bold text-slate-700 truncate">{s.company_name}</span>
-              <span className="flex-1 min-w-0 truncate text-slate-500" title={s.name}>{s.name}</span>
-              <span className="w-28 text-right tabular-nums text-slate-600">liste {SYM[s.currency] || ''} {fmt(s.list_price)}</span>
-              {showCost && (
-                <span className={`w-36 text-right tabular-nums font-semibold ${s.is_best ? 'text-emerald-700' : 'text-slate-700'}`}>
-                  alış {SYM[s.currency] || ''} {fmt(s.discounted_price || s.list_price)}{s.is_best ? ' ✓' : ''}
-                </span>
-              )}
-              <button type="button" onClick={() => unlink(s)} disabled={busy === s.id} className="p-1 text-slate-400 hover:text-rose-600" title="Gruptan çıkar">
-                {busy === s.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Unlink className="w-4 h-4" />}
-              </button>
-            </div>
-          ))}
-        </div>
-      </td>
-    </tr>
   );
 }
 

@@ -17,7 +17,7 @@ import { Toaster } from './components/ui/sonner';
 import LazyImage from './components/LazyImage';
 import ServiceInvoices from './components/ServiceInvoices';
 import BatteryTest from './components/BatteryTest';
-import { SupplierBadge, BestCost, SupplierRows, LinkDialog } from './components/SupplierLink';
+import { SupplierBadge, BestCost, LinkDialog, SupplierCompanies, SupplierPrices, isGrouped } from './components/SupplierLink';
 import { CacheManager, debounce } from './utils/cache';
 import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors, useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
@@ -233,7 +233,6 @@ function App() {
   const [selectedProductsData, setSelectedProductsData] = useState(new Map()); // Map<productId, productData>
   const [showSelectedPopup, setShowSelectedPopup] = useState(false); // ürünler sekmesi: seçili ürünler popup
   const [openSpecsIds, setOpenSpecsIds] = useState(new Set()); // ürün tablosu: görsele tıklayınca teknik özellik açık ürünler
-  const [expandedGroups, setExpandedGroups] = useState(new Set()); // tedarikçi grubu açık ürünler
   const [linkingProduct, setLinkingProduct] = useState(null); // 'Başka firmadaki aynı ürünü bağla' penceresi
   const toggleSpecs = (id) => setOpenSpecsIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const [quoteName, setQuoteName] = useState('');
@@ -8822,7 +8821,6 @@ function App() {
                                 {visibleProducts.map((product) => {
                                   const company = companies.find(c => c.id === product.company_id);
                                   const isEditing = editingProduct === product.id;
-                                  const groupOpen = expandedGroups.has(product.id) && product.suppliers?.length > 1;
                                   
                                   return (
                                     <React.Fragment key={product.id}>
@@ -8988,10 +8986,11 @@ function App() {
                                             </SelectContent>
                                           </Select>
                                         ) : (
-                                          <div className="space-y-1">
-                                            <SupplierBadge product={product} companyName={company?.name || 'Unknown'} open={groupOpen}
-                                              onToggle={() => setExpandedGroups((prev) => { const n = new Set(prev); if (n.has(product.id)) n.delete(product.id); else n.add(product.id); return n; })} />
-                                          </div>
+                                          isGrouped(product) ? (
+                                            <SupplierCompanies product={product} api={API} showCost={showDiscountedPrices} onChanged={() => loadProducts(1, true)} />
+                                          ) : (
+                                            <SupplierBadge product={product} companyName={company?.name || 'Unknown'} />
+                                          )
                                         )}
                                       </TableCell>
                                       <TableCell className="w-28">
@@ -9019,6 +9018,8 @@ function App() {
                                             onChange={(e) => setEditForm({...editForm, list_price: e.target.value})}
                                             className="w-24"
                                           />
+                                        ) : isGrouped(product) ? (
+                                          <SupplierPrices product={product} kind="list" />
                                         ) : (
                                           `${getCurrencySymbol(product.currency)} ${formatPrice(product.list_price)}`
                                         )}
@@ -9035,7 +9036,7 @@ function App() {
                                               placeholder="İndirimli fiyat"
                                             />
                                           ) : (
-                                            <BestCost product={product} />
+                                            isGrouped(product) ? <SupplierPrices product={product} kind="cost" /> : <BestCost product={product} />
                                           )}
                                         </TableCell>
                                       )}
@@ -9054,9 +9055,11 @@ function App() {
                                               <SelectItem value="TRY">TRY</SelectItem>
                                             </SelectContent>
                                           </Select>
+                                        ) : isGrouped(product) ? (
+                                          <SupplierPrices product={product} kind="currency" />
                                         ) : (
-                                          <Badge 
-                                            className="cursor-pointer hover:bg-primary/90" 
+                                          <Badge
+                                            className="cursor-pointer hover:bg-primary/90"
                                             onClick={() => startEditProduct(product)}
                                           >
                                             {product.currency}
@@ -9064,12 +9067,18 @@ function App() {
                                         )}
                                       </TableCell>
                                       <TableCell className="w-28">
-                                        ₺ {product.list_price_try ? formatPrice(product.list_price_try) : '---'}
+                                        {isGrouped(product) ? (
+                                          <SupplierPrices product={product} kind="list_try" />
+                                        ) : (
+                                          `₺ ${product.list_price_try ? formatPrice(product.list_price_try) : '---'}`
+                                        )}
                                       </TableCell>
                                       {showDiscountedPrices && (
                                         <TableCell className="w-28">
-                                          {(product.suppliers?.length > 1 ? product.best_discounted_price_try : product.discounted_price_try) ? (
-                                            `₺ ${formatPrice(product.suppliers?.length > 1 ? product.best_discounted_price_try : product.discounted_price_try)}`
+                                          {isGrouped(product) ? (
+                                            <SupplierPrices product={product} kind="cost_try" />
+                                          ) : product.discounted_price_try ? (
+                                            `₺ ${formatPrice(product.discounted_price_try)}`
                                           ) : '-'}
                                         </TableCell>
                                       )}
@@ -9122,10 +9131,6 @@ function App() {
                                         </div>
                                       </TableCell>
                                     </TableRow>
-                                    {groupOpen && (
-                                      <SupplierRows product={product} api={API} colSpan={8 + (showDiscountedPrices ? 2 : 0)} showCost={showDiscountedPrices}
-                                        onChanged={() => loadProducts(1, true)} />
-                                    )}
                                     </React.Fragment>
                                   );
                                 })}
