@@ -11642,7 +11642,7 @@ function App() {
         </DialogContent>
       </Dialog>
 
-      <LinkDialog product={linkingProduct} api={API} onClose={() => setLinkingProduct(null)} onLinked={() => loadProducts(1, true)} />
+      <LinkDialog product={linkingProduct} api={API} companies={companies} onClose={() => setLinkingProduct(null)} onLinked={() => loadProducts(1, true)} />
 
       {/* Hızlı Teklif Oluşturma Dialog'u */}
       <Dialog open={showQuickQuoteDialog} onOpenChange={setShowQuickQuoteDialog}>

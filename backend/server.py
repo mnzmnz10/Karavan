@@ -7046,6 +7046,49 @@ async def link_products(product_id: str, req: ProductLinkRequest):
     return (await _attach_supplier_groups([next(m for m in group if m["id"] == a["id"])], dedupe=False))[0]
 
 
+class AddSupplierRequest(BaseModel):
+    company_id: str
+    list_price: Decimal = Field(..., ge=0)
+    discounted_price: Optional[Decimal] = Field(None, ge=0)
+    currency: str = "TRY"
+
+
+@api_router.post("/products/{product_id}/add-supplier")
+async def add_supplier_to_product(product_id: str, req: AddSupplierRequest):
+    """Ürün başka firmada da satılıyor ama sistemde yok: isim/kategori/görsel kopyalanarak o firmaya
+    yeni kayıt açılır ve aynı tedarikçi grubuna bağlanır. Yalnız firma + fiyat girilir."""
+    src = await db.products.find_one({"id": product_id}, {"_id": 0})
+    if not src:
+        raise HTTPException(status_code=404, detail="Ürün bulunamadı")
+    if not await db.companies.find_one({"id": req.company_id}):
+        raise HTTPException(status_code=404, detail="Firma bulunamadı")
+    if req.currency not in ("TRY", "USD", "EUR"):
+        raise HTTPException(status_code=400, detail="Geçersiz para birimi")
+    if req.list_price <= 0 and not req.discounted_price:
+        raise HTTPException(status_code=400, detail="Fiyat girin")
+    group_companies = {src.get("company_id")}
+    if src.get("link_group"):
+        group_companies |= {m.get("company_id") async for m in db.products.find({"link_group": src["link_group"]}, {"_id": 0, "company_id": 1})}
+    if req.company_id in group_companies:
+        raise HTTPException(status_code=400, detail="Bu firma zaten bu ürünün tedarikçileri arasında")
+    rates = await currency_service.get_exchange_rates()
+    r = 1.0 if req.currency == "TRY" else float(rates.get(req.currency, 1))
+    lp = float(req.list_price) or float(req.discounted_price or 0)
+    dp = float(req.discounted_price) if req.discounted_price else None
+    new = {
+        "id": str(uuid.uuid4()), "name": src.get("name"), "company_id": req.company_id,
+        "category_id": src.get("category_id"), "brand": src.get("brand") or "",
+        "description": src.get("description"), "specs": src.get("specs"), "image_url": src.get("image_url"),
+        "image_cached": src.get("image_cached"), "image_cached_src": src.get("image_cached_src"),
+        "list_price": lp, "discounted_price": dp, "currency": req.currency,
+        "list_price_try": lp * r, "discounted_price_try": (dp * r) if dp else None,
+        "is_favorite": False, "created_at": datetime.now(timezone.utc),
+    }
+    await db.products.insert_one(new)
+    invalidate_cache("/api/products")
+    return await link_products(product_id, ProductLinkRequest(other_id=new["id"]))
+
+
 @api_router.delete("/products/{product_id}/link")
 async def unlink_product(product_id: str):
     """Ürünü tedarikçi grubundan çıkar; tek üye kalırsa grup çözülür, ana kayıt çıkarsa yenisi seçilir."""
@@ -7173,13 +7216,9 @@ async def get_products(
         
         # PERFORMANCE: Cache invalidation for products to ensure fresh sorting
         from fastapi.encoders import jsonable_encoder as _jenc
-        if not search:
-            response = JSONResponse(content=_jenc(response_data))
-            response.headers["Cache-Control"] = "public, max-age=60"  # Kısa cache favori sıralama için
-        else:
-            response = JSONResponse(content=_jenc(response_data))
-            response.headers["Cache-Control"] = "public, max-age=30"  # Arama için daha kısa
-            
+        # no-store: önbellekli liste bağla/çıkar/düzenle sonrası eski veriyi gösteriyordu (hard refresh XHR'ı atlamaz)
+        response = JSONResponse(content=_jenc(response_data))
+        response.headers["Cache-Control"] = "no-store"
         return response
             
     except Exception as e:

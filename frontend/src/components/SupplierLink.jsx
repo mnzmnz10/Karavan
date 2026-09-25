@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import { Link2, Unlink, Loader2, Search, Check } from 'lucide-react';
+import { Link2, Unlink, Loader2, Search, Check, Plus } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
 import { Input } from './ui/input';
 import { Badge } from './ui/badge';
@@ -70,11 +70,63 @@ export function SupplierRows({ product, api, colSpan, showCost, onChanged }) {
   );
 }
 
-// Bağlama penceresi: benzer isimli adaylar + arama
-export function LinkDialog({ product, api, onClose, onLinked }) {
+// Sistemde olmayan tedarikçi: yalnız firma + fiyat girilir, ürün bilgisi kopyalanıp bağlanır
+function AddSupplierForm({ product, api, companies, onDone }) {
+  const [f, setF] = useState({ company_id: '', currency: product.currency || 'EUR', list_price: '', discounted_price: '' });
+  const [busy, setBusy] = useState(false);
+  const taken = new Set([product.company_id, ...(product.suppliers || []).map((s) => s.company_id)]);
+  const opts = (companies || []).filter((c) => !taken.has(c.id)).sort((a, b) => a.name.localeCompare(b.name, 'tr'));
+  const num = (v) => { const n = parseFloat(String(v).replace(',', '.')); return Number.isFinite(n) ? n : null; };
+  const lp = num(f.list_price), dp = num(f.discounted_price);
+  const ok = f.company_id && ((lp ?? 0) > 0 || (dp ?? 0) > 0);
+  const save = async () => {
+    setBusy(true);
+    try {
+      await axios.post(`${api}/products/${product.id}/add-supplier`, {
+        company_id: f.company_id, currency: f.currency, list_price: lp ?? dp, discounted_price: dp,
+      });
+      toast.success(`${opts.find((c) => c.id === f.company_id)?.name || 'Firma'} tedarikçi olarak eklendi`);
+      onDone();
+    } catch (e) { toast.error(e?.response?.data?.detail || 'Eklenemedi'); } finally { setBusy(false); }
+  };
+  const cls = 'h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#1B3A5C]/30';
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-slate-500">Ürün adı, kategori ve görsel kopyalanır; seçtiğin firmaya yeni kayıt açılıp bu ürüne bağlanır.</p>
+      <label className="block text-xs font-semibold text-slate-600">Firma
+        <select className={`${cls} mt-1`} value={f.company_id} onChange={(e) => setF({ ...f, company_id: e.target.value })}>
+          <option value="">Firma seçin…</option>
+          {opts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      </label>
+      <div className="grid grid-cols-3 gap-2">
+        <label className="block text-xs font-semibold text-slate-600">Para birimi
+          <select className={`${cls} mt-1`} value={f.currency} onChange={(e) => setF({ ...f, currency: e.target.value })}>
+            <option value="EUR">€ EUR</option><option value="USD">$ USD</option><option value="TRY">₺ TRY</option>
+          </select>
+        </label>
+        <label className="block text-xs font-semibold text-slate-600">Liste fiyatı
+          <Input inputMode="decimal" className="mt-1 h-10" value={f.list_price} onChange={(e) => setF({ ...f, list_price: e.target.value })} placeholder="ör. 210" />
+        </label>
+        <label className="block text-xs font-semibold text-slate-600">Alış fiyatı
+          <Input inputMode="decimal" className="mt-1 h-10" value={f.discounted_price} onChange={(e) => setF({ ...f, discounted_price: e.target.value })} placeholder="ör. 205,2" />
+        </label>
+      </div>
+      <button type="button" onClick={save} disabled={!ok || busy}
+        className="w-full h-10 rounded-md bg-[#1B3A5C] text-white text-sm font-semibold inline-flex items-center justify-center gap-2 disabled:opacity-50">
+        {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Tedarikçi olarak ekle
+      </button>
+    </div>
+  );
+}
+
+// Bağlama penceresi: benzer isimli adaylar + arama, ya da sistemde olmayan firmayı fiyatla ekle
+export function LinkDialog({ product, api, companies, onClose, onLinked }) {
   const [q, setQ] = useState('');
   const [list, setList] = useState(null);
   const [busy, setBusy] = useState(null);
+  const [mode, setMode] = useState('link');
+  useEffect(() => { if (product) setMode('link'); }, [product]);
   useEffect(() => {
     if (!product) return;
     setList(null);
@@ -97,9 +149,18 @@ export function LinkDialog({ product, api, onClose, onLinked }) {
     <Dialog open={!!product} onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="max-w-xl">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><Link2 className="w-5 h-5" /> Başka firmadaki aynı ürünü bağla</DialogTitle>
+          <DialogTitle className="flex items-center gap-2"><Link2 className="w-5 h-5" /> Tedarikçi ekle / bağla</DialogTitle>
           <DialogDescription className="truncate">{product?.name}</DialogDescription>
         </DialogHeader>
+        <div className="grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1 text-sm font-semibold">
+          {[['link', 'Sistemdeki ürünü bağla'], ['add', 'Yeni firma + fiyat']].map(([k, t]) => (
+            <button key={k} type="button" onClick={() => setMode(k)}
+              className={`h-9 rounded-md transition-colors ${mode === k ? 'bg-white text-[#1B3A5C] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>{t}</button>
+          ))}
+        </div>
+        {mode === 'add' && product ? (
+          <AddSupplierForm product={product} api={api} companies={companies} onDone={() => { onLinked?.(); onClose(); }} />
+        ) : (<>
         <div className="flex items-center gap-2 rounded-md border border-slate-200 px-3">
           <Search className="w-4 h-4 text-slate-400" />
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Farklı isimle arayın (ör. uyku kliması)" className="border-0 shadow-none focus-visible:ring-0 px-0" />
@@ -120,6 +181,7 @@ export function LinkDialog({ product, api, onClose, onLinked }) {
           ))}
         </div>
         <p className="text-xs text-slate-400">Bağlanan ürünler listede tek satır görünür; teklif ve servis maliyetinde en ucuz tedarikçinin alış fiyatı kullanılır. Her firmanın kendi fiyat güncellemesi (Excel/Termosa) etkilenmez.</p>
+        </>)}
       </DialogContent>
     </Dialog>
   );
