@@ -56,11 +56,20 @@ test('reads an invoice, shows matched price change and applies selected actions'
   expect(text).toMatch(/205,20 → 233,93/);
   expect(text).toMatch(/▲ %14\.0/);
 
+  const removeBtn = container.querySelector('[aria-label="Tente Kolu kalemini kaldır"]');
+  await act(async () => removeBtn.click());
+  expect(container.textContent).not.toContain('Tente Kolu');
+  expect(container.textContent).toContain('1 kaldırılan kalemi geri al');
+  const undo = [...container.querySelectorAll('button')].find((b) => b.textContent.includes('geri al'));
+  await act(async () => undo.click());
+  expect(container.textContent).toContain('Tente Kolu');
+  await act(async () => container.querySelector('[aria-label="Tente Kolu kalemini kaldır"]').click());
+
   const applyBtn = [...container.querySelectorAll('button')].find((b) => b.textContent.includes('Onayla ve uygula'));
   await act(async () => applyBtn.click());
   const body = axios.post.mock.calls.find(([u]) => u.endsWith('/apply'))[1];
   expect(body.company_id).toBe('F');
-  expect(body.lines.map((l) => l.action)).toEqual(['update', 'create']);
+  expect(body.lines.map((l) => l.action)).toEqual(['update', 'skip']);
   expect(body.lines[0].unit_price).toBeCloseTo(233.928);
-  expect(body.lines[1].list_price).toBe(107.52);
+
 });

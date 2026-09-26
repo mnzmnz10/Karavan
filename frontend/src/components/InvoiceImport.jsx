@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import { Receipt, Loader2, Upload, AlertTriangle, CheckCircle2, Search, Plus, Building2 } from 'lucide-react';
+import { Receipt, Loader2, Upload, AlertTriangle, CheckCircle2, Search, Plus, Building2, X, Undo2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -31,7 +31,7 @@ const r2 = (n) => Math.round(n * 100) / 100;
 
 // Satırın seçimine göre yapılacak işlem
 export const lineAction = (ln, companyId) => {
-  if (ln.sel === SKIP) return 'skip';
+  if (ln.removed || ln.sel === SKIP) return 'skip';
   if (ln.sel === NEW) return 'create';
   if (!ln.product) return 'skip';
   return ln.product.company_id === companyId ? 'update' : 'add_supplier';
@@ -127,6 +127,7 @@ function InvoiceView({ inv, api, companies, categories, rates, vatIncl, onCompan
     setRow(i, { sel: value, product, searching: false });
   };
 
+  const removedCount = rows.filter((r) => r.removed).length;
   const summary = useMemo(() => rows.reduce((acc, r) => { const a = lineAction(r, companyId); acc[a] = (acc[a] || 0) + 1; return acc; }, {}), [rows, companyId]);
   const actionable = rows.length - (summary.skip || 0);
 
@@ -200,6 +201,7 @@ function InvoiceView({ inv, api, companies, categories, rates, vatIncl, onCompan
           </thead>
           <tbody>
             {rows.map((r, i) => {
+              if (r.removed) return null;
               const act = lineAction(r, companyId);
               const p = r.product;
               const pcur = p?.currency || r.currency;
@@ -264,7 +266,13 @@ function InvoiceView({ inv, api, companies, categories, rates, vatIncl, onCompan
                     ) : <span className="text-slate-300">—</span>}
                   </td>
                   <td className="px-3 py-2">
-                    <span className={`inline-block whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-semibold ${ACTION_BADGE[act][1]}`}>{ACTION_BADGE[act][0]}</span>
+                    <div className="flex items-start gap-1">
+                      <span className={`inline-block whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-semibold ${ACTION_BADGE[act][1]}`}>{ACTION_BADGE[act][0]}</span>
+                      <button type="button" onClick={() => setRow(i, { removed: true })} title="Bu kalemi kaldır (dükkanla ilgisiz)"
+                        aria-label={`${r.name} kalemini kaldır`} className="-mt-0.5 rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600">
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               );
@@ -275,7 +283,13 @@ function InvoiceView({ inv, api, companies, categories, rates, vatIncl, onCompan
       <div className="flex flex-wrap items-center justify-between gap-2 border-t bg-slate-50 px-4 py-3">
         <div className="text-xs text-slate-500">
           {Object.entries(summary).filter(([k]) => k !== 'skip').map(([k, n]) => `${n} ${ACTION_BADGE[k][0].toLowerCase()}`).join(' · ')}
-          {summary.skip ? ` · ${summary.skip} atlanır` : ''}
+          {summary.skip - removedCount > 0 ? ` · ${summary.skip - removedCount} atlanır` : ''}
+          {removedCount > 0 && (
+            <button type="button" onClick={() => setRows((rs) => rs.map((r) => ({ ...r, removed: false })))}
+              className="ml-2 inline-flex items-center gap-1 font-semibold text-[#1B3A5C] hover:underline">
+              <Undo2 className="w-3.5 h-3.5" /> {removedCount} kaldırılan kalemi geri al
+            </button>
+          )}
         </div>
         <Button onClick={apply} disabled={busy || !companyId || !actionable} className="bg-[#1B3A5C] hover:bg-[#1B3A5C]/90">
           {busy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-2" />} Onayla ve uygula ({actionable})
