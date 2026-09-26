@@ -5,6 +5,7 @@ import { toast } from "../toast";
 import { battery as batteryApi, mppt as mpptApi, products as productsApi, openDoc } from "../api";
 import { Sheet, money } from "../ui";
 import { FIELDS, STATUS_STYLE, toNum, lineFor, rotateB64 } from "../../lib/battery";
+import { keepCaret } from "../../lib/caret";
 
 const MAX_IMAGES = 5;
 const newBatt = (id) => ({ id, label: "", files: [], images: [], values: null, assess: null, loading: false, error: null });
@@ -87,7 +88,7 @@ export function BatterySheet({ open, onClose }) {
     <Sheet open={open} onClose={onClose} title="Akü Testi" full>
       <div className={card + " space-y-2"}>
         <input className={inp} value={customer} onChange={(e) => setCustomer(e.target.value)} placeholder="Müşteri adı (isteğe bağlı)" />
-        <input className={inp} value={plate} onChange={(e) => setPlate(e.target.value.toLocaleUpperCase("tr"))} placeholder="Plaka (isteğe bağlı)" />
+        <input className={inp} value={plate} onChange={(e) => { keepCaret(e); setPlate(e.target.value.toLocaleUpperCase("tr")); }} placeholder="Plaka (isteğe bağlı)" />
       </div>
 
       {list.map((b, idx) => {

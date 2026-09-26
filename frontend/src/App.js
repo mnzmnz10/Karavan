@@ -20,6 +20,7 @@ import ServiceInvoices from './components/ServiceInvoices';
 import BatteryTest from './components/BatteryTest';
 import { SupplierBadge, BestCost, LinkDialog, SupplierCompanies, SupplierPrices, SupplierEdit, isGrouped } from './components/SupplierLink';
 import InvoiceImport from './components/InvoiceImport';
+import { keepCaret } from './lib/caret';
 import { CacheManager, debounce } from './utils/cache';
 import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors, useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
@@ -5989,6 +5990,7 @@ function App() {
                                                   <input
                                                     value={it.name || ''}
                                                     onChange={(e) => {
+                                                      keepCaret(e);
                                                       updateDraftItem(si, ii, 'name', e.target.value);
                                                       setActiveSearchCell({ si, ii, query: e.target.value });
                                                     }}
@@ -6133,6 +6135,7 @@ function App() {
                                     <input
                                       value={(contractDraft.specs && contractDraft.specs[label]) || ''}
                                       onChange={(e) => {
+                                        keepCaret(e);
                                         setContractHistory(prev => [...prev, JSON.parse(JSON.stringify(contractDraft))]);
                                         setContractDraft(prev => { const d = JSON.parse(JSON.stringify(prev)); if (!d.specs) d.specs = {}; d.specs[label] = e.target.value.toLocaleUpperCase('tr-TR'); return d; });
                                         setContractDirty(true);
@@ -6237,7 +6240,7 @@ function App() {
                                         <div className="relative flex-1 min-w-[150px]">
                                           <input
                                             value={a.name || ''}
-                                            onChange={(e) => { mutateContractDraft((d) => { d.addons[ai].name = e.target.value.toLocaleUpperCase('tr-TR'); }); setAddonSearch({ idx: ai, query: e.target.value }); }}
+                                            onChange={(e) => { keepCaret(e); mutateContractDraft((d) => { d.addons[ai].name = e.target.value.toLocaleUpperCase('tr-TR'); }); setAddonSearch({ idx: ai, query: e.target.value }); }}
                                             onFocus={() => setAddonSearch({ idx: ai, query: a.name || '' })}
                                             onBlur={() => setTimeout(() => setAddonSearch({ idx: -1, query: '' }), 200)}
                                             placeholder="İlave adı (katalogdan ara veya yaz)"
@@ -6370,7 +6373,7 @@ function App() {
                                       return (
                                         <div key={c.id || ci} className="grid items-center gap-1.5" style={{ gridTemplateColumns: 'auto minmax(110px, 1fr) 88px 44px 70px 28px' }}>
                                           <input type="date" value={c.date || ''} onChange={(e) => mutateContractDraft((d) => { d.collections[ci].date = e.target.value; })} className="h-8 px-1 rounded bg-white/10 border border-white/20 text-white text-xs [color-scheme:dark]" />
-                                          <input value={c.description || ''} onChange={(e) => mutateContractDraft((d) => { d.collections[ci].description = e.target.value.toLocaleUpperCase('tr-TR'); })} placeholder="açıklama" className="h-8 px-2 rounded bg-white/10 border border-white/20 text-white placeholder:text-white/40 text-sm min-w-0" />
+                                          <input value={c.description || ''} onChange={(e) => { keepCaret(e); mutateContractDraft((d) => { d.collections[ci].description = e.target.value.toLocaleUpperCase('tr-TR'); }); }} placeholder="açıklama" className="h-8 px-2 rounded bg-white/10 border border-white/20 text-white placeholder:text-white/40 text-sm min-w-0" />
                                           <input type="number" value={c.amount ?? ''} onChange={(e) => mutateContractDraft((d) => { d.collections[ci].amount = e.target.value; })} placeholder="tutar" className="h-8 px-1 rounded bg-white/10 border border-white/20 text-white placeholder:text-white/40 text-sm text-right tabular-nums" />
                                           <select value={c.currency || 'EUR'} onChange={(e) => mutateContractDraft((d) => { d.collections[ci].currency = e.target.value; })} className="h-8 px-1 rounded bg-white/10 border border-white/20 text-white text-sm"><option value="EUR" className="bg-[#1B3A5C]">€</option><option value="USD" className="bg-[#1B3A5C]">$</option><option value="TRY" className="bg-[#1B3A5C]">₺</option></select>
                                           <input type="number" step="0.01" value={c.currency === 'TRY' ? (c.rate ?? '') : ''} onChange={(e) => mutateContractDraft((d) => { d.collections[ci].rate = e.target.value; })} placeholder="kur" title="Ödeme günü kuru" disabled={c.currency !== 'TRY'} className={`h-8 px-1 rounded bg-white/10 border border-white/20 text-white placeholder:text-white/40 text-sm text-right tabular-nums ${c.currency !== 'TRY' ? 'invisible' : ''}`} />
@@ -6484,6 +6487,7 @@ function App() {
                                     <input
                                       value={n || ''}
                                       onChange={(e) => {
+                                        keepCaret(e);
                                         setContractHistory(prev => [...prev, JSON.parse(JSON.stringify(contractDraft))]);
                                         setContractDraft(prev => {
                                           const d = JSON.parse(JSON.stringify(prev));
@@ -6536,6 +6540,7 @@ function App() {
                                 <textarea
                                   value={contractDraft.generalNotes !== undefined ? contractDraft.generalNotes : viewingContract.notes || ''}
                                   onChange={(e) => {
+                                    keepCaret(e);
                                     setContractHistory(prev => [...prev, JSON.parse(JSON.stringify(contractDraft))]);
                                     setContractDraft(prev => {
                                       const d = JSON.parse(JSON.stringify(prev));

@@ -5,6 +5,7 @@ import { useCatalog, catRate } from "../catalog";
 import { services as servicesApi } from "../api";
 import { cache } from "../cache";
 import { Sheet, money, todayISO } from "../ui";
+import { keepCaret } from "../../lib/caret";
 
 const DRAFT_KEY = "service_draft";
 
@@ -300,7 +301,7 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
             </button>
           </div>
         </Field>
-        {!f.is_trailer && <Field label="Plaka"><input className={inp} value={f.plate} onChange={(e) => set("plate", e.target.value.toLocaleUpperCase("tr"))} onBlur={(e) => set("plate", formatPlateTR(e.target.value))} placeholder="59 …" /></Field>}
+        {!f.is_trailer && <Field label="Plaka"><input className={inp} value={f.plate} onChange={(e) => { keepCaret(e); set("plate", e.target.value.toLocaleUpperCase("tr")); }} onBlur={(e) => set("plate", formatPlateTR(e.target.value))} placeholder="59 …" /></Field>}
         <Field label="Marka"><input className={inp} value={f.vehicle_brand} onChange={(e) => set("vehicle_brand", e.target.value)} placeholder="—" /></Field>
         <Field label="Model" last><input className={inp} value={f.vehicle_model} onChange={(e) => set("vehicle_model", e.target.value)} placeholder="—" /></Field>
       </Group>
