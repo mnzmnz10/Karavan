@@ -23,6 +23,12 @@ export const convert = (amount, from, to, rates) => {
   return tl && r ? tl / r : null;
 };
 
+// Sistemdeki alış fiyatları KDV dahil tutuluyor → faturadaki KDV hariç net fiyata KDV eklenir (seçilebilir)
+export const withVat = (amount, vat, incl) => (incl && vat ? amount * (1 + vat / 100) : amount);
+const VAT_KEY = 'invoice_vat_incl';
+const readVatPref = () => { try { return localStorage.getItem(VAT_KEY) !== '0'; } catch { return true; } };
+const r2 = (n) => Math.round(n * 100) / 100;
+
 // Satırın seçimine göre yapılacak işlem
 export const lineAction = (ln, companyId) => {
   if (ln.sel === SKIP) return 'skip';
@@ -43,7 +49,8 @@ const toRow = (ln) => ({
   ...ln,
   product: ln.match || null,
   sel: ln.match ? ln.match.id : NEW,
-  list_price: String(ln.gross_price && ln.gross_price > ln.unit_price ? ln.gross_price : ln.unit_price),
+  list_base: ln.gross_price && ln.gross_price > ln.unit_price ? ln.gross_price : ln.unit_price,
+  list_price: null, // null = otomatik (liste fiyatı, KDV seçimine göre)
   category_id: 'none',
   q: '',
   results: null,
@@ -80,13 +87,15 @@ function ProductSearch({ api, companies, onPick }) {
   );
 }
 
-function InvoiceView({ inv, api, companies, categories, rates, onCompaniesChanged, onApplied }) {
+function InvoiceView({ inv, api, companies, categories, rates, vatIncl, onCompaniesChanged, onApplied }) {
   const [companyId, setCompanyId] = useState(inv.company?.id || '');
   const [rows, setRows] = useState(() => inv.lines.map(toRow));
   const [dup, setDup] = useState(inv.duplicate);
   const [busy, setBusy] = useState(false);
   const [rematching, setRematching] = useState(false);
 
+  const unitOf = (r) => withVat(r.unit_price, r.vat, vatIncl);
+  const listOf = (r) => (r.list_price === null ? String(r2(withVat(r.list_base, r.vat, vatIncl))) : r.list_price);
   const setRow = (i, patch) => setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
 
   const changeCompany = async (cid) => {
@@ -128,8 +137,8 @@ function InvoiceView({ inv, api, companies, categories, rates, onCompaniesChange
     try {
       const lines = rows.map((r) => ({
         action: lineAction(r, companyId), product_id: r.product?.id || null, name: r.name, code: r.code || '', brand: r.brand || '',
-        qty: r.qty, unit_price: r.unit_price, currency: r.currency,
-        list_price: parseFloat(String(r.list_price).replace(',', '.')) || null,
+        qty: r.qty, unit_price: Math.round(unitOf(r) * 10000) / 10000, currency: r.currency,
+        list_price: parseFloat(String(listOf(r)).replace(',', '.')) || null,
         category_id: r.category_id !== 'none' ? r.category_id : null,
       }));
       const res = (await axios.post(`${api}/purchase-invoices/apply`, {
@@ -183,7 +192,7 @@ function InvoiceView({ inv, api, companies, categories, rates, onCompaniesChange
           <thead className="bg-white text-xs text-slate-500">
             <tr className="border-b">
               <th className="px-3 py-2 text-left font-semibold">Faturadaki kalem</th>
-              <th className="px-3 py-2 text-right font-semibold whitespace-nowrap">Net birim (KDV hariç)</th>
+              <th className="px-3 py-2 text-right font-semibold whitespace-nowrap">Birim alış ({vatIncl ? 'KDV dahil' : 'KDV hariç'})</th>
               <th className="px-3 py-2 text-left font-semibold w-[34%]">Sistemdeki ürün</th>
               <th className="px-3 py-2 text-right font-semibold whitespace-nowrap">Alış: şimdi → yeni</th>
               <th className="px-3 py-2 text-left font-semibold">İşlem</th>
@@ -195,7 +204,7 @@ function InvoiceView({ inv, api, companies, categories, rates, onCompaniesChange
               const p = r.product;
               const pcur = p?.currency || r.currency;
               const now = p ? Number(p.discounted_price || p.list_price) || 0 : null;
-              const next = act === 'update' ? convert(r.unit_price, r.currency, pcur, rates) : null;
+              const next = act === 'update' ? convert(unitOf(r), r.currency, pcur, rates) : null;
               const pct = now && next ? ((next - now) / now) * 100 : null;
               const opts = [...r.candidates];
               if (p && !opts.some((c) => c.id === p.id)) opts.unshift(p);
@@ -206,7 +215,9 @@ function InvoiceView({ inv, api, companies, categories, rates, onCompaniesChange
                     <div className="text-xs text-slate-400">{r.code && `Kod ${r.code} · `}{r.qty} adet{r.vat != null && ` · KDV %${r.vat}`}</div>
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">
-                    <div className="font-semibold">{SYM[r.currency] || ''} {fmt(r.unit_price)}</div>
+                    <div className="font-semibold">{SYM[r.currency] || ''} {fmt(unitOf(r))}</div>
+                    {vatIncl && r.vat ? <div className="text-xs text-slate-400">KDV hariç {fmt(r.unit_price)} · %{r.vat}</div> : null}
+                    {vatIncl && !r.vat ? <div className="text-xs text-amber-600">KDV oranı yok</div> : null}
                     {r.discount ? <div className="text-xs text-slate-400">liste {fmt(r.gross_price)} · %{r.discount} isk.</div> : null}
                   </td>
                   <td className="px-3 py-2">
@@ -226,7 +237,7 @@ function InvoiceView({ inv, api, companies, categories, rates, onCompaniesChange
                     {(act === 'create' || act === 'add_supplier') && (
                       <div className="mt-1.5 flex gap-1.5">
                         <label className="flex-1 text-[11px] text-slate-500">Liste fiyatı ({r.currency})
-                          <Input inputMode="decimal" value={r.list_price} onChange={(e) => setRow(i, { list_price: e.target.value })} className="h-8 mt-0.5" />
+                          <Input inputMode="decimal" value={listOf(r)} onChange={(e) => setRow(i, { list_price: e.target.value })} className="h-8 mt-0.5" />
                         </label>
                         {act === 'create' && (
                           <label className="flex-1 text-[11px] text-slate-500">Kategori
@@ -278,6 +289,8 @@ export default function InvoiceImport({ api, companies, categories, onCompaniesC
   const [files, setFiles] = useState([]);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
+  const [vatIncl, setVatIncl] = useState(readVatPref);
+  const toggleVat = (v) => { setVatIncl(v); try { localStorage.setItem(VAT_KEY, v ? '1' : '0'); } catch { /* yoksay */ } };
 
   const read = async () => {
     if (!files.length) return;
@@ -317,6 +330,11 @@ export default function InvoiceImport({ api, companies, categories, onCompaniesC
             {busy ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Okunuyor…</> : 'Faturayı oku'}
           </Button>
         </div>
+        <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer select-none">
+          <input type="checkbox" checked={vatIncl} onChange={(e) => toggleVat(e.target.checked)} className="h-4 w-4 accent-[#1B3A5C]" />
+          Fiyatları <strong>KDV dahil</strong> kaydet
+          <span className="text-xs text-slate-400">(faturadaki KDV hariç birim fiyata satırın KDV'si eklenir)</span>
+        </label>
         {result?.errors?.length > 0 && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 space-y-0.5">
             {result.errors.map((e, i) => <div key={i}>{e}</div>)}
@@ -324,7 +342,7 @@ export default function InvoiceImport({ api, companies, categories, onCompaniesC
         )}
         {result?.invoices?.map((inv) => (
           <InvoiceView key={`${inv.file}-${inv.invoice_no}`} inv={inv} api={api} companies={companies} categories={categories}
-            rates={result.rates} onCompaniesChanged={onCompaniesChanged} onApplied={applied} />
+            rates={result.rates} vatIncl={vatIncl} onCompaniesChanged={onCompaniesChanged} onApplied={applied} />
         ))}
       </CardContent>
     </Card>

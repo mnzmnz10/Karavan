@@ -2,7 +2,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { act } from 'react';
 import axios from 'axios';
-import InvoiceImport, { convert, lineAction } from '../InvoiceImport';
+import InvoiceImport, { convert, lineAction, withVat } from '../InvoiceImport';
 
 jest.mock('axios', () => ({ get: jest.fn(), post: jest.fn() }));
 jest.mock('sonner', () => ({ toast: { success: jest.fn(), error: jest.fn() } }));
@@ -13,6 +13,9 @@ const rates = { TRY: 1, EUR: 50, USD: 40 };
 test('convert and lineAction', () => {
   expect(convert(100, 'EUR', 'EUR', rates)).toBe(100);
   expect(convert(5000, 'TRY', 'EUR', rates)).toBe(100);
+  expect(withVat(171, 20, true)).toBeCloseTo(205.2);
+  expect(withVat(171, 20, false)).toBe(171);
+  expect(withVat(171, null, true)).toBe(171);
   expect(lineAction({ sel: '__skip' }, 'F')).toBe('skip');
   expect(lineAction({ sel: '__new' }, 'F')).toBe('create');
   expect(lineAction({ sel: 'p', product: { company_id: 'F' } }, 'F')).toBe('update');
@@ -49,13 +52,15 @@ test('reads an invoice, shows matched price change and applies selected actions'
   expect(text).toContain('e-Fatura XML');
   expect(text).toContain('Alış güncellenir');
   expect(text).toContain('Yeni ürün');
-  expect(text).toMatch(/205,20 → 194,94/);
-  expect(text).toMatch(/▼ %5\.0/);
+  expect(text).toContain('KDV dahil');
+  expect(text).toMatch(/205,20 → 233,93/);
+  expect(text).toMatch(/▲ %14\.0/);
 
   const applyBtn = [...container.querySelectorAll('button')].find((b) => b.textContent.includes('Onayla ve uygula'));
   await act(async () => applyBtn.click());
   const body = axios.post.mock.calls.find(([u]) => u.endsWith('/apply'))[1];
   expect(body.company_id).toBe('F');
   expect(body.lines.map((l) => l.action)).toEqual(['update', 'create']);
-  expect(body.lines[1].list_price).toBe(89.6);
+  expect(body.lines[0].unit_price).toBeCloseTo(233.928);
+  expect(body.lines[1].list_price).toBe(107.52);
 });

@@ -9437,6 +9437,12 @@ def _norm_cur(c) -> str:
     return c if c in ("TRY", "EUR", "USD") else "TRY"
 
 
+def _looks_like_code(s: str) -> bool:
+    """Stok kodu gibi mi: boşluksuz ve rakam içeren kısa metin (BH-500-1200-W, 0893 1)."""
+    s = (s or "").strip()
+    return bool(s) and len(s) <= 40 and bool(re.search(r"\d", s)) and (" " not in s or bool(re.fullmatch(r"[\d\s.\-/]+", s)))
+
+
 def _parse_ubl_invoice(data: bytes, filename: str) -> dict:
     """UBL-TR fatura XML'i → satıcı + kalemler (birim fiyat KDV hariç, satır ve belge iskontosu düşülmüş)."""
     import xml.etree.ElementTree as ET
@@ -9464,7 +9470,14 @@ def _parse_ubl_invoice(data: bytes, filename: str) -> dict:
     lines = []
     for ln in _xml_children(root, "InvoiceLine"):
         item = _xml_child(ln, "Item")
-        lname = _xml_text(item, "Name") or _xml_text(item, "Description")
+        code = (_xml_text(item, "SellersItemIdentification", "ID") or _xml_text(item, "ManufacturersItemIdentification", "ID")
+                or _xml_text(item, "BuyersItemIdentification", "ID"))
+        iname = _xml_text(item, "Name")
+        if not code and _looks_like_code(iname):
+            code = iname
+        # Bazı programlar (ör. Devatek) Name'e stok kodunu yazar, açıklama Description/Note'tadır
+        texts = [iname, _xml_text(item, "Description"), *(_xml_text(n) for n in _xml_children(ln, "Note")), _xml_text(item, "ModelName")]
+        lname = next((t for t in texts if t and t != code and not _looks_like_code(t)), None) or iname or _xml_text(item, "Description")
         if not lname:
             continue
         qel = _xml_child(ln, "InvoicedQuantity")
@@ -9479,7 +9492,7 @@ def _parse_ubl_invoice(data: bytes, filename: str) -> dict:
         disc = round((1 - unit / gross) * 100, 1) if gross and gross > unit * 1.0005 else None
         lines.append({
             "name": lname[:500],
-            "code": (_xml_text(item, "SellersItemIdentification", "ID") or _xml_text(item, "ManufacturersItemIdentification", "ID"))[:100],
+            "code": code[:100],
             "brand": _xml_text(item, "BrandName")[:200], "qty": qty, "unit": (qel.get("unitCode") if qel is not None else "") or "",
             "unit_price": round(unit, 4), "gross_price": round(gross, 4) if gross else None, "discount": disc, "vat": vat,
             "currency": _norm_cur(extel.get("currencyID") if extel is not None and extel.get("currencyID") else currency),
