@@ -6150,6 +6150,9 @@ async def _build_import_session(company: Dict[str, Any], products_data: List[Dic
             existing = existing_by_name.get(_normalize_product_name_for_match(name))
             if existing is not None:
                 matched_by = "name"
+        if existing is None and code_key and code_key in existing_by_name:
+            # daha önce kod adıyla eklenmiş ürün (AI kodu ad sanıyordu) → aynı ürün, adı düzelir
+            existing, matched_by = existing_by_name[code_key], "code_name"
         if existing is None:
             img_key = _normalize_termosa_url_key(product_data.get("image_url"))
             if img_key and img_key in existing_by_image:
@@ -6313,6 +6316,8 @@ async def _apply_import_session(session: Dict[str, Any], rows_override: Optional
                 update_data["code"] = row.get("code")
             if row.get("source_url"):
                 update_data["source_url"] = row.get("source_url")
+            if row.get("matched_by") == "code_name":
+                update_data["name"] = name  # eski kayıt stok koduyla adlandırılmıştı
             await db.products.update_one({"id": existing["id"]}, {"$set": update_data})
             updated_products += 1
         elif action == "create":
@@ -9036,12 +9041,19 @@ PRODUCT_EXTRACTION_PROMPT = """Sana bir tedarikçi fiyat listesi verildi (PDF, E
 Görevin: Listedeki TÜM ürünleri yapılandırılmış veri olarak çıkarmak.
 
 Her ürün için şu alanları doldur:
-- name: Ürünün tam adı/modeli (zorunlu). Kategori başlıkları, açıklama satırları veya toplamlar ürün DEĞİLDİR, onları atla.
-- brand: Marka adı (biliniyorsa, yoksa boş string).
+- name: Ürünün AÇIKLAYICI adı (zorunlu) — "Açıklama", "Ürün Adı", "Ürün" sütunundaki metin. Model No / Stok Kodu / Ürün Kodu
+  (ör. "MLFR-2000-12", "BH-500-1200-W") ADI DEĞİLDİR; onu code alanına yaz. Aynı açıklamayı paylaşan varyantlarda adın sonuna
+  ayırt edici bilgiyi ekle (ör. "Mellifera Benzinli Ultra Sessiz DC Jeneratör 12V 2kW"). Açıklama sütunu yoksa ve yalnız kod
+  varsa kodu ad olarak kullan. Kategori başlıkları, açıklama satırları veya toplamlar ürün DEĞİLDİR, onları atla.
+- code: Model No / Stok Kodu / Ürün Kodu / Ref (varsa, yoksa boş string).
+- brand: Marka adı (biliniyorsa — ürün adında ya da başlıkta geçen marka; yoksa boş string).
+- specs: "Özellikler" / "Teknik Özellikler" sütunu ya da ürüne ait ölçü, güç, voltaj, ağırlık, kapasite bilgileri. Her özellik
+  ayrı satırda "Ad: Değer" biçiminde (ör. "Güç: 12V 2KW Max 98A\\nÖlçü: 510x310x500mm"). "|" ile ayrılmış özellikleri satırlara böl.
+  Yoksa null.
 - list_price: Liste/birim fiyat, SADECE sayı (para birimi sembolü, binlik ayıracı OLMADAN). Örn: "1.234,56 ₺" -> 1234.56
 - discounted_price: İndirimli/iskontolu fiyat varsa sayı olarak, yoksa null.
 - currency: Para birimi. Sembol/metni şuna çevir: $/USD/dolar -> "USD", €/EUR/euro -> "EUR", ₺/TL/TRY/lira -> "TRY". Belirsizse "USD".
-- description: Varsa kısa açıklama, yoksa null.
+- description: Addan farklı kısa bir açıklama varsa, yoksa null (özellikleri buraya DEĞİL specs'e yaz).
 
 KURALLAR:
 - Fiyatı olmayan veya 0 olan satırları DAHİL ETME (bunlar genelde başlık/kategoridir).
@@ -9206,8 +9218,17 @@ def _normalize_ai_products(parsed) -> list:
             discounted_price = float(dp) if dp not in (None, '', 0, '0') else None
         except (ValueError, TypeError):
             discounted_price = None
+        code = str(item.get('code') or '').strip()[:100]
+        specs = item.get('specs')
+        if isinstance(specs, list):
+            specs = "\n".join(str(x).strip() for x in specs if str(x).strip())
+        elif isinstance(specs, dict):
+            specs = "\n".join(f"{k}: {v}" for k, v in specs.items() if str(v).strip())
+        specs = str(specs).strip()[:8000] if specs else None
         products.append({
             "name": name[:500],
+            "code": code,
+            "specs": specs,
             "brand": str(item.get('brand') or '').strip()[:200],
             "list_price": list_price,
             "discounted_price": discounted_price,
@@ -9330,6 +9351,15 @@ async def _run_ai_extract_job(job_id: str, tasks: list):
                 continue  # parça sınırında tekrar eden satır
             seen.add(key)
             merged.append(prod)
+    # aynı adı paylaşan farklı kodlu varyantlar ayırt edilsin (ad eşleşmesiyle birbirinin üstüne yazılmasın)
+    by_name = {}
+    for prod in merged:
+        by_name.setdefault(_normalize_product_name_for_match(prod["name"]), []).append(prod)
+    for group in by_name.values():
+        if len(group) > 1 and len({g.get("code") for g in group}) > 1:
+            for g in group:
+                if g.get("code") and g["code"].casefold() not in g["name"].casefold():
+                    g["name"] = f'{g["name"]} {g["code"]}'[:500]
     job["products"] = merged
     job["status"] = "done" if merged else "failed"
     job["finished_at"] = time.time()

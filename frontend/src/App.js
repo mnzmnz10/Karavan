@@ -4,6 +4,7 @@ import axios from 'axios';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card';
 import { Button } from './components/ui/button';
 import { Input } from './components/ui/input';
+import { Textarea } from './components/ui/textarea';
 import { Label } from './components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './components/ui/table';
 import { Badge } from './components/ui/badge';
@@ -1317,7 +1318,9 @@ function App() {
         list_price: p.list_price ?? '',
         discounted_price: p.discounted_price ?? '',
         currency: p.currency || uploadCurrency,
-        description: p.description || ''
+        description: p.description || '',
+        code: p.code || '',
+        specs: p.specs || ''
       }));
 
       if (products.length === 0) {
@@ -8065,12 +8068,25 @@ function App() {
                                   {p.matched_product_id && !p.change_type && (
                                     <span className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-500 ring-1 ring-slate-200">Aynı fiyat</span>
                                   )}
+                                  {p.code && (
+                                    <span className="rounded-full bg-slate-100 px-2 py-0.5 font-mono font-semibold text-slate-600 ring-1 ring-slate-200" title="Ürün kodu">{p.code}</span>
+                                  )}
+                                  {p.matched_by === 'code_name' && (
+                                    <span className="rounded-full bg-amber-50 px-2 py-0.5 font-semibold text-amber-700 ring-1 ring-amber-100" title="Eski kayıt kodla adlandırılmıştı; adı düzeltilecek">Ad düzelir</span>
+                                  )}
                                   {p.price_change_percent != null && (
                                     <span className={`rounded-full px-2 py-0.5 font-semibold ring-1 ${p.price_change_amount > 0 ? 'bg-rose-50 text-rose-700 ring-rose-100' : 'bg-emerald-50 text-emerald-700 ring-emerald-100'}`}>
                                       {p.price_change_amount > 0 ? '+' : ''}{p.price_change_percent}%
                                     </span>
                                   )}
                                 </div>
+                                {p.specs ? (
+                                  <details className="mt-1 text-[11px]">
+                                    <summary className="cursor-pointer font-semibold text-emerald-700">Özellikler ({p.specs.split('\n').filter(Boolean).length})</summary>
+                                    <Textarea value={p.specs} onChange={(e) => updateAiPreviewProduct(i, 'specs', e.target.value)} rows={4}
+                                      className="mt-1 text-xs min-w-[220px]" disabled={p.action === 'skip'} />
+                                  </details>
+                                ) : null}
                               </td>
                               <td className="px-1 py-1">
                                 <Input value={p.brand || ''} onChange={(e) => updateAiPreviewProduct(i, 'brand', e.target.value)} className="h-8 min-w-[100px]" disabled={p.action === 'skip'} />
