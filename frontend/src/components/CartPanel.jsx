@@ -1,5 +1,6 @@
 // Masaüstü teklif sepeti: Ürünler sekmesinde altta yatay çubuk. Sepet mobil ile ortak (sunucuda eşitlenir).
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { ShoppingCart, Minus, Plus, Trash2, Package, X, FileText } from 'lucide-react';
 import { useCart } from '../cart/CartContext';
 
@@ -33,9 +34,11 @@ export default function CartPanel({ imgOf, onCreate }) {
   const cart = useCart();
   if (!cart || cart.rows.length === 0) return null;
   const { rows } = cart;
-  return (
-    <div className="sticky bottom-3 z-30" aria-label="Teklif sepeti">
-      <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/95 p-2 pl-3 shadow-lg backdrop-blur">
+  // Ekrana sabit (body'ye portal): liste uzunluğundan ve taşma ayarlı kapsayıcılardan bağımsız hep görünür.
+  // Akıştaki boşluk, listenin son satırlarının çubuğun altında kalmasını önler.
+  const bar = (
+    <div className="fixed bottom-4 left-1/2 z-50 w-[min(1180px,calc(100vw-2rem))] -translate-x-1/2" aria-label="Teklif sepeti">
+      <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/95 p-2 pl-3 shadow-[0_12px_40px_rgba(15,23,42,0.18)] backdrop-blur">
         <div className="flex shrink-0 items-center gap-2 text-[#1B3A5C]">
           <ShoppingCart className="h-5 w-5" />
           <span className="rounded-full bg-[#1B3A5C] px-2 py-0.5 text-xs font-extrabold text-white">{cart.count}</span>
@@ -73,5 +76,11 @@ export default function CartPanel({ imgOf, onCreate }) {
         </button>
       </div>
     </div>
+  );
+  return (
+    <>
+      <div className="h-20" aria-hidden="true" />
+      {typeof document !== 'undefined' ? createPortal(bar, document.body) : bar}
+    </>
   );
 }

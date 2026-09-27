@@ -24,9 +24,9 @@ test('Ekle → yatay çubukta görünür; adet/çıkar çalışır; Teklif Oluş
       <CartPanel onCreate={onCreate} />
     </CartProvider>,
   ));
-  expect(container.querySelector('[aria-label="Teklif sepeti"]')).toBeNull(); // boşken çubuk yok
+  expect(document.body.querySelector('[aria-label="Teklif sepeti"]')).toBeNull(); // boşken çubuk yok
   await act(async () => btn('Ekle').click());
-  const bar = container.querySelector('[aria-label="Teklif sepeti"]');
+  const bar = document.body.querySelector('[aria-label="Teklif sepeti"]');
   expect(bar.textContent).toContain('Solar Panel 450W');
   await act(async () => bar.querySelector('[aria-label="Adet artır"]').click());
   expect(bar.textContent).toContain('₺20.000'); // 2 × 10.000 liste
@@ -34,7 +34,7 @@ test('Ekle → yatay çubukta görünür; adet/çıkar çalışır; Teklif Oluş
   await act(async () => btn('Teklif Oluştur').click());
   expect(onCreate).toHaveBeenCalled();
   await act(async () => bar.querySelector('[aria-label="Solar Panel 450W sepetten çıkar"]').click());
-  expect(container.querySelector('[aria-label="Teklif sepeti"]')).toBeNull();
+  expect(document.body.querySelector('[aria-label="Teklif sepeti"]')).toBeNull();
 });
 
 function Probe() { const c = useCart(); return <div data-testid="n">{c.count}|{c.form.name}</div>; }
