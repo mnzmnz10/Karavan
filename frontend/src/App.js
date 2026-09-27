@@ -10509,7 +10509,7 @@ function AppInner() {
                       <div className="rounded-xl bg-gradient-to-br from-[#1B3A5C] to-[#15293f] text-white p-4">
                         <div className="text-[11px] uppercase tracking-wider text-emerald-300 font-bold mb-1">Önerilen MPPT</div>
                         <div className="text-3xl font-black tabular-nums">{m.etiket || (m.standart_akim_a ? `${m.standart_akim_a} A` : '—')} <span className="text-base font-semibold text-white/70">MPPT (12V)</span></div>
-                        <div className="text-white/70 text-sm mt-1">Hesaplanan şarj akımı: <strong className="tabular-nums">{c.hesaplanan_sarj_akimi_a} A</strong>{m.secilen_voltaj_v ? <> · Max PV: <strong className="tabular-nums">{m.secilen_voltaj_v} V</strong></> : null}</div>
+                        <div className="text-white/70 text-sm mt-1">Gerçekçi tepe şarj akımı: <strong className="tabular-nums">{c.hesaplanan_sarj_akimi_a} A</strong>{c.teorik_sarj_akimi_a ? <span className="text-white/55"> (etiket değeriyle {c.teorik_sarj_akimi_a} A)</span> : null}{m.secilen_voltaj_v ? <> · Max PV: <strong className="tabular-nums">{m.secilen_voltaj_v} V</strong></> : null}</div>
                       </div>
                       {r.ozet && <p className="text-sm text-slate-700">{r.ozet}</p>}
                       <div className="grid grid-cols-2 gap-2 text-sm">

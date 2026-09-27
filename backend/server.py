@@ -8887,6 +8887,11 @@ async def save_panel_specs(product_id: str, specs: PanelSpecsPayload):
     return {"success": True}
 
 
+MPPT_REAL_FACTOR = 0.80   # Türkiye yazı, karavan çatısında gerçekçi tepe güç / etiket gücü
+MPPT_EFFICIENCY = 0.97
+MPPT_STD_AMPS = (10, 15, 20, 30, 40, 50, 60, 70, 80, 100)
+
+
 @api_router.post("/mppt/recommend")
 async def mppt_recommend(req: MpptRecommendRequest):
     """Panel özelliklerine göre uygun MPPT şarj kontrol cihazını öner (hesap + GPT-4o mini)."""
@@ -8908,10 +8913,15 @@ async def mppt_recommend(req: MpptRecommendRequest):
     isc_arr = round(p.isc * req.parallel, 2) if p.isc else None
     # Soğukta Voc artışı (~%0.35/°C, 25°C referans) — MPPT max PV gerilimi bunu aşmalı
     voc_cold = round(voc_arr * (1 + 0.0035 * (25 - req.min_temp_c)), 2)
-    # Maksimum şarj akımı = toplam güç / akü gerilimi
-    charge_a = round(total_watt / bv, 1)
-    # Standart MPPT akımı: en yakın 10'a yuvarla (55 ve üstü yukarı). Ör: 51-54->50, 55-58->60
-    std_amp = max(10, int(charge_a / 10 + 0.5) * 10)
+    # Şarj akımı = PV gücü / ŞARJ gerilimi (12V akü ~13.8V'ta şarj olur, 12 değil).
+    # Teorik: etiket (STC 1000 W/m², 25°C). Gerçekçi (Türkiye, karavan çatısı): sıcak hücre (60-65°C → ~%13-15),
+    # yatık açı/toz/kablo → tepe güç etiketin ~%80'i; MPPT verimi ~%97. Cihaz gerçekçi tepeye göre seçilir;
+    # nadir serin/tam güneşli anlarda kısa kırpma (clipping) kabul edilir — sektör pratiği (ör. 615 W → 40 A).
+    charge_v = bv * 1.15
+    theoretical_a = round(total_watt / charge_v, 1)
+    charge_a = round(total_watt * MPPT_REAL_FACTOR * MPPT_EFFICIENCY / charge_v, 1)
+    # Bir üst standart MPPT akımı (gerçekçi tepeyi en fazla %5 kırpan sınıf da kabul: 50.6 A → 50 A)
+    std_amp = next((a for a in MPPT_STD_AMPS if a >= charge_a * 0.95), MPPT_STD_AMPS[-1])
     # Voltaj sınıfı — VOLTAJDA TAVİZ YOK: birden çok panel SERİ de bağlanabilir
     # (montajda karar değişebilir) -> en kötü durum tüm paneller seri + soğuk Voc.
     # Cihaz max PV bunu %5 emniyet payıyla aşmalı. Düşük amper verim kaybettirir,
@@ -8926,6 +8936,8 @@ async def mppt_recommend(req: MpptRecommendRequest):
         "toplam_watt": total_watt, "aku_gerilimi_v": bv, "min_sicaklik_c": req.min_temp_c,
         "voc_dizi_v": voc_arr, "vmp_dizi_v": vmp_arr, "isc_dizi_a": isc_arr,
         "voc_soguk_v": voc_cold, "hesaplanan_sarj_akimi_a": charge_a,
+        "teorik_sarj_akimi_a": theoretical_a, "sarj_gerilimi_v": round(charge_v, 1),
+        "gercekci_guc_orani": MPPT_REAL_FACTOR,
         "voc_soguk_seri_v": voc_cold_series, "secilen_voltaj_sinifi_v": std_v,
         "onerilen_standart_akim_a": std_amp,
     }
@@ -8934,11 +8946,16 @@ async def mppt_recommend(req: MpptRecommendRequest):
         "Verilen panel/dizi verilerine göre uygun MPPT'yi öner. Voc (özellikle SOĞUKTA artan voc_soguk) "
         "cihazın izin verilen maksimum PV gerilimini ASLA aşmamalı; cihazın anma akımı (A) hesaplanan şarj "
         "akımını karşılamalı (bir üst standart değere yuvarla: 10/15/20/30/40/50/60/70/80/100 A). "
+        "hesaplanan_sarj_akimi_a GERÇEKÇİ tepe akımdır (Türkiye koşulları: sıcak hücre, yatık montaj; etiket gücünün ~%80'i, "
+        "şarj gerilimi 12V akü için ~13.8V); teorik_sarj_akimi_a etiket değeridir. Cihazı gerçekçi akıma göre seç; "
+        "nadir anlarda kısa kırpma (clipping) normaldir, bunu uyarı olarak değil bilgi olarak belirt. "
         "Voc/Isc verilmemişse panel watt ve isimden tipik kristal panel değerlerini TAHMİN et ve tahmin olduğunu belirt. "
         "Cihazın MAKSİMUM PV GERİLİMİ standart sınıflardan biri olmalı: 100, 150 veya 250 V. "
         "Voc verilmemişse panel watt ve adetten tipik kristal panel Voc'unu (soğukta artışıyla) TAHMİN et ve "
         "bu tahmini güvenle aşan en küçük voltaj sınıfını seç ('secilen_voltaj_v'). "
-        "Modeller bu voltaj sınıfı + standart akıma uygun olsun (ör. Victron 150/85). "
+        "Modeller bu voltaj sınıfı + standart akıma uygun olsun. YALNIZ gerçekten üretilen modelleri yaz; model uydurma. "
+        "Victron SmartSolar 100V serisi yalnız 100/15, 100/20, 100/30, 100/50 (100/40 YOK); 150V: 150/35, 150/45, 150/60, 150/70, 150/85, 150/100. "
+        "Standart akımda gerçek bir Victron yoksa Victron yazma; emin olmadığın markayı listeleme (liste boş kalabilir). "
         "SADECE Türkçe ve SADECE şu JSON şemasıyla yanıt ver: "
         '{"ozet": "...", "onerilen_mppt": {"secilen_voltaj_v": sayı, "min_pv_gerilim_v": sayı, "min_sarj_akimi_a": sayı, '
         '"standart_akim_a": sayı, "modeller": [{"marka": "...", "model": "...", "akim_a": sayı, "max_pv_v": sayı}]}, '
@@ -8949,7 +8966,7 @@ async def mppt_recommend(req: MpptRecommendRequest):
                    + f"örnek modelleri {std_amp}A anma akımına göre seç (12V sistem)."
                    + f"\nVOLTAJ SINIFI KESİN: {std_v} V ('secilen_voltaj_v' bu olsun). Paneller seri "
                    + f"bağlanabilir; seri soğuk Voc ≈ {voc_cold_series} V olduğu için daha düşük voltaj "
-                   + f"sınıfı ÖNERME, örnek modelleri {std_v}V/{std_amp}A sınıfından seç (ör. Victron {std_v}/{std_amp}).")
+                   + f"sınıfı ÖNERME, örnek modelleri {std_v}V/{std_amp}A sınıfından seç (yalnız gerçekten üretilen modeller).")
     if req.notes:
         user_prompt += f"\nEk not: {req.notes}"
     loop = asyncio.get_event_loop()
@@ -8977,6 +8994,15 @@ async def mppt_recommend(req: MpptRecommendRequest):
     parallel_only_v = next((v for v in (100, 150, 250) if voc_cold <= v * 0.95), 250)
     if count > 1 and std_v > parallel_only_v:
         warns.append(f"ℹ️ Voltaj sınıfı, panellerin seri bağlanma ihtimaline göre seçildi (seri soğuk Voc ≈ {voc_cold_series} V). Paralel bağlanacaksa {parallel_only_v}V sınıfı da yeterlidir.")
+    # Victron'un gerçek SmartSolar/BlueSolar serisi dışındaki (uydurma) Victron modellerini at
+    real_victron = {(100, 15), (100, 20), (100, 30), (100, 50), (150, 35), (150, 45), (150, 60), (150, 70), (150, 85), (150, 100),
+                    (250, 60), (250, 70), (250, 85), (250, 100), (75, 10), (75, 15)}
+    def _real(m):
+        if "victron" not in str(m.get("marka", "")).lower() + str(m.get("model", "")).lower():
+            return True
+        mm = re.search(r"(\d{2,3})\s*/\s*(\d{2,3})", str(m.get("model", "")))
+        return bool(mm) and (int(mm.group(1)), int(mm.group(2))) in real_victron
+    mppt["modeller"] = [m for m in (mppt.get("modeller") or []) if isinstance(m, dict) and _real(m)]
     ai["onerilen_mppt"] = mppt
     for m in (mppt.get("modeller") or []):
         try:

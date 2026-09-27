@@ -262,7 +262,7 @@ export function MpptSheet({ open, onClose }) {
           <div className="rounded-2xl p-4 text-white" style={{ background: "linear-gradient(135deg,#1B3A5C,#15293f)" }}>
             <div className="text-[11px] font-bold uppercase tracking-wider" style={{ color: "#6ee7b7" }}>Önerilen MPPT</div>
             <div className="m-tnum mt-0.5 text-[30px] font-extrabold">{m.etiket || `${m.standart_akim_a || "—"} A`}</div>
-            <div className="text-[13px] text-white/75">Şarj akımı <b className="m-tnum">{c.hesaplanan_sarj_akimi_a} A</b>{m.secilen_voltaj_v ? <> · Max PV <b className="m-tnum">{m.secilen_voltaj_v} V</b></> : null}</div>
+            <div className="text-[13px] text-white/75">Gerçekçi tepe akım <b className="m-tnum">{c.hesaplanan_sarj_akimi_a} A</b>{c.teorik_sarj_akimi_a ? <span className="text-white/55"> (etiket {c.teorik_sarj_akimi_a} A)</span> : null}{m.secilen_voltaj_v ? <> · Max PV <b className="m-tnum">{m.secilen_voltaj_v} V</b></> : null}</div>
             <div className="mt-2 grid grid-cols-2 gap-2 text-[13px]">
               <div className="rounded-xl bg-white/10 px-3 py-2"><div className="text-[11px] text-white/60">Toplam güç</div><b className="m-tnum">{c.toplam_watt} W</b></div>
               <div className="rounded-xl bg-white/10 px-3 py-2"><div className="text-[11px] text-white/60">Panel</div><b className="m-tnum">{c.adet} × {c.panel_watt} W</b></div>
