@@ -3,6 +3,7 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import { ShoppingCart, Minus, Plus, Trash2, Package, X, FileText } from 'lucide-react';
 import { useCart } from '../cart/CartContext';
+import { unitTRY } from '../cart/cartLogic';
 
 const fmt = (n) => (Number(n) || 0).toLocaleString('tr-TR', { maximumFractionDigits: 0 });
 
@@ -37,49 +38,60 @@ export default function CartPanel({ imgOf, onCreate }) {
   // Ekrana sabit (body'ye portal): liste uzunluğundan ve taşma ayarlı kapsayıcılardan bağımsız hep görünür.
   // Akıştaki boşluk, listenin son satırlarının çubuğun altında kalmasını önler.
   const bar = (
-    <div className="fixed bottom-4 left-1/2 z-50 w-[min(1180px,calc(100vw-2rem))] -translate-x-1/2" aria-label="Teklif sepeti">
-      <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/95 p-2 pl-3 shadow-[0_12px_40px_rgba(15,23,42,0.18)] backdrop-blur">
-        <div className="flex shrink-0 items-center gap-2 text-[#1B3A5C]">
-          <ShoppingCart className="h-5 w-5" />
-          <span className="rounded-full bg-[#1B3A5C] px-2 py-0.5 text-xs font-extrabold text-white">{cart.count}</span>
+    <div className="fixed bottom-4 left-4 right-4 z-50" aria-label="Teklif sepeti">
+      <div className="flex h-[176px] items-stretch gap-4 rounded-3xl border border-slate-200 bg-white/95 p-3 shadow-[0_16px_48px_rgba(15,23,42,0.22)] backdrop-blur">
+        <div className="flex w-20 shrink-0 flex-col items-center justify-center gap-2 rounded-2xl bg-[#1B3A5C] text-white">
+          <ShoppingCart className="h-7 w-7" />
+          <span className="text-2xl font-extrabold tabular-nums leading-none">{cart.count}</span>
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-white/70">ürün</span>
         </div>
-        <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto py-0.5">
+        <div className="flex min-w-0 flex-1 gap-3 overflow-x-auto pb-1">
           {rows.map((x) => {
             const p = x.product;
             return (
-              <div key={p.id} className="flex shrink-0 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 py-1 pl-1 pr-1.5">
-                {p.image_url
-                  ? <img src={imgOf ? imgOf(p) : p.image_url} alt="" loading="lazy" className="h-8 w-8 rounded-lg object-cover" />
-                  : <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white"><Package className="h-4 w-4 text-slate-300" /></div>}
-                <span className="max-w-[160px] truncate text-xs font-semibold text-slate-700" title={p.name}>{p.name}</span>
-                <div className="inline-flex h-6 items-center rounded-md border border-slate-200 bg-white">
-                  <button type="button" onClick={() => cart.setQty(p.id, x.qty - 1)} aria-label="Adet azalt" className="flex h-6 w-5 items-center justify-center text-slate-500 hover:bg-slate-50"><Minus className="h-3 w-3" /></button>
-                  <span className="w-5 text-center text-xs font-bold tabular-nums">{x.qty}</span>
-                  <button type="button" onClick={() => cart.setQty(p.id, x.qty + 1)} aria-label="Adet artır" className="flex h-6 w-5 items-center justify-center text-slate-500 hover:bg-slate-50"><Plus className="h-3 w-3" /></button>
+              <div key={p.id} className="relative flex w-[200px] shrink-0 flex-col rounded-2xl border border-slate-200 bg-slate-50 p-2.5">
+                <button type="button" onClick={() => cart.remove(p.id)} aria-label={`${p.name} sepetten çıkar`}
+                  className="absolute right-1.5 top-1.5 rounded-full bg-white p-1 text-slate-400 shadow-sm hover:bg-rose-50 hover:text-rose-500"><X className="h-3.5 w-3.5" /></button>
+                <div className="flex gap-2.5">
+                  {p.image_url
+                    ? <img src={imgOf ? imgOf(p) : p.image_url} alt="" loading="lazy" className="h-16 w-16 shrink-0 rounded-xl border border-slate-100 bg-white object-cover" />
+                    : <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-white"><Package className="h-6 w-6 text-slate-300" /></div>}
+                  <span className="line-clamp-3 pr-4 text-xs font-semibold leading-snug text-slate-700" title={p.name}>{p.name}</span>
                 </div>
-                <button type="button" onClick={() => cart.remove(p.id)} aria-label={`${p.name} sepetten çıkar`} className="rounded p-0.5 text-slate-300 hover:bg-rose-50 hover:text-rose-500"><X className="h-3.5 w-3.5" /></button>
+                <div className="mt-auto flex items-center justify-between pt-2">
+                  <div className="inline-flex h-8 items-center rounded-lg border border-slate-200 bg-white">
+                    <button type="button" onClick={() => cart.setQty(p.id, x.qty - 1)} aria-label="Adet azalt" className="flex h-8 w-8 items-center justify-center text-slate-500 hover:bg-slate-50"><Minus className="h-3.5 w-3.5" /></button>
+                    <span className="w-7 text-center text-sm font-bold tabular-nums">{x.qty}</span>
+                    <button type="button" onClick={() => cart.setQty(p.id, x.qty + 1)} aria-label="Adet artır" className="flex h-8 w-8 items-center justify-center text-slate-500 hover:bg-slate-50"><Plus className="h-3.5 w-3.5" /></button>
+                  </div>
+                  <span className="text-sm font-bold tabular-nums text-slate-800">₺{fmt(unitTRY(x) * x.qty)}</span>
+                </div>
               </div>
             );
           })}
         </div>
-        <div className="hidden shrink-0 text-right sm:block">
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Liste toplamı</div>
-          <div className="text-sm font-extrabold tabular-nums text-slate-900">₺{fmt(cart.total)}</div>
+        <div className="flex w-56 shrink-0 flex-col justify-between rounded-2xl bg-slate-50 p-3">
+          <div className="flex items-start justify-between">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Liste toplamı</div>
+              <div className="text-2xl font-extrabold tabular-nums text-slate-900">₺{fmt(cart.total)}</div>
+            </div>
+            <button type="button" onClick={() => { if (window.confirm('Sepet temizlensin mi?')) cart.clear(); }}
+              title="Sepeti temizle" aria-label="Sepeti temizle" className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-500">
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+          <button type="button" onClick={onCreate}
+            className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#1B3A5C] text-base font-bold text-white hover:bg-[#1B3A5C]/90">
+            <FileText className="h-5 w-5" /> Teklif Oluştur
+          </button>
         </div>
-        <button type="button" onClick={() => { if (window.confirm('Sepet temizlensin mi?')) cart.clear(); }}
-          title="Sepeti temizle" aria-label="Sepeti temizle" className="shrink-0 rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-500">
-          <Trash2 className="h-4 w-4" />
-        </button>
-        <button type="button" onClick={onCreate}
-          className="flex h-10 shrink-0 items-center gap-2 rounded-xl bg-[#1B3A5C] px-4 text-sm font-bold text-white hover:bg-[#1B3A5C]/90">
-          <FileText className="h-4 w-4" /> Teklif Oluştur
-        </button>
       </div>
     </div>
   );
   return (
     <>
-      <div className="h-20" aria-hidden="true" />
+      <div className="h-48" aria-hidden="true" />
       {typeof document !== 'undefined' ? createPortal(bar, document.body) : bar}
     </>
   );
