@@ -8839,7 +8839,7 @@ function AppInner() {
                                             </Select>
                                           </div>
                                         ) : (
-                                          <div className="space-y-1">
+                                          <div className="space-y-1 w-[min(42vw,560px)] min-w-[260px]">
                                             <div className="flex items-start gap-3 relative z-0 ml-2">
                                               {product.image_url && (
                                                 <img
@@ -8874,7 +8874,7 @@ function AppInner() {
                                                   </button>
                                                 </div>
                                                 {product.description && (
-                                                  <div className="text-sm text-slate-500 mt-1 truncate" title={product.description}>{product.description}</div>
+                                                  <div className="text-sm text-slate-500 mt-1 line-clamp-2 break-words" title={product.description}>{product.description}</div>
                                                 )}
                                                 {openSpecsIds.has(product.id) && (
                                                   <div className="mt-2 rounded-md border border-emerald-100 bg-emerald-50/60 px-2 py-1.5 text-xs leading-snug text-slate-700 whitespace-pre-wrap break-words">
