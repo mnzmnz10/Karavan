@@ -73,6 +73,12 @@ export const quotes = {
   remove: (id) => http.delete(`/quotes/${id}`).then((r) => r.data),
 };
 
+// Ortak teklif sepeti (mobil + masaüstü aynı sepeti görür)
+export const cart = {
+  get: () => http.get("/cart").then((r) => r.data),
+  put: (state) => http.put("/cart", state).then((r) => r.data),
+};
+
 // Servis yazmaları çevrimdışı kuyruğa düşer (outbox.js); okumalar bekleyen değişiklikleri üstüne uygular
 const svcRaw = {
   create: (payload) => http.post("/services", payload).then((r) => r.data),

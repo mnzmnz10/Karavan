@@ -1,68 +1,28 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import React, { useState } from "react";
 import { toast } from "./toast";
 import { ShoppingCart, Minus, Plus, Trash2, Loader2, Package, Eye, EyeOff, X } from "lucide-react";
-import { quotes as quotesApi } from "./api";
+import { quotes as quotesApi, cart as cartApi } from "./api";
 import { imgOf, imgFallback } from "./img";
 import { cache, customerNames } from "./cache";
 import { Sheet, money } from "./ui";
+import { CartProvider as SharedCartProvider, useCart } from "../cart/CartContext";
+import { priceTRY, cartTotals, discountPatch, submitCartQuote } from "../cart/cartLogic";
 
-const CartCtx = createContext(null);
-export const useCart = () => useContext(CartCtx);
+export { useCart };
 
-// Satış = LİSTE fiyatı (backend teklifi list_price_try'den hesaplar; indirimli = alış, müşteriye gösterilmez)
-function priceTRY(p) {
-  return Number(p.list_price_try) || 0;
-}
-// Ürünün TL kuru (1 birim döviz = ? ₺) — özel fiyatı ürün para birimine çevirmek için
-const rateOf = (p) => ((p.currency || "TRY") === "TRY" ? 1 : (Number(p.list_price) > 0 ? Number(p.list_price_try) / Number(p.list_price) : 0));
-// Satır birim satış (TL): özel fiyat girildiyse o, yoksa liste
-const unitTRY = (x) => (x.price != null && x.price !== "" ? Number(x.price) || 0 : priceTRY(x.product));
-
+// Sepet mobil ve masaüstünde ortak (sunucuda eşitlenir); mobil sepet sayfası sağlayıcının içinde
 export function CartProvider({ children }) {
-  const [items, setItems] = useState(() => {
-    const saved = cache.get("cart"); // [{product, qty}]
-    const m = new Map();
-    if (Array.isArray(saved)) saved.forEach((x) => { if (x?.product?.id) m.set(x.product.id, { product: x.product, qty: x.qty || 1, price: x.price ?? null }); });
-    return m;
-  });
   const [sheet, setSheet] = useState(false);
-
-  // Sepeti kalıcı yap (app kapanınca/yenilenince yarım teklif korunur)
-  useEffect(() => { cache.set("cart", Array.from(items.values())); }, [items]);
-
-  const add = (product, qty = 1) => {
-    setItems((prev) => {
-      const n = new Map(prev);
-      const cur = n.get(product.id);
-      n.set(product.id, { product, qty: (cur?.qty || 0) + qty, price: cur?.price ?? null });
-      return n;
-    });
-    toast.success("Teklife eklendi", { duration: 1200, haptic: "light" });
-  };
-  const setQty = (id, qty) => setItems((prev) => {
-    const n = new Map(prev);
-    if (qty <= 0) n.delete(id);
-    else if (n.has(id)) n.set(id, { ...n.get(id), qty });
-    return n;
-  });
-  const remove = (id) => setQty(id, 0);
-  // Özel satış fiyatı (TL); boş → listeye döner
-  const setPrice = (id, price) => setItems((prev) => {
-    const n = new Map(prev);
-    if (n.has(id)) n.set(id, { ...n.get(id), price: price === "" || price == null ? null : price });
-    return n;
-  });
-  const clear = () => setItems(new Map());
-
-  const count = useMemo(() => Array.from(items.values()).reduce((a, x) => a + x.qty, 0), [items]);
-  const total = useMemo(() => Array.from(items.values()).reduce((a, x) => a + unitTRY(x) * x.qty, 0), [items]);
-
-  const value = { items, add, setQty, setPrice, remove, clear, count, total, openSheet: () => setSheet(true) };
   return (
-    <CartCtx.Provider value={value}>
+    <SharedCartProvider
+      api={cartApi}
+      storage={cache}
+      onAdd={() => toast.success("Teklife eklendi", { duration: 1200, haptic: "light" })}
+      extra={{ openSheet: () => setSheet(true) }}
+    >
       {children}
       <CartSheet open={sheet} onClose={() => setSheet(false)} />
-    </CartCtx.Provider>
+    </SharedCartProvider>
   );
 }
 
@@ -88,107 +48,33 @@ export function CartBar() {
 
 function CartSheet({ open, onClose }) {
   const cart = useCart();
-  // Form taslağı kalıcı (sepet gibi): uygulama kapanınca ad/müşteri/indirim/işçilik/not/manuel kalemler kaybolmaz
-  const draft0 = (() => { const d = cache.get("cart_form"); return d && typeof d === "object" ? d : {}; })();
-  const [name, setName] = useState(draft0.name || "");
-  const [customer, setCustomer] = useState(draft0.customer || "");
-  const [discount, setDiscount] = useState(draft0.discount || ""); // %
-  const [discTL, setDiscTL] = useState(draft0.discTL || "");     // ₺ (yüzde ile senkron)
-  const [targetNet, setTargetNet] = useState(draft0.targetNet || ""); // hedef net toplam
-  const [discMode, setDiscMode] = useState(draft0.discMode || "pct"); // son düzenlenen: pct | tl | net
-  const [labor, setLabor] = useState(draft0.labor || "");
-  const [notes, setNotes] = useState(draft0.notes || "");
-  const [manualItems, setManualItems] = useState(Array.isArray(draft0.manualItems) ? draft0.manualItems : []); // elle girilen kalemler
-  useEffect(() => {
-    cache.set("cart_form", { name, customer, discount, discTL, targetNet, discMode, labor, notes, manualItems });
-  }, [name, customer, discount, discTL, targetNet, discMode, labor, notes, manualItems]);
   const [showCost, setShowCost] = useState(false);    // göz: manuel kalem geliş fiyatı
   const [busy, setBusy] = useState(false);
   if (!cart) return null;
-  const rows = Array.from(cart.items.values());
+  const rows = cart.rows;
+  const { name, customer, discount, discTL, targetNet, labor, notes, manualItems } = cart.form;
+  const set = (k) => (v) => cart.setForm({ [k]: v });
+  const setName = set("name"), setCustomer = set("customer"), setLabor = set("labor"), setNotes = set("notes");
 
-  const manualTotal = manualItems.reduce((a, m) => a + (parseFloat(m.price) || 0) * (parseFloat(m.qty) || 1), 0);
-  const subtotal = cart.total + manualTotal;
+  const { subtotal, discPct, discAmt, laborTL, grand } = cartTotals(rows, cart.form);
+  const onPct = (v) => cart.setForm(discountPatch("pct", v, subtotal, laborTL));
+  const onTL = (v) => cart.setForm(discountPatch("tl", v, subtotal, laborTL));
+  const onTargetNet = (v) => cart.setForm(discountPatch("net", v, subtotal, laborTL));
 
-  // İndirim çift yön: % girilince ₺ hesaplanır, ₺ girilince % hesaplanır. Net hedefi indirimi tam ayarlar.
-  const onPct = (v) => {
-    setDiscMode("pct");
-    setDiscount(v); setTargetNet("");
-    const pct = Math.min(100, Math.max(0, parseFloat(v) || 0));
-    setDiscTL(pct > 0 && subtotal > 0 ? String(Math.round(subtotal * pct / 100)) : "");
-  };
-  const onTL = (v) => {
-    setDiscMode("tl");
-    setDiscTL(v); setTargetNet("");
-    const tl = Math.max(0, parseFloat(v) || 0);
-    setDiscount(tl > 0 && subtotal > 0 ? String(Math.min(100, tl / subtotal * 100)) : ""); // tam, yuvarlama yok
-  };
-  const onTargetNet = (v) => {
-    setDiscMode("net");
-    setTargetNet(v);
-    const target = parseFloat(v);
-    if (isNaN(target)) { setDiscount(""); setDiscTL(""); return; }
-    const discAmt = Math.max(0, Math.min(subtotal, subtotal + laborTL - target));
-    setDiscount(subtotal > 0 ? String(discAmt / subtotal * 100) : "");
-    setDiscTL(String(Math.round(discAmt)));
-  };
-
-  const discPct = Math.min(100, Math.max(0, parseFloat(discount) || 0));
-  const laborTL = Math.max(0, parseFloat(labor) || 0);
-  const discAmt = subtotal * (discPct / 100);
-  const grand = subtotal - discAmt + laborTL;
-
+  const setManualItems = (fn) => cart.setForm((f) => ({ manualItems: fn(f.manualItems || []) }));
   const addManual = () => setManualItems((p) => [...p, { key: Math.random().toString(36).slice(2, 9), name: "", price: "", qty: 1, cost: "" }]);
   const updManual = (key, k, v) => setManualItems((p) => p.map((m) => (m.key === key ? { ...m, [k]: v } : m)));
   const delManual = (key) => setManualItems((p) => p.filter((m) => m.key !== key));
 
   const create = async () => {
-    const validManual = manualItems.filter((m) => (m.name || "").trim() && parseFloat(m.price) > 0);
-    if (rows.length === 0 && validManual.length === 0) { toast.error("En az bir ürün veya kalem ekleyin"); return; }
-    if (!name.trim()) { toast.error("Teklif adı girin"); return; }
     setBusy(true);
     try {
-      const doc = await quotesApi.create({
-        name: name.trim(),
-        customer_name: (customer.trim() || name.trim()),
-        discount_percentage: discPct,
-        labor_cost: laborTL,
-        notes: notes.trim() || undefined,
-        products: [
-          ...rows.map((x) => {
-            const o = { id: x.product.id, quantity: x.qty };
-            // Özel fiyat ürün para biriminde gönderilir (backend custom_price × güncel kur)
-            if (x.price != null && x.price !== "" && rateOf(x.product) > 0) o.custom_price = (Number(x.price) || 0) / rateOf(x.product);
-            return o;
-          }),
-          ...validManual.map((m) => ({
-            manual: true,
-            name: m.name.trim(),
-            price: parseFloat(m.price) || 0,
-            quantity: Math.max(1, parseInt(m.qty) || 1),
-            cost: m.cost === "" || m.cost == null ? undefined : (parseFloat(m.cost) || 0),
-            currency: "TRY",
-          })),
-        ],
-      });
-      // Sepetteki TL fiyatlar eklendiği anın kuruyla; sunucu güncel kurla fiyatlar. Kullanıcı ₺ indirim ya da
-      // hedef net girdiyse yüzdeyi sunucunun gerçek tabanıyla yeniden hesapla → net/indirim TAM tutar.
-      const base = Number(doc?.total_discounted_price) || 0;
-      let wantPct = null;
-      if (discMode === "net" && Number.isFinite(parseFloat(targetNet)) && base > 0) {
-        wantPct = Math.min(100, Math.max(0, (base + laborTL - parseFloat(targetNet)) / base * 100));
-      } else if (discMode === "tl" && parseFloat(discTL) > 0 && base > 0) {
-        wantPct = Math.min(100, parseFloat(discTL) / base * 100);
-      }
-      if (wantPct != null && doc?.id && Math.abs(wantPct - discPct) > 1e-9) {
-        try { await quotesApi.update(doc.id, { discount_percentage: wantPct }); } catch {}
-      }
+      await submitCartQuote(rows, cart.form, { create: quotesApi.create, update: quotesApi.update });
       toast.success("Teklif oluşturuldu");
       cart.clear();
-      setName(""); setCustomer(""); setDiscount(""); setDiscTL(""); setTargetNet(""); setDiscMode("pct"); setLabor(""); setNotes(""); setManualItems([]);
       onClose();
     } catch (e) {
-      toast.error(e?.response?.data?.detail || "Teklif oluşturulamadı");
+      toast.error(e?.response?.data?.detail || e?.message || "Teklif oluşturulamadı");
     } finally {
       setBusy(false);
     }
@@ -307,7 +193,6 @@ function CartSheet({ open, onClose }) {
       <button onClick={() => {
         if (!window.confirm("Sepet ve teklif formu temizlensin mi?")) return;
         cart.clear();
-        setName(""); setCustomer(""); setDiscount(""); setDiscTL(""); setTargetNet(""); setDiscMode("pct"); setLabor(""); setNotes(""); setManualItems([]);
       }} className="m-press mt-3 flex w-full items-center justify-center gap-1.5 py-2 text-[13px] font-semibold text-rose-500">
         <Trash2 className="h-4 w-4" /> Sepeti Temizle
       </button>

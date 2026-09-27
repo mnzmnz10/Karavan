@@ -2771,6 +2771,51 @@ def _process_manual_quote_item(mi: dict, exchange_rates: dict):
     return entry, price_try * quantity, cost_try * quantity
 
 
+# ==================== ORTAK TEKLİF SEPETİ (mobil + masaüstü) ====================
+# Tek kullanıcılı sistem: tek sepet belgesi. Kalemler ürün id + adet + özel satış fiyatı (TL) olarak saklanır;
+# okurken ürünler güncel hâliyle eklenir (fiyat değişmişse sepet de güncel). rev her yazımda artar;
+# istemciler rev büyümüşse (başka cihaz yazmış) uzak hâli alır.
+CART_DOC_ID = "shared"
+
+
+class CartItemIn(BaseModel):
+    product_id: str
+    qty: int = Field(1, ge=1, le=100000)
+    price: Optional[float] = Field(None, ge=0)  # özel satış fiyatı (TL); None → liste
+
+
+class CartStateIn(BaseModel):
+    items: List[CartItemIn] = Field(default_factory=list, max_length=500)
+    form: Dict[str, Any] = Field(default_factory=dict)
+
+
+async def _cart_response(doc: Optional[dict]) -> dict:
+    from fastapi.encoders import jsonable_encoder
+    doc = doc or {}
+    raw = doc.get("items") or []
+    prods = {p["id"]: p async for p in db.products.find({"id": {"$in": [i["product_id"] for i in raw]}}, {"_id": 0})}
+    enriched = {p["id"]: p for p in await _attach_supplier_groups(list(prods.values()), dedupe=False)}
+    items = [{"product": enriched[i["product_id"]], "qty": i["qty"], "price": i.get("price")} for i in raw if i["product_id"] in enriched]
+    return jsonable_encoder({"items": items, "form": doc.get("form") or {}, "rev": doc.get("rev", 0), "updated_at": doc.get("updated_at")})
+
+
+@api_router.get("/cart")
+async def get_cart():
+    return await _cart_response(await db.carts.find_one({"id": CART_DOC_ID}, {"_id": 0}))
+
+
+@api_router.put("/cart")
+async def put_cart(state: CartStateIn):
+    if len(json.dumps(state.form, default=str)) > 60000:
+        raise HTTPException(status_code=413, detail="Sepet formu çok büyük")
+    doc = await db.carts.find_one_and_update(
+        {"id": CART_DOC_ID},
+        {"$set": {"items": [i.dict() for i in state.items], "form": state.form, "updated_at": datetime.now(timezone.utc)},
+         "$inc": {"rev": 1}},
+        upsert=True, return_document=True, projection={"_id": 0})
+    return await _cart_response(doc)
+
+
 @api_router.post("/quotes", response_model=QuoteResponse)
 async def create_quote(quote: QuoteCreate):
     """Create a new quote"""

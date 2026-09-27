@@ -21,6 +21,11 @@ import BatteryTest from './components/BatteryTest';
 import { SupplierBadge, BestCost, LinkDialog, SupplierCompanies, SupplierPrices, SupplierEdit, isGrouped } from './components/SupplierLink';
 import InvoiceImport from './components/InvoiceImport';
 import { keepCaret } from './lib/caret';
+import CartPanel, { CartAddButton } from './components/CartPanel';
+import { CartProvider, useCart } from './cart/CartContext';
+import { rateOf, cartTotals } from './cart/cartLogic';
+import { cart as cartApi } from './mobile/api';
+import { cache as mobileCache } from './mobile/cache';
 import { CacheManager, debounce } from './utils/cache';
 import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors, useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
@@ -64,7 +69,7 @@ function SectionEndDrop({ id, disabled, children }) {
 // ============================================================================
 // Akü testi: components/BatteryTest.jsx
 
-function App() {
+function AppInner() {
   // Authentication states
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
@@ -234,7 +239,6 @@ function App() {
   const [showAddProductDialog, setShowAddProductDialog] = useState(false);
   const [selectedProducts, setSelectedProducts] = useState(new Map()); // Map<productId, quantity>
   const [selectedProductsData, setSelectedProductsData] = useState(new Map()); // Map<productId, productData>
-  const [showSelectedPopup, setShowSelectedPopup] = useState(false); // ürünler sekmesi: seçili ürünler popup
   const [openSpecsIds, setOpenSpecsIds] = useState(new Set()); // ürün tablosu: görsele tıklayınca teknik özellik açık ürünler
   const [linkingProduct, setLinkingProduct] = useState(null); // 'Başka firmadaki aynı ürünü bağla' penceresi
   const toggleSpecs = (id) => setOpenSpecsIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -414,9 +418,6 @@ function App() {
   const [loadingCategoryProducts, setLoadingCategoryProducts] = useState(false);
   
   // Ürünler sekmesinden teklif oluşturma için state'ler
-  const [showQuickQuoteDialog, setShowQuickQuoteDialog] = useState(false);
-  const [quickQuoteCustomerName, setQuickQuoteCustomerName] = useState('');
-  const [quickQuoteNotes, setQuickQuoteNotes] = useState(''); // Hızlı teklif notları
   const [activeTab, setActiveTab] = useState('products');
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -3596,6 +3597,64 @@ function App() {
     setSelectedQuoteCustomer(''); // Seçili müşteriyi de temizle
   };
 
+  // ---- Teklif sepeti (mobil ile ortak) ----
+  const cart = useCart();
+  const cartCustomerNames = useMemo(() => {
+    const set = new Set();
+    (customers || []).forEach((c) => c?.name && set.add(c.name));
+    (quotes || []).forEach((q) => q?.customer_name && set.add(q.customer_name));
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'tr'));
+  }, [customers, quotes]);
+
+  const onCartQuoteCreated = (doc) => {
+    fetchQuotes();
+    toast.success(`"${doc?.name || 'Teklif'}" teklifi oluşturuldu`, {
+      action: { label: 'Teklifleri aç', onClick: () => { setActiveTab('quotes'); setQuoteView('grid'); } },
+    });
+  };
+
+  // Sepeti A4 önizlemeli editöre aktar (özel fiyat editörde ürün para biriminde tutulur; sepette TL)
+  const openCartInEditor = () => {
+    if (!cart) return;
+    const ids = new Map();
+    const data = new Map();
+    const prices = new Map();
+    cart.rows.forEach((x) => {
+      ids.set(x.product.id, x.qty);
+      data.set(x.product.id, x.product);
+      if (x.price != null && x.price !== '' && rateOf(x.product) > 0) prices.set(x.product.id, (Number(x.price) || 0) / rateOf(x.product));
+    });
+    (cart.form.manualItems || []).forEach((m, i) => {
+      const price = parseFloat(m.price);
+      if (!(m.name || '').trim() || !(price > 0)) return;
+      const cost = parseFloat(m.cost);
+      const hasCost = m.cost !== '' && m.cost != null && cost >= 0;
+      const id = `manual-${Date.now()}-${i}`;
+      ids.set(id, Math.max(1, parseInt(m.qty, 10) || 1));
+      data.set(id, {
+        id, name: m.name.trim(), brand: '', company_name: 'Elle Girilen', manual: true,
+        list_price: price, discounted_price: hasCost ? cost : null, currency: 'TRY',
+        list_price_try: price, discounted_price_try: hasCost ? cost : price,
+      });
+    });
+    const t = cartTotals(cart.rows, cart.form);
+    setSelectedProducts(ids);
+    setSelectedProductsData(data);
+    setSelectedProductsCustomPrices(prices);
+    setQuoteDiscount(t.discPct);
+    setQuoteDiscountTL('');
+    setQuoteTargetNet('');
+    setQuoteLaborCost(t.laborTL);
+    setQuoteNotes(cart.form.notes || '');
+    setQuoteName((cart.form.name || '').trim());
+    setLoadedQuote(null);
+    setSelectedQuoteCustomer('');
+    cart.clear();
+    setActiveTab('quotes');
+    setQuoteView('editor');
+    toast.success('Sepet A4 editöre aktarıldı');
+  };
+
   // Kayıtlı teklifi düzenleme alanına yükle (kart/buton ortak) + editör moduna geç
   const openQuoteForEdit = (quote) => {
     try {
@@ -3823,81 +3882,6 @@ function App() {
   };
 
   // Ürünler sekmesinden hızlı teklif oluştur
-  const createQuickQuote = async () => {
-    try {
-      if (!quickQuoteCustomerName.trim()) {
-        toast.error('Lütfen müşteri adını girin');
-        return;
-      }
-
-      const selectedProductData = getSelectedProductsData().map(p => (
-        p.manual || String(p.id).startsWith('manual-')
-          ? {
-              manual: true,
-              id: p.id,
-              name: p.name,
-              price: parseFloat(p.customPrice ?? p.list_price) || 0,
-              cost: (p.discounted_price !== null && p.discounted_price !== undefined && p.discounted_price !== '' && parseFloat(p.discounted_price) >= 0) ? parseFloat(p.discounted_price) : undefined,
-              currency: p.currency || 'TRY',
-              quantity: p.quantity || 1
-            }
-          : {
-              id: p.id,
-              quantity: p.quantity || 1,
-              custom_price: p.customPrice !== null && p.customPrice !== undefined ? parseFloat(p.customPrice) : null
-            }
-      ));
-
-      console.log('🔍 Quick quote creation data:');
-      console.log('🔍 selectedProducts Map:', selectedProducts);
-      console.log('🔍 selectedProductsData Map:', selectedProductsData);
-      console.log('🔍 getSelectedProductsData() result:', getSelectedProductsData());
-      console.log('🔍 selectedProductData for API:', selectedProductData);
-
-      const quoteData = {
-        name: quickQuoteCustomerName.trim(),
-        customer_name: quickQuoteCustomerName.trim(),
-        discount_percentage: 0,
-        labor_cost: 0,
-        products: selectedProductData,
-        notes: quickQuoteNotes.trim() || ''
-      };
-
-      const response = await fetch(`${API}/quotes`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(quoteData)
-      });
-
-      if (!response.ok) {
-        throw new Error('Teklif oluşturulamadı');
-      }
-
-      const savedQuote = await response.json();
-
-      // Teklifleri yeniden yükle
-      await fetchQuotes();
-
-      // Dialog'u kapat ve formu temizle
-      setShowQuickQuoteDialog(false);
-      setQuickQuoteCustomerName('');
-      setQuickQuoteNotes(''); // Teklif notlarını temizle
-      
-      // Seçimi temizle
-      clearSelection();
-
-      // Teklifler sekmesine geç
-      setActiveTab('quotes');
-
-      toast.success(`"${savedQuote.name}" teklifi başarıyla oluşturuldu!`);
-
-    } catch (error) {
-      console.error('Hızlı teklif oluşturma hatası:', error);
-      toast.error('Teklif oluşturulamadı: ' + error.message);
-    }
-  };
 
   // Upload History fonksiyonları
   const fetchUploadHistory = async (companyId) => {
@@ -8173,7 +8157,8 @@ function App() {
 
           {/* Products Tab */}
           <TabsContent value="products" className="space-y-6">
-            <Card>
+            <div className="space-y-4 xl:grid xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start xl:gap-4 xl:space-y-0">
+            <Card className="min-w-0">
               <CardContent>
                 {/* Toplu İşlemler Bar */}
                 {selectedProductsForBulk.size > 0 && (
@@ -8220,78 +8205,6 @@ function App() {
                     <div className="translate-y-1">
                       <h3 className="text-xl font-extrabold tracking-tight text-slate-900">Ürün Listesi</h3>
                     </div>
-                    {selectedProducts.size > 0 && (
-                      <div className="relative">
-                        <button
-                          type="button"
-                          onClick={() => setShowSelectedPopup(v => !v)}
-                          className="flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700 ring-1 ring-emerald-100 transition-colors hover:bg-emerald-100"
-                        >
-                          <Check className="w-4 h-4" />
-                          {selectedProducts.size} ürün seçili
-                          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showSelectedPopup ? 'rotate-180' : ''}`} />
-                        </button>
-                        {showSelectedPopup && (
-                          <>
-                            {/* dışarı tıklayınca kapat */}
-                            <div className="fixed inset-0 z-40" onClick={() => setShowSelectedPopup(false)} />
-                            <div className="absolute left-0 top-full z-50 mt-2 w-80 rounded-xl border border-slate-200 bg-white shadow-xl">
-                              <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
-                                <span className="text-sm font-semibold text-slate-800">Seçili Ürünler ({selectedProducts.size})</span>
-                                <button type="button" onClick={() => setShowSelectedPopup(false)} className="text-slate-400 hover:text-slate-600">
-                                  <X className="w-4 h-4" />
-                                </button>
-                              </div>
-                              <div className="max-h-72 divide-y divide-slate-50 overflow-y-auto">
-                                {getSelectedProductsData().map((product) => (
-                                  <div key={product.id} className="flex items-center gap-2 px-3 py-2">
-                                    <div className="min-w-0 flex-1">
-                                      <div className="truncate text-xs font-medium text-slate-700">{product.name}</div>
-                                      <div className="text-[11px] text-slate-500">
-                                        {product.quantity} × ₺{formatPrice(product.customPrice ?? product.list_price_try ?? 0)}
-                                      </div>
-                                    </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => toggleProductSelection(product.id, 0)}
-                                      className="shrink-0 rounded-full p-1 text-rose-500 hover:bg-rose-50"
-                                      title="Kaldır"
-                                    >
-                                      <X className="w-3.5 h-3.5" />
-                                    </button>
-                                  </div>
-                                ))}
-                              </div>
-                              <div className="flex items-center justify-between rounded-b-xl border-t border-slate-100 bg-slate-50 px-3 py-2">
-                                <span className="text-xs font-medium text-slate-600">Toplam</span>
-                                <span className="text-sm font-bold text-slate-800">₺{formatPrice(calculateQuoteTotals.totalListPrice)}</span>
-                              </div>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex gap-2">
-                    {selectedProducts.size > 0 && (
-                      <>
-                        <Button 
-                          variant="outline" 
-                          onClick={clearSelection}
-                          size="sm"
-                        >
-                          Seçimi Temizle
-                        </Button>
-                        <Button 
-                          onClick={() => setShowQuickQuoteDialog(true)}
-                          className="bg-blue-600 hover:bg-blue-700"
-                          size="sm"
-                        >
-                          <FileText className="w-4 h-4 mr-2" />
-                          Teklif Oluştur
-                        </Button>
-                      </>
-                    )}
                   </div>
                   <Dialog open={showAddProductDialog} onOpenChange={setShowAddProductDialog}>
                     <DialogTrigger asChild>
@@ -8875,38 +8788,10 @@ function App() {
                                     <React.Fragment key={product.id}>
                                     <TableRow 
                                       key={product.id}
-                                      className={selectedProducts.has(product.id) ? 'bg-blue-50 border-blue-200' : ''}
+                                      className={cart?.items.has(product.id) ? 'bg-sky-50/70' : ''}
                                     >
-                                      <TableCell>
-                                        <div className="flex items-center gap-3 relative z-10">
-                                          {/* Teklif için checkbox */}
-                                          <input
-                                            type="checkbox"
-                                            className="rounded border-gray-300 relative z-20 flex-shrink-0"
-                                            checked={selectedProducts.has(product.id)}
-                                            onChange={(e) => {
-                                              if (e.target.checked) {
-                                                toggleProductSelection(product.id, 1);
-                                              } else {
-                                                toggleProductSelection(product.id, 0);
-                                              }
-                                            }}
-                                            title="Teklif için seç"
-                                          />
-                                          {selectedProducts.has(product.id) && (
-                                            <input
-                                              type="number"
-                                              min="1"
-                                              value={selectedProducts.get(product.id) || 1}
-                                              onChange={(e) => {
-                                                const quantity = parseInt(e.target.value) || 1;
-                                                toggleProductSelection(product.id, quantity);
-                                              }}
-                                              className="w-10 px-1 py-0.5 text-xs border rounded relative z-30 bg-white flex-shrink-0"
-                                              placeholder="1"
-                                            />
-                                          )}
-                                        </div>
+                                      <TableCell className="w-[104px]">
+                                        <CartAddButton product={product} />
                                       </TableCell>
                                       <TableCell className="font-medium">
                                         {isEditing ? (
@@ -9217,6 +9102,11 @@ function App() {
                   </div>
                 </CardContent>
               </Card>
+              <div className="xl:sticky xl:top-4">
+                <CartPanel imgOf={imgOf} showCost={showDiscountedPrices} customerNames={cartCustomerNames}
+                  onCreated={onCartQuoteCreated} onOpenEditor={openCartInEditor} />
+              </div>
+            </div>
             </TabsContent>
                            {/* Quotes Tab - Redesigned to be high-productivity and single-screen */}
           <TabsContent value="quotes" className="space-y-6">
@@ -11704,95 +11594,6 @@ function App() {
 
       <LinkDialog product={linkingProduct} api={API} companies={companies} onClose={() => setLinkingProduct(null)} onLinked={() => loadProducts(1, true)} />
 
-      {/* Hızlı Teklif Oluşturma Dialog'u */}
-      <Dialog open={showQuickQuoteDialog} onOpenChange={setShowQuickQuoteDialog}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FileText className="w-5 h-5 text-blue-600" />
-              Hızlı Teklif Oluştur
-            </DialogTitle>
-            <DialogDescription>
-              {selectedProducts.size} seçili ürün için teklif oluşturuluyor
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="py-4">
-            <div className="space-y-4">
-              {/* Müşteri Adı */}
-              <div>
-                <Label htmlFor="customer-name">Müşteri Adı *</Label>
-                <Input
-                  id="customer-name"
-                  placeholder="Örn: Mehmet Yılmaz"
-                  value={quickQuoteCustomerName}
-                  onChange={(e) => setQuickQuoteCustomerName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && quickQuoteCustomerName.trim()) {
-                      createQuickQuote();
-                    }
-                  }}
-                  className="mt-1"
-                  autoFocus
-                />
-              </div>
-              
-              {/* Teklif Notları */}
-              <div>
-                <Label htmlFor="quote-notes">Notlar (Opsiyonel)</Label>
-                <textarea
-                  id="quote-notes"
-                  className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 mt-1"
-                  value={quickQuoteNotes}
-                  onChange={(e) => setQuickQuoteNotes(e.target.value)}
-                  placeholder="Teklif ile ilgili notlar..."
-                />
-              </div>
-
-              {/* Seçili Ürün Özeti */}
-              <div className="bg-slate-50 rounded-lg p-3">
-                <div className="text-sm font-medium text-slate-700 mb-2">Seçili Ürün Özeti:</div>
-                <div className="space-y-1 max-h-32 overflow-y-auto">
-                  {getSelectedProductsData().slice(0, 3).map((product, index) => (
-                    <div key={product.id} className="text-xs text-slate-600 flex justify-between">
-                      <span className="truncate">{product.name}</span>
-                      <span>₺{formatPrice(product.list_price_try || 0)}</span>
-                    </div>
-                  ))}
-                  {selectedProducts.size > 3 && (
-                    <div className="text-xs text-slate-500 italic">
-                      ... ve {selectedProducts.size - 3} ürün daha
-                    </div>
-                  )}
-                </div>
-                <div className="mt-2 pt-2 border-t text-sm font-medium">
-                  Toplam: ₺{formatPrice(calculateQuoteTotals.totalListPrice)}
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          <DialogFooter>
-            <Button 
-              variant="outline" 
-              onClick={() => {
-                setShowQuickQuoteDialog(false);
-                setQuickQuoteCustomerName('');
-              }}
-            >
-              İptal
-            </Button>
-            <Button 
-              onClick={createQuickQuote}
-              disabled={!quickQuoteCustomerName.trim()}
-              className="bg-blue-600 hover:bg-blue-700"
-            >
-              <FileText className="w-4 h-4 mr-2" />
-              Teklif Oluştur
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
       
       {/* Package Create/Edit Dialog */}
       <Dialog open={showPackageDialog} onOpenChange={setShowPackageDialog}>
@@ -12902,4 +12703,13 @@ function App() {
     </div>
   );
 }
+// Teklif sepeti mobil ile ortak (sunucuda eşitlenir); sağlayıcı tüm masaüstü uygulamayı sarar
+function App() {
+  return (
+    <CartProvider api={cartApi} storage={mobileCache}>
+      <AppInner />
+    </CartProvider>
+  );
+}
+
 export default App;
