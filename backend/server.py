@@ -8887,7 +8887,7 @@ async def save_panel_specs(product_id: str, specs: PanelSpecsPayload):
     return {"success": True}
 
 
-MPPT_REAL_FACTOR = 0.80   # Türkiye yazı, karavan çatısında gerçekçi tepe güç / etiket gücü
+MPPT_REAL_FACTOR = 0.80   # Türkiye yazı, karavan üstüne düz montajda gerçekçi tepe güç / etiket gücü
 MPPT_EFFICIENCY = 0.97
 MPPT_STD_AMPS = (10, 15, 20, 30, 40, 50, 60, 70, 80, 100)
 
@@ -8914,8 +8914,8 @@ async def mppt_recommend(req: MpptRecommendRequest):
     # Soğukta Voc artışı (~%0.35/°C, 25°C referans) — MPPT max PV gerilimi bunu aşmalı
     voc_cold = round(voc_arr * (1 + 0.0035 * (25 - req.min_temp_c)), 2)
     # Şarj akımı = PV gücü / ŞARJ gerilimi (12V akü ~13.8V'ta şarj olur, 12 değil).
-    # Teorik: etiket (STC 1000 W/m², 25°C). Gerçekçi (Türkiye, karavan çatısı): sıcak hücre (60-65°C → ~%13-15),
-    # yatık açı/toz/kablo → tepe güç etiketin ~%80'i; MPPT verimi ~%97. Cihaz gerçekçi tepeye göre seçilir;
+    # Teorik: etiket (STC 1000 W/m², 25°C). Gerçekçi (Türkiye, karavan üstüne düz montaj): sıcak hücre (60-65°C → ~%13-15),
+    # düz montaj/toz/kablo → tepe güç etiketin ~%80'i; MPPT verimi ~%97. Cihaz gerçekçi tepeye göre seçilir;
     # nadir serin/tam güneşli anlarda kısa kırpma (clipping) kabul edilir — sektör pratiği (ör. 615 W → 40 A).
     charge_v = bv * 1.15
     theoretical_a = round(total_watt / charge_v, 1)
@@ -8946,7 +8946,7 @@ async def mppt_recommend(req: MpptRecommendRequest):
         "Verilen panel/dizi verilerine göre uygun MPPT'yi öner. Voc (özellikle SOĞUKTA artan voc_soguk) "
         "cihazın izin verilen maksimum PV gerilimini ASLA aşmamalı; cihazın anma akımı (A) hesaplanan şarj "
         "akımını karşılamalı (bir üst standart değere yuvarla: 10/15/20/30/40/50/60/70/80/100 A). "
-        "hesaplanan_sarj_akimi_a GERÇEKÇİ tepe akımdır (Türkiye koşulları: sıcak hücre, yatık montaj; etiket gücünün ~%80'i, "
+        "hesaplanan_sarj_akimi_a GERÇEKÇİ tepe akımdır (Türkiye koşulları, karavan: sıcak hücre, düz montaj; etiket gücünün ~%80'i, "
         "şarj gerilimi 12V akü için ~13.8V); teorik_sarj_akimi_a etiket değeridir. Cihazı gerçekçi akıma göre seç; "
         "nadir anlarda kısa kırpma (clipping) normaldir, bunu uyarı olarak değil bilgi olarak belirt. "
         "Voc/Isc verilmemişse panel watt ve isimden tipik kristal panel değerlerini TAHMİN et ve tahmin olduğunu belirt. "
@@ -9009,7 +9009,7 @@ async def mppt_recommend(req: MpptRecommendRequest):
     _tr = lambda x: f"{x:g}".replace(".", ",")
     ai["ozet"] = (f"{std_v}V/{std_amp}A sınıfı bir MPPT yeterli: {count} × {_tr(p.watt)} W = {_tr(total_watt)} W panel, "
                   f"12V sistemde öğlen en fazla yaklaşık {_tr(charge_a)} A şarj akımı verir.")
-    ai["aciklama"] = (f"Etiket değeriyle hesap {_tr(theoretical_a)} A çıkar; ancak Türkiye yazında çatıdaki panel ısınır ve yatık durur, "
+    ai["aciklama"] = (f"Etiket değeriyle hesap {_tr(theoretical_a)} A çıkar; ancak Türkiye yazında karavanın üstündeki panel ısınır ve güneşe dik değil düz durur, "
                       f"tepe güç etiketin yaklaşık %{int(MPPT_REAL_FACTOR * 100)}'i olur. {std_amp} A cihaz bunu karşılar; "
                       f"nadir serin ve tam güneşli anlarda kısa süreli kırpma (clipping) olabilir, bu normaldir. "
                       f"Soğukta seri bağlı dizinin gerilimi en fazla ~{_tr(voc_cold_series)} V olur, {std_v} V sınıfı bunu güvenle karşılar.")

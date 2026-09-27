@@ -269,6 +269,7 @@ export function MpptSheet({ open, onClose }) {
             </div>
           </div>
           {r.ozet && <div className={card + " text-[14px] leading-relaxed"} style={{ color: "var(--m-ink-2)" }}>{r.ozet}</div>}
+          {r.aciklama && <div className="px-1 text-[12px] leading-relaxed" style={{ color: "var(--m-ink-3, #64748b)" }}>{r.aciklama}</div>}
           {(r.uyarilar || []).length > 0 && (
             <div className="space-y-1.5">{r.uyarilar.map((w, i) => <div key={i} className="rounded-xl bg-amber-50 px-3 py-2 text-[13px] text-amber-900">{w}</div>)}</div>
           )}
