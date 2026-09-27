@@ -9004,6 +9004,15 @@ async def mppt_recommend(req: MpptRecommendRequest):
         return bool(mm) and (int(mm.group(1)), int(mm.group(2))) in real_victron
     mppt["modeller"] = [m for m in (mppt.get("modeller") or []) if isinstance(m, dict) and _real(m)]
     ai["onerilen_mppt"] = mppt
+    # Özet/açıklama hesaplanan değerlerden yazılır (AI serbest metni model uyduruyordu); kırpma notu uyarı değil bilgi
+    warns = [w for w in warns if not re.search(r"kırp|clipping", str(w), re.I)]
+    _tr = lambda x: f"{x:g}".replace(".", ",")
+    ai["ozet"] = (f"{std_v}V/{std_amp}A sınıfı bir MPPT yeterli: {count} × {_tr(p.watt)} W = {_tr(total_watt)} W panel, "
+                  f"12V sistemde öğlen en fazla yaklaşık {_tr(charge_a)} A şarj akımı verir.")
+    ai["aciklama"] = (f"Etiket değeriyle hesap {_tr(theoretical_a)} A çıkar; ancak Türkiye yazında çatıdaki panel ısınır ve yatık durur, "
+                      f"tepe güç etiketin yaklaşık %{int(MPPT_REAL_FACTOR * 100)}'i olur. {std_amp} A cihaz bunu karşılar; "
+                      f"nadir serin ve tam güneşli anlarda kısa süreli kırpma (clipping) olabilir, bu normaldir. "
+                      f"Soğukta seri bağlı dizinin gerilimi en fazla ~{_tr(voc_cold_series)} V olur, {std_v} V sınıfı bunu güvenle karşılar.")
     for m in (mppt.get("modeller") or []):
         try:
             mv = float(m.get("max_pv_v") or 0)
