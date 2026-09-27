@@ -682,7 +682,6 @@ export default function Services({ go }) {
 
   const filtered = useMemo(() => {
     const s = q.trim().toLocaleLowerCase("tr");
-    const key = (x) => x.arrival_date || x.created_at || "";
     return items
       .filter((x) => {
         if (statusF === "warranty") { if (!warrantyEnd(x)?.active) return false; }
@@ -706,7 +705,8 @@ export default function Services({ go }) {
           const db = b.status !== "delivered" && b.delivery_date ? String(b.delivery_date) : "9999";
           if (da !== db) return da.localeCompare(db);
         }
-        return String(key(b)).localeCompare(String(key(a))); // en yeni üstte
+        // Aksi hâlde sunucu sırası (masaüstünde elle sürüklenen sort_order; yeniler üstte) — sort kararlı
+        return 0;
       });
   }, [items, q, statusF, byDue]);
 

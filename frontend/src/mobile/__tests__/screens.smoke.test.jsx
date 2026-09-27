@@ -52,7 +52,7 @@ jest.mock("../api", () => {
     },
     mppt: { specs: ok({ exists: false }), recommend: ok({ computed: { hesaplanan_sarj_akimi_a: 37.5, toplam_watt: 450, adet: 1, panel_watt: 450 }, recommendation: { onerilen_mppt: { etiket: "100V/40A", secilen_voltaj_v: 100, standart_akim_a: 40 }, uyarilar: [] } }) },
     services: {
-      list: () => Promise.resolve([global.__SERVICE]),
+      list: () => Promise.resolve(global.__SERVICES || [global.__SERVICE]),
       get: () => Promise.resolve(global.__SERVICE),
       update: (id, p) => { calls.svcUpdate.push(p); return Promise.resolve({ ...global.__SERVICE, ...p }); },
       create: (p) => { calls.svcCreate.push(p); return Promise.resolve({ id: "s2", ...p }); },
@@ -93,6 +93,17 @@ beforeEach(() => {
   root = createRoot(container);
 });
 afterEach(() => { act(() => root.unmount()); container.remove(); });
+
+test("servis listesi masaüstündeki elle sırayı (sunucu sırası) korur, tarihe göre dizmez", async () => {
+  global.__SERVICES = [
+    { id: "a", customer_name: "Eski Tarihli Üstte", arrival_date: "2026-01-01", items: [] },
+    { id: "b", customer_name: "Yeni Tarihli Altta", arrival_date: "2026-09-20", items: [] },
+  ];
+  await render(<Services />);
+  const t = text();
+  expect(t.indexOf("Eski Tarihli Üstte")).toBeLessThan(t.indexOf("Yeni Tarihli Altta"));
+  delete global.__SERVICES;
+});
 
 test("servis listesi net tutarı, detay iskonto + göz arkasında kâr", async () => {
   await render(<Services />);
