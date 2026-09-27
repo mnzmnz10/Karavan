@@ -3599,20 +3599,6 @@ function AppInner() {
 
   // ---- Teklif sepeti (mobil ile ortak) ----
   const cart = useCart();
-  const cartCustomerNames = useMemo(() => {
-    const set = new Set();
-    (customers || []).forEach((c) => c?.name && set.add(c.name));
-    (quotes || []).forEach((q) => q?.customer_name && set.add(q.customer_name));
-    return Array.from(set).sort((a, b) => a.localeCompare(b, 'tr'));
-  }, [customers, quotes]);
-
-  const onCartQuoteCreated = (doc) => {
-    fetchQuotes();
-    toast.success(`"${doc?.name || 'Teklif'}" teklifi oluşturuldu`, {
-      action: { label: 'Teklifleri aç', onClick: () => { setActiveTab('quotes'); setQuoteView('grid'); } },
-    });
-  };
-
   // Sepeti A4 önizlemeli editöre aktar (özel fiyat editörde ürün para biriminde tutulur; sepette TL)
   const openCartInEditor = () => {
     if (!cart) return;
@@ -3652,7 +3638,7 @@ function AppInner() {
     cart.clear();
     setActiveTab('quotes');
     setQuoteView('editor');
-    toast.success('Sepet A4 editöre aktarıldı');
+    toast.success('Sepet teklif editörüne aktarıldı — iskonto, işçilik ve notu buradan ayarlayın');
   };
 
   // Kayıtlı teklifi düzenleme alanına yükle (kart/buton ortak) + editör moduna geç
@@ -8157,8 +8143,7 @@ function AppInner() {
 
           {/* Products Tab */}
           <TabsContent value="products" className="space-y-6">
-            <div className="space-y-4 xl:grid xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start xl:gap-4 xl:space-y-0">
-            <Card className="min-w-0">
+            <Card>
               <CardContent>
                 {/* Toplu İşlemler Bar */}
                 {selectedProductsForBulk.size > 0 && (
@@ -9102,11 +9087,7 @@ function AppInner() {
                   </div>
                 </CardContent>
               </Card>
-              <div className="xl:sticky xl:top-4">
-                <CartPanel imgOf={imgOf} showCost={showDiscountedPrices} customerNames={cartCustomerNames}
-                  onCreated={onCartQuoteCreated} onOpenEditor={openCartInEditor} />
-              </div>
-            </div>
+              <CartPanel imgOf={imgOf} onCreate={openCartInEditor} />
             </TabsContent>
                            {/* Quotes Tab - Redesigned to be high-productivity and single-screen */}
           <TabsContent value="quotes" className="space-y-6">
