@@ -21,6 +21,7 @@ import BatteryTest from './components/BatteryTest';
 import { SupplierBadge, BestCost, LinkDialog, SupplierCompanies, SupplierPrices, SupplierEdit, isGrouped } from './components/SupplierLink';
 import InvoiceImport from './components/InvoiceImport';
 import { keepCaret } from './lib/caret';
+import { customerProfile } from './lib/customerProfile';
 import CartPanel, { CartAddButton } from './components/CartPanel';
 import { CartProvider, useCart } from './cart/CartContext';
 import { rateOf, cartTotals } from './cart/cartLogic';
@@ -2124,11 +2125,15 @@ function AppInner() {
   };
 
   // Müşteri teklifi onayladığında teklifi servise aktar (servis dialogunu önceden doldurup açar)
-  const sendQuoteToService = (quote) => {
+  const sendQuoteToService = async (quote) => {
     let customerName = '';
+    let customerPhone = '';
     if (quote?.customer_id) {
       const c = customers.find((c) => c.id === quote.customer_id);
-      if (c) customerName = c.name || '';
+      if (c) {
+        customerName = [c.name, c.surname].filter(Boolean).join(' ');
+        customerPhone = c.phone || '';
+      }
     }
     // Kalemler LİSTE fiyatıyla aktarılır (indirim kalem kalem UYGULANMAZ — yuvarlama net'i bozuyordu).
     // İndirim tek kalem olarak servis indirimine yazılır → servis net = teklif net (TAM).
@@ -2168,10 +2173,22 @@ function AppInner() {
     const net = parseFloat(quote?.total_net_price);
     const discountTL = (!isNaN(net) && grossItems > net) ? Math.round(grossItems - net) : 0;
     const baseNote = quote?.notes ? `${quote.notes}\n\n` : '';
+    // Telefon/plaka/araç: müşterinin (aynı ad) en yeni servis kaydından; servis listesi yüklenmemişse sunucudan ara
+    const custName = customerName || quote?.customer_name || quote?.name || '';
+    let svcPool = services;
+    if (custName && !services.some((x) => (x.customer_name || '').trim().toLocaleLowerCase('tr') === custName.trim().toLocaleLowerCase('tr'))) {
+      try { svcPool = (await axios.get(`${API}/services`, { params: { search: custName.trim() } })).data || []; } catch { svcPool = services; }
+    }
+    const prof = customerProfile(custName, svcPool, contracts);
     setServiceEditingId(null);
     setServiceForm({
       ...emptyServiceForm,
-      customer_name: customerName || quote?.name || '',
+      customer_name: customerName || quote?.customer_name || quote?.name || '',
+      phone: customerPhone || prof.phone,
+      plate: prof.plate,
+      vehicle_brand: prof.vehicle_brand,
+      vehicle_model: prof.vehicle_model,
+      is_trailer: prof.is_trailer,
       items: quoteItems,
       discount_amount: discountTL > 0 ? String(discountTL) : '',
       discount_percent: '',

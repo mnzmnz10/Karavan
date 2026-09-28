@@ -8,6 +8,7 @@ import { toast } from "../toast";
 import { quotes as quotesApi, docUrl, openDoc } from "../api";
 import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, RefreshScroll, OfflineBar, waNumber, fmtDate, IconBadge } from "../ui";
 import { cache, customerNames, phoneForCustomer } from "../cache";
+import { customerProfile } from "../../lib/customerProfile";
 import { useCart } from "../Cart";
 
 
@@ -272,6 +273,7 @@ function quoteToServiceInit(q, byId) {
     fromQuote: true,
     key: `q-${q.id}-${Date.now()}`,
     customer_name: q.customer_name || q.name || "",
+    ...customerProfile(q.customer_name || q.name, cache.get("services") || cache.get("dashboard")?.services || [], cache.get("contracts") || cache.get("dashboard")?.contracts || []),
     items,
     discount_amount: disc,
     notes: `${q.notes ? `${q.notes}\n\n` : ""}[Teklif: ${q.name || ""}]`,
