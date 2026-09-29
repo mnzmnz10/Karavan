@@ -107,7 +107,7 @@ jobs:
             -allowProvisioningUpdates \
             -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_${KID}.p8" \
             -authenticationKeyID "$KID" -authenticationKeyIssuerID "$ISS" \
-            DEVELOPMENT_TEAM="$TEAM" CODE_SIGN_STYLE=Automatic \
+            DEVELOPMENT_TEAM="$TEAM" CODE_SIGN_STYLE=Automatic CODE_SIGN_IDENTITY="Apple Distribution" \
             CURRENT_PROJECT_VERSION="${{ github.run_number }}"
 
       - name: Export + upload to TestFlight
