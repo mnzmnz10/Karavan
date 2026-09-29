@@ -63,16 +63,21 @@ jobs:
       - name: App Store Connect API key
         env:
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          TEAM_RAW: ${{ secrets.APPLE_TEAM_ID }}
+          KID_RAW: ${{ secrets.ASC_KEY_ID }}
+          ISS_RAW: ${{ secrets.ASC_ISSUER_ID }}
         run: |
+          # Kimliklerde yalnız harf/rakam(/tire) kalsın: yapıştırırken gelen [ ] " ' ve boşluklar atılır
+          TEAM=$(printf '%s' "$TEAM_RAW" | tr -cd 'A-Za-z0-9')
+          KID=$(printf '%s' "$KID_RAW" | tr -cd 'A-Za-z0-9')
+          ISS=$(printf '%s' "$ISS_RAW" | tr -cd 'A-Za-z0-9-')
+          for v in "$TEAM" "$KID" "$ISS"; do echo "::add-mask::$v"; done
+          echo "Cleaned lengths: team=${#TEAM} key=${#KID} issuer=${#ISS} (expected 10/10/36)"
+          { echo "TEAM=$TEAM"; echo "KID=$KID"; echo "ISS=$ISS"; } >> "$GITHUB_ENV"
           mkdir -p "$RUNNER_TEMP/keys"
-          printf '%s\n' "$ASC_KEY_P8" > "$RUNNER_TEMP/keys/AuthKey_${ASC_KEY_ID}.p8"
+          printf '%s\n' "$ASC_KEY_P8" > "$RUNNER_TEMP/keys/AuthKey_${KID}.p8"
 
       - name: Archive
-        env:
-          TEAM: ${{ secrets.APPLE_TEAM_ID }}
-          KID: ${{ secrets.ASC_KEY_ID }}
-          ISS: ${{ secrets.ASC_ISSUER_ID }}
         run: |
           xcodebuild archive \
             -project ios/App/App.xcodeproj -scheme App -configuration Release \
@@ -85,10 +90,6 @@ jobs:
             CURRENT_PROJECT_VERSION="${{ github.run_number }}"
 
       - name: Export + upload to TestFlight
-        env:
-          TEAM: ${{ secrets.APPLE_TEAM_ID }}
-          KID: ${{ secrets.ASC_KEY_ID }}
-          ISS: ${{ secrets.ASC_ISSUER_ID }}
         run: |
           cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
