@@ -39,7 +39,7 @@ karavan,teklif,servis,sözleşme,ürün,fiyat,katalog,tahsilat,mppt,akü,işletm
 - **Pazarlama URL'si (Marketing URL):** boş bırakılabilir
 
 **Ekran görüntüleri** (bu klasörde, sırayla yükle):
-- iPhone 6.9" Display → `iphone-6.9/1…5` (1320 × 2868)
+- iPhone 6.5" Display → `iphone-6.5/1…5` (1284 × 2778)
 - iPad 13" Display → `ipad-13/1…5` (2064 × 2752)
 
 **Build:** TestFlight'taki en son build (ios-10).
