@@ -47,6 +47,19 @@ jobs:
       - name: Capacitor sync (iOS)
         run: npx cap sync ios
 
+      - name: Check secrets (lengths only, values never printed)
+        env:
+          TEAM: ${{ secrets.APPLE_TEAM_ID }}
+          KID: ${{ secrets.ASC_KEY_ID }}
+          ISS: ${{ secrets.ASC_ISSUER_ID }}
+          P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          echo "APPLE_TEAM_ID length: ${#TEAM} (expected 10)"
+          echo "ASC_KEY_ID length: ${#KID} (expected 10)"
+          echo "ASC_ISSUER_ID length: ${#ISS} (expected 36)"
+          echo "ASC_KEY_P8 length: ${#P8}; begins with PEM header: $([[ "$P8" == -----BEGIN* ]] && echo yes || echo no)"
+          [ -n "$TEAM" ] && [ -n "$KID" ] && [ -n "$ISS" ] && [ -n "$P8" ] || { echo "::error::A required secret is empty"; exit 1; }
+
       - name: App Store Connect API key
         env:
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
