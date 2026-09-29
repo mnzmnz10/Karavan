@@ -12,7 +12,7 @@ jest.mock("@capgo/capacitor-native-biometric", () => ({
   BiometryType: { TOUCH_ID: 1, FACE_ID: 2, FINGERPRINT: 3 },
   NativeBiometric: {
     isAvailable: () => Promise.resolve({ isAvailable: true, biometryType: 2 }),
-    isCredentialsSaved: () => Promise.resolve({ isSaved: mockBio.saved }),
+    isCredentialsSaved: () => { mockBio.checks = (mockBio.checks || 0) + 1; return Promise.resolve({ isSaved: mockBio.saved }); },
     setCredentials: (o) => { mockBio.set.push(o); mockBio.saved = true; return Promise.resolve(); },
     getSecureCredentials: () => Promise.resolve(mockBio.cred),
     deleteCredentials: () => { mockBio.deleted++; mockBio.saved = false; return Promise.resolve(); },
@@ -39,7 +39,7 @@ const setVal = async (input, v) => {
 };
 
 beforeEach(() => {
-  Object.assign(mockBio, { saved: false, set: [], deleted: 0 });
+  Object.assign(mockBio, { saved: false, set: [], deleted: 0, checks: 0 });
   Object.assign(mockLogin, { calls: [], fail401: false });
   localStorage.clear();
   container = document.createElement("div"); document.body.appendChild(container); root = createRoot(container);
@@ -81,4 +81,18 @@ test("kayıtlı kimlikle Face ID girişi; 401'de kayıt silinir", async () => {
   await act(async () => { btn("Face ID ile giriş").dispatchEvent(new MouseEvent("click", { bubbles: true })); }); await flush();
   expect(mockBio.deleted).toBe(1);
   expect(btn("Face ID ile giriş")).toBeFalsy();
+});
+
+test("kayıt durumu yerel işaretten okunur: Anahtar Zinciri'ne (Face ID istemi) tekrar tekrar sorulmaz", async () => {
+  const { bioSaved, bioSave, bioDelete } = require("../biometric");
+  mockBio.saved = true;
+  expect(await bioSaved()).toBe(true);   // işaret yok (eski kurulum) → bir kez sorulur
+  expect(await bioSaved()).toBe(true);
+  expect(await bioSaved()).toBe(true);
+  expect(mockBio.checks).toBe(1);
+  await bioDelete();
+  expect(await bioSaved()).toBe(false);
+  await bioSave("u", "p");
+  expect(await bioSaved()).toBe(true);
+  expect(mockBio.checks).toBe(1);        // kaydet/sil sonrası da sorulmadı
 });
