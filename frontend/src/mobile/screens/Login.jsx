@@ -85,7 +85,7 @@ export default function Login({ onDone }) {
           autoComplete="username"
           autoCapitalize="none"
           autoCorrect="off"
-          className="w-full rounded-2xl bg-white/95 px-4 py-3.5 text-[16px] text-slate-800 placeholder:text-slate-400"
+          className="w-full rounded-2xl bg-white/95 px-4 py-3.5 text-[16px] text-[#1e293b] placeholder:text-[#94a3b8]"
         />
         <div className="relative">
           <input
@@ -95,16 +95,16 @@ export default function Login({ onDone }) {
             placeholder="Şifre"
             autoComplete="current-password"
             autoFocus={!!u}
-            className="w-full rounded-2xl bg-white/95 px-4 py-3.5 pr-12 text-[16px] text-slate-800 placeholder:text-slate-400"
+            className="w-full rounded-2xl bg-white/95 px-4 py-3.5 pr-12 text-[16px] text-[#1e293b] placeholder:text-[#94a3b8]"
           />
-          <button type="button" onClick={() => setShow((v) => !v)} className="m-press absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" aria-label={show ? "Şifreyi gizle" : "Şifreyi göster"}>
+          <button type="button" onClick={() => setShow((v) => !v)} className="m-press absolute right-3 top-1/2 -translate-y-1/2 text-[#94a3b8]" aria-label={show ? "Şifreyi gizle" : "Şifreyi göster"}>
             {show ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
           </button>
         </div>
         <button
           type="submit"
           disabled={busy}
-          className="m-press flex w-full items-center justify-center gap-2 rounded-2xl bg-white py-3.5 text-[16px] font-bold text-[#143a5c] disabled:opacity-60"
+          className="m-press flex w-full items-center justify-center gap-2 rounded-2xl bg-[#ffffff] py-3.5 text-[16px] font-bold text-[#143a5c] disabled:opacity-60"
         >
           {busy && <Loader2 className="h-5 w-5 animate-spin" />}
           {busy ? "Giriş yapılıyor…" : "Giriş Yap"}
