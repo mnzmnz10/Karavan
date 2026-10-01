@@ -11,7 +11,7 @@ import { Badge } from './components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from './components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select';
-import { Trash2, Upload, RefreshCw, Plus, TrendingUp, Building2, Package, DollarSign, Edit, Save, X, FileText, Check, Archive, Download, Wrench, Eye, EyeOff, AlertTriangle, Tags, Copy, Pin, StickyNote, Users, Star, Search, Phone, Mail, MapPin, Calculator, Battery, Loader2, ScanSearch, LogOut, PlusCircle, MinusCircle, History, Settings, ChevronUp, ChevronDown, GripVertical, Cable, Folder, FolderOpen, CheckCircle2, Bell, Link2 } from 'lucide-react';
+import { Trash2, Upload, RefreshCw, Plus, TrendingUp, Building2, Package, DollarSign, Edit, Save, X, FileText, Check, Archive, Download, Wrench, Eye, EyeOff, AlertTriangle, Tags, Copy, Pin, StickyNote, Users, Star, Search, Phone, Mail, MapPin, Calculator, Battery, Loader2, ScanSearch, LogOut, PlusCircle, MinusCircle, History, Settings, ChevronUp, ChevronDown, GripVertical, Cable, Folder, FolderOpen, CheckCircle2, Bell, Link2, ChevronLeft, ChevronRight } from 'lucide-react';
 import KabloSemasiSection from '@/features/wiringrf/WiringRfSection';
 import { toast } from 'sonner';
 import { Toaster } from './components/ui/sonner';
@@ -23,6 +23,7 @@ import InvoiceImport from './components/InvoiceImport';
 import { keepCaret } from './lib/caret';
 import { customerProfile } from './lib/customerProfile';
 import CartPanel, { CartAddButton } from './components/CartPanel';
+import BulletTextarea from './components/BulletTextarea';
 import { CartProvider, useCart } from './cart/CartContext';
 import { rateOf, cartTotals } from './cart/cartLogic';
 import { cart as cartApi } from './mobile/api';
@@ -1983,6 +1984,13 @@ function AppInner() {
     }
   };
   const removeServicePhoto = (idx) => setServiceForm((f) => ({ ...f, photos: (f.photos || []).filter((_, i) => i !== idx) }));
+  const moveServicePhoto = (idx, d) => setServiceForm((f) => {
+    const arr = [...(f.photos || [])];
+    const j = idx + d;
+    if (j < 0 || j >= arr.length) return f;
+    [arr[idx], arr[j]] = [arr[j], arr[idx]];
+    return { ...f, photos: arr };
+  });
 
   const openEditServiceDialog = async (svcArg) => {
     // Liste fotoğrafsız gelir (hız) — düzenleme açılınca tam kaydı (foto dahil) çek
@@ -10908,6 +10916,17 @@ function AppInner() {
                               <button type="button" onClick={() => removeServicePhoto(idx)} className="absolute top-1 right-1 bg-rose-600 text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity" title="Kaldır">
                                 <X className="w-3 h-3" />
                               </button>
+                              <span className="absolute top-1 left-1 bg-black/55 text-white rounded-full min-w-5 h-5 px-1 flex items-center justify-center text-[10px] font-bold">{idx + 1}</span>
+                              {(serviceForm.photos || []).length > 1 && (
+                                <div className="absolute inset-x-1 bottom-1 flex justify-between opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <button type="button" onClick={() => moveServicePhoto(idx, -1)} disabled={idx === 0} className="bg-black/60 text-white rounded-full w-6 h-6 flex items-center justify-center disabled:invisible" title="Öne al">
+                                    <ChevronLeft className="w-4 h-4" />
+                                  </button>
+                                  <button type="button" onClick={() => moveServicePhoto(idx, 1)} disabled={idx === (serviceForm.photos || []).length - 1} className="bg-black/60 text-white rounded-full w-6 h-6 flex items-center justify-center disabled:invisible" title="Sona al">
+                                    <ChevronRight className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -11051,12 +11070,12 @@ function AppInner() {
                       <div className="mb-3 flex items-center gap-2 text-[11px] font-black uppercase tracking-wider text-emerald-700">
                         <FileText className="w-3.5 h-3.5" /> Notlar
                       </div>
-                      <textarea
+                      <BulletTextarea
                         value={serviceForm.notes}
-                        onChange={(e) => setServiceForm({ ...serviceForm, notes: e.target.value })}
-                        rows={3}
-                        placeholder="Ek notlar ..."
-                        className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        onChange={(v) => setServiceForm((f) => ({ ...f, notes: v }))}
+                        rows={6}
+                        placeholder="Ek notlar ... (her satır • ile başlar)"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm leading-relaxed resize-y focus:outline-none focus:ring-2 focus:ring-emerald-500"
                       />
                     </div>
 

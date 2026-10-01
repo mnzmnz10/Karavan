@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "../toast";
-import { Camera, Plus, Trash2, Loader2, X, Eye, EyeOff, Search } from "lucide-react";
+import { Camera, Plus, Trash2, Loader2, X, Eye, EyeOff, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { useCatalog, catRate } from "../catalog";
 import { services as servicesApi } from "../api";
 import { cache } from "../cache";
 import { Sheet, money, todayISO } from "../ui";
 import { keepCaret } from "../../lib/caret";
+import BulletTextarea from "../../components/BulletTextarea";
 
 const DRAFT_KEY = "service_draft";
 
@@ -155,7 +156,16 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
     catalog.forEach((p) => add(p.name));
     return Array.from(seen.values()).slice(0, 600);
   }, [catalog]);
-  const addItem = () => set("items", [...f.items, { name: "", qty: 1, unit_price: "", unit_cost: "", currency: "TRY" }]);
+  const [focusItem, setFocusItem] = useState(null); // yeni elle kalemde ad alanına odaklan
+  const addItem = () => { setFocusItem(f.items.length); set("items", [...f.items, { name: "", qty: 1, unit_price: "", unit_cost: "", currency: "TRY" }]); };
+  const [notesOpen, setNotesOpen] = useState(false);
+  const movePhoto = (i, d) => {
+    const j = i + d;
+    if (j < 0 || j >= f.photos.length) return;
+    const arr = [...f.photos];
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+    set("photos", arr);
+  };
   // Kâr = satış − maliyet. Maliyet boşsa ürünün indirimli fiyatından (prodCost) türet, o da yoksa kâr 0.
   const lineTRY = (it, field) => {
     const q = parseFloat(it.qty) || 1;
@@ -333,7 +343,7 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
         {f.items.map((it, i) => (
           <div key={i} className="border-b border-slate-100 px-3 py-2 last:border-0">
             <div className="flex items-center gap-2">
-              <input className="min-w-0 flex-1 bg-transparent text-[14px] placeholder:text-slate-300" value={it.name} onChange={(e) => updItem(i, "name", e.target.value)} placeholder="Parça/işlem" list="mz-item-names" />
+              <input className="min-w-0 flex-1 rounded-lg bg-slate-100 px-2 py-1.5 text-[14px] text-slate-800 placeholder:text-slate-400" value={it.name} onChange={(e) => updItem(i, "name", e.target.value)} placeholder="Ürün / işlem adı" list="mz-item-names" autoFocus={i === focusItem} />
               <button onClick={() => delItem(i)} className="m-press shrink-0 text-rose-400"><Trash2 className="h-4 w-4" /></button>
             </div>
             <div className="mt-1 flex items-center gap-2">
@@ -434,6 +444,19 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
                   className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/55 text-white">
                   <X className="h-3.5 w-3.5" />
                 </button>
+                <span className="absolute left-1 top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-black/55 px-1 text-[11px] font-bold text-white">{i + 1}</span>
+                {f.photos.length > 1 && (
+                  <div className="absolute inset-x-1 bottom-1 flex justify-between">
+                    <button onClick={() => movePhoto(i, -1)} disabled={i === 0} aria-label="Öne al"
+                      className="flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-white disabled:opacity-0">
+                      <ChevronLeft className="h-4 w-4" />
+                    </button>
+                    <button onClick={() => movePhoto(i, 1)} disabled={i === f.photos.length - 1} aria-label="Sona al"
+                      className="flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-white disabled:opacity-0">
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
             <button onClick={() => fileRef.current?.click()} disabled={imgBusy}
@@ -453,9 +476,22 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
       </Group>
 
       <Group title="Notlar">
-        <textarea rows={2} className="w-full resize-none bg-transparent px-4 py-3 text-[15px] placeholder:text-slate-300"
-          value={f.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Ek not…" />
+        <button onClick={() => setNotesOpen(true)} className="m-press block w-full px-4 py-3 text-left">
+          {f.notes
+            ? <span className="line-clamp-6 whitespace-pre-wrap text-[15px] leading-relaxed text-slate-800">{f.notes}</span>
+            : <span className="text-[15px] text-slate-400">Not eklemek için dokunun…</span>}
+        </button>
       </Group>
+      <Sheet open={notesOpen} onClose={() => setNotesOpen(false)} title="Notlar" full>
+        <div className="flex h-full flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[12px] text-slate-400">Her satır • ile başlar. Boş satırda Enter listeyi bitirir.</span>
+            <button onClick={() => setNotesOpen(false)} className="m-press rounded-full px-3 py-1.5 text-[14px] font-bold text-white" style={{ background: "var(--m-grad)" }}>Tamam</button>
+          </div>
+          <BulletTextarea autoFocus value={f.notes} onChange={(v) => set("notes", v)} placeholder="Ek not…"
+            className="min-h-[45dvh] w-full flex-1 resize-none rounded-2xl bg-white p-4 text-[16px] leading-relaxed text-slate-800 placeholder:text-slate-400" />
+        </div>
+      </Sheet>
 
       <div className="sticky bottom-0 mt-4 pb-2 pt-2">
         <button onClick={save} disabled={busy}

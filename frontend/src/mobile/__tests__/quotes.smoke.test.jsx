@@ -130,7 +130,7 @@ test("servise aktar: form net = teklif net, geliş 0 korunur", async () => {
   const t = text();
   expect(t).toContain("Yeni Servis");
   expect(t).toContain(`₺${money(94070)}`); // brüt yuvarlanmış kalemler (net ≥ brüt → iskonto 0)
-  const inputs = Array.from(document.body.querySelectorAll('input[placeholder="Parça/işlem"]')).map((i) => i.value);
+  const inputs = Array.from(document.body.querySelectorAll('input[placeholder="Ürün / işlem adı"]')).map((i) => i.value);
   expect(inputs).toEqual(["Akü 315Ah", "Montaj seti", "İşçilik"]);
 });
 

@@ -13836,6 +13836,35 @@ class PDFServiceGenerator(PDFContractGenerator):
             story.append(RoundedCard([w_tbl], width=18.0*cm, bg_color=colors.HexColor('#FEF3C7'), border_color=colors.HexColor('#FDE68A'), border_width=0.5, corner_radius=8, padding=0))
             story.append(Spacer(1, 9))
 
+        # ---- Fotoğraflar (notların üstünde, formdaki sırayla, satır başına 3) ----
+        photo_flows = []
+        for src in svc.get("photos") or []:
+            try:
+                if not isinstance(src, str) or not src.startswith("data:image"):
+                    continue
+                raw = base64.b64decode(src.split(",", 1)[1])
+                with PILImage.open(BytesIO(raw)) as im:
+                    iw, ih = im.size
+                box_w, box_h = 5.6*cm, 4.4*cm
+                scale = min(box_w / iw, box_h / ih)
+                photo_flows.append(PDFImage(BytesIO(raw), width=iw * scale, height=ih * scale))
+            except Exception as e:
+                logger.warning(f"Servis PDF fotoğrafı atlandı: {e}")
+        if photo_flows:
+            story.append(Paragraph("<b>FOTOĞRAFLAR</b>", self.note_title_style))
+            story.append(Spacer(1, 4))
+            for r in range(0, len(photo_flows), 3):
+                row = photo_flows[r:r + 3]
+                row += [""] * (3 - len(row))
+                ptbl = PDFTable([row], colWidths=[6.0*cm] * 3, rowHeights=[4.6*cm])
+                ptbl.setStyle(TableStyle([
+                    ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                    ('LEFTPADDING', (0,0), (-1,-1), 2), ('RIGHTPADDING', (0,0), (-1,-1), 2),
+                    ('TOPPADDING', (0,0), (-1,-1), 2), ('BOTTOMPADDING', (0,0), (-1,-1), 2),
+                ]))
+                story.append(ptbl)
+            story.append(Spacer(1, 9))
+
         # ---- Yapılan işlemler / notlar ----
         body_txt = []
         if svc.get("operations"):

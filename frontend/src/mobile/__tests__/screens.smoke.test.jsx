@@ -231,7 +231,7 @@ test("servis formu: katalogdan ekle → satış liste, geliş indirimli", async 
   await render(<ServiceForm open initial={{ id: "s9", customer_name: "X", items: [] }} onClose={() => {}} onSaved={() => {}} prodCost={{}} />);
   await setVal(document.body.querySelector('input[placeholder="Katalogdan ürün ekle"]'), "sola");
   await click(btnWith("Solar Panel 450W"));
-  const names = Array.from(document.body.querySelectorAll('input[placeholder="Parça/işlem"]')).map((i) => i.value);
+  const names = Array.from(document.body.querySelectorAll('input[placeholder="Ürün / işlem adı"]')).map((i) => i.value);
   expect(names).toEqual(["Solar Panel 450W"]);
   const api = require("../api");
   await click(btnWith("Kaydet"));
@@ -401,7 +401,7 @@ test("aynı müşteriyle yeni servis: müşteri/araç dolu, kalem boş", async (
   expect(text()).toContain("Yeni Servis");
   expect(document.body.querySelector('input[placeholder="Zorunlu"]').value).toBe("Test Müşteri");
   expect(document.body.querySelector('input[inputmode="tel"]').value).toBe("05551112233");
-  expect(document.body.querySelectorAll('input[placeholder="Parça/işlem"]').length).toBe(0);
+  expect(document.body.querySelectorAll('input[placeholder="Ürün / işlem adı"]').length).toBe(0);
 });
 
 test("servisten kaynak teklife git", async () => {
