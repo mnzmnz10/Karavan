@@ -13914,13 +13914,6 @@ class PDFServiceGenerator(PDFContractGenerator):
             for line in str(svc["operations"]).split("\n"):
                 if line.strip():
                     body_txt.append(Paragraph(upper_tr(line), self.note_text_style))
-        if svc.get("notes"):
-            if body_txt:
-                body_txt.append(Spacer(1, 6))
-            body_txt.append(Paragraph("<b>NOTLAR</b>", self.note_title_style))
-            for line in str(svc["notes"]).split("\n"):
-                if line.strip():
-                    body_txt.append(Paragraph(upper_tr(line), self.note_text_style))
         if body_txt:
             n_tbl = PDFTable([[body_txt]], colWidths=[18.0*cm])
             n_tbl.setStyle(TableStyle([
@@ -13930,6 +13923,30 @@ class PDFServiceGenerator(PDFContractGenerator):
                 ('LEFTPADDING', (0,0), (-1,-1), 12), ('RIGHTPADDING', (0,0), (-1,-1), 12),
             ]))
             story.append(n_tbl)
+            story.append(Spacer(1, 10))
+
+        # ---- Notlar: kalem tablosuyla aynı stil (lacivert başlık, ince çizgiler), madde işaretli, ferah satır ----
+        note_lines = [re.sub(r"^\s*[•·\-*]\s*", "", ln).strip() for ln in str(svc.get("notes") or "").split("\n")]
+        note_lines = [ln for ln in note_lines if ln]
+        if note_lines:
+            note_cell = ParagraphStyle('SvcNoteCell', parent=self.table_cell_style, leading=13.5,
+                                       leftIndent=11, bulletIndent=0, bulletFontName=self.get_font_name(is_bold=True),
+                                       bulletColor=colors.HexColor('#1B3A5C'))
+            note_rows = [[Paragraph("<b>NOTLAR</b>", self.table_header_style)]]
+            for ln in note_lines:
+                safe = ln.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                note_rows.append([Paragraph(safe, note_cell, bulletText="•")])
+            notes_tbl = PDFTable(note_rows, colWidths=[18.0*cm], repeatRows=1)
+            notes_tbl.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1B3A5C')),
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('LINEBELOW', (0,0), (-1,-1), 0.5, colors.HexColor('#CBD5E1')),
+                ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor('#CBD5E1')),
+                ('TOPPADDING', (0,0), (-1,0), 5), ('BOTTOMPADDING', (0,0), (-1,0), 5),
+                ('TOPPADDING', (0,1), (-1,-1), 6), ('BOTTOMPADDING', (0,1), (-1,-1), 6),
+                ('LEFTPADDING', (0,0), (-1,-1), 8), ('RIGHTPADDING', (0,0), (-1,-1), 8),
+            ]))
+            story.append(notes_tbl)
             story.append(Spacer(1, 10))
 
         # ---- İmza ----

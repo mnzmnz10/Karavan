@@ -11307,8 +11307,8 @@ function AppInner() {
                                     <td className="px-2 py-1 text-slate-400 tabular-nums border border-slate-200">{i + 1}</td>
                                     <td className="px-2 py-1 text-slate-700 border border-slate-200">{it.name}</td>
                                     <td className="px-2 py-1 text-center text-slate-500 tabular-nums border border-slate-200">{qty || ''}</td>
-                                    <td className="px-2 py-1 text-right text-slate-500 tabular-nums border border-slate-200">₺ {formatPrice(up)}</td>
-                                    <td className="px-2 py-1 text-right font-semibold text-[#1B3A5C] tabular-nums border border-slate-200">₺ {formatPrice(qty * up)}</td>
+                                    <td className={`px-2 py-1 text-right tabular-nums border border-slate-200 ${it.gift ? 'text-slate-400 line-through' : 'text-slate-500'}`}>₺ {formatPrice(up)}</td>
+                                    <td className="px-2 py-1 text-right font-semibold text-[#1B3A5C] tabular-nums border border-slate-200">{it.gift ? <span className="font-black text-emerald-600">HEDİYE</span> : <>₺ {formatPrice(qty * up)}</>}</td>
                                   </tr>);
                                 })}
                               </tbody>
@@ -11378,14 +11378,25 @@ function AppInner() {
                         </div>
                       )}
 
-                      {s.notes && (
-                        <div className="px-4 sm:px-8 pb-8 bg-[#FBFCFD] space-y-3">
-                          {s.notes && (
-                            <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4 text-sm">
-                              <div className="font-bold text-amber-800 text-xs uppercase tracking-wider mb-1">Notlar</div>
-                              <div className="text-amber-900 whitespace-pre-wrap">{s.notes}</div>
-                            </div>
-                          )}
+                      {s.notes && s.notes.trim() && (
+                        <div className="px-4 sm:px-8 pb-8 bg-white">
+                          <div className="mb-3 flex items-center gap-2 text-[11px] font-black uppercase tracking-wider text-[#1B3A5C]"><FileText className="w-3.5 h-3.5" /> Notlar</div>
+                          <div className="ring-1 ring-slate-300 rounded-lg overflow-hidden">
+                            <table className="w-full border-collapse text-[13px]">
+                              <thead><tr className="bg-[#1B3A5C] text-white text-[11px] uppercase tracking-wider">
+                                <th className="px-3 py-1.5 text-left font-semibold border border-[#2E5A86]">Notlar</th>
+                              </tr></thead>
+                              <tbody>
+                                {s.notes.split('\n').map((l) => l.replace(/^\s*[•·\-*]\s*/, '').trim()).filter(Boolean).map((line, i) => (
+                                  <tr key={i} className="hover:bg-emerald-50/40">
+                                    <td className="px-3 py-2 text-slate-700 leading-relaxed border border-slate-200">
+                                      <div className="flex gap-2.5"><span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-[#1B3A5C]" /><span>{line}</span></div>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
                         </div>
                       )}
                     </div>
