@@ -1,0 +1,70 @@
+# TestFlight iç test grubu kur (tek seferlik / gerektiğinde): uygulamaya "Ben" iç grubunu açar,
+# tüm build'lere erişim verir ve verilen e-postayı (App Store Connect kullanıcısı) gruba ekler.
+# Çalıştırma: Actions → "TestFlight internal group" → Run workflow  (ya da gh workflow run)
+name: TestFlight internal group
+
+on:
+  workflow_dispatch:
+    inputs:
+      bundle_id:
+        description: "Bundle ID"
+        default: "shop.corlukaravan.app.beta"
+        required: true
+      tester_email:
+        description: "Eklenecek App Store Connect kullanıcısının e-postası"
+        required: true
+
+jobs:
+  group:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create group + add tester
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          KID_RAW: ${{ secrets.ASC_KEY_ID }}
+          ISS_RAW: ${{ secrets.ASC_ISSUER_ID }}
+          BID: ${{ inputs.bundle_id }}
+          EMAIL: ${{ inputs.tester_email }}
+        run: |
+          pip install --quiet pyjwt cryptography
+          python3 - <<'PY'
+          import os, time, json, urllib.request, urllib.error, jwt, re
+          kid = re.sub(r"[^A-Za-z0-9]", "", os.environ["KID_RAW"])
+          iss = re.sub(r"[^A-Za-z0-9-]", "", os.environ["ISS_RAW"])
+          tok = jwt.encode({"iss": iss, "iat": int(time.time()), "exp": int(time.time()) + 900, "aud": "appstoreconnect-v1"},
+                           os.environ["ASC_KEY_P8"], algorithm="ES256", headers={"kid": kid, "typ": "JWT"})
+          def api(method, path, body=None):
+              req = urllib.request.Request("https://api.appstoreconnect.apple.com" + path, method=method,
+                                           data=json.dumps(body).encode() if body else None,
+                                           headers={"Authorization": f"Bearer {tok}", "Content-Type": "application/json"})
+              try:
+                  with urllib.request.urlopen(req) as r:
+                      t = r.read()
+                      return json.loads(t) if t else {}
+              except urllib.error.HTTPError as e:
+                  print(method, path, e.code, e.read().decode()[:500]); raise
+          bid, email = os.environ["BID"], os.environ["EMAIL"].strip()
+          apps = api("GET", f"/v1/apps?filter[bundleId]={bid}")["data"]
+          if not apps: raise SystemExit(f"No app for {bid}")
+          app_id = apps[0]["id"]; print("app", apps[0]["attributes"]["name"])
+          groups = api("GET", f"/v1/apps/{app_id}/betaGroups")["data"]
+          grp = next((g for g in groups if g["attributes"].get("isInternalGroup")), None)
+          if grp:
+              print("internal group exists:", grp["attributes"]["name"])
+          else:
+              grp = api("POST", "/v1/betaGroups", {"data": {"type": "betaGroups",
+                  "attributes": {"name": "Ben", "isInternalGroup": True, "hasAccessToAllBuilds": True},
+                  "relationships": {"app": {"data": {"type": "apps", "id": app_id}}}}})["data"]
+              print("created internal group:", grp["attributes"]["name"])
+          gid = grp["id"]
+          testers = api("GET", f"/v1/betaGroups/{gid}/betaTesters?limit=200")["data"]
+          if any((t["attributes"].get("email") or "").lower() == email.lower() for t in testers):
+              print("tester already in group")
+          else:
+              api("POST", "/v1/betaTesters", {"data": {"type": "betaTesters", "attributes": {"email": email},
+                  "relationships": {"betaGroups": {"data": [{"type": "betaGroups", "id": gid}]}}}})
+              print("tester added")
+          builds = api("GET", f"/v1/builds?filter[app]={app_id}&sort=-uploadedDate&limit=3")["data"]
+          for b in builds:
+              a = b["attributes"]; print("build", a.get("version"), a.get("processingState"), a.get("uploadedDate"))
+          PY
