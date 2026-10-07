@@ -425,6 +425,16 @@ function AppInner() {
   // Ürünler sekmesinden teklif oluşturma için state'ler
   const [activeTab, setActiveTab] = useState('products');
   const [isFullscreen, setIsFullscreen] = useState(false);
+  // Görünüm değişince (sekme, form aç/kapat, kaydet sonrası listeye dönüş, teklif liste↔editör,
+  // sözleşme düzenleme bitişi) sayfa en üstten başlasın. Yoksa uzun formun kaydırma konumu
+  // listeye taşınıyor ve kaydedince en alttaki kayıtlar görünüyordu.
+  const firstViewRenderRef = useRef(true);
+  const mainScrollRef = useRef(null); // sağ çalışma alanı (kendi içinde kayabiliyor)
+  useEffect(() => {
+    if (firstViewRenderRef.current) { firstViewRenderRef.current = false; return; }
+    window.scrollTo({ top: 0, behavior: 'auto' });
+    if (mainScrollRef.current) mainScrollRef.current.scrollTop = 0;
+  }, [activeTab, serviceDialogOpen, viewingService?.id, quoteView, viewingContract?.id, contractEditMode]);
 
   // Tarayıcı tam ekran durumunu izle: ESC ile çıkınca sidebar/döviz barı geri gelsin
   // (yoksa kullanıcı tuzakta kalır, sekmelere dönemez).
@@ -5292,7 +5302,7 @@ function AppInner() {
             </div>
 
             {/* 2. Right Main Work Area */}
-            <div className="flex-1 min-w-0 overflow-y-auto p-4 lg:p-6 bg-slate-50/30">
+            <div ref={mainScrollRef} className="flex-1 min-w-0 overflow-y-auto p-4 lg:p-6 bg-slate-50/30">
               <div className="w-full space-y-6">
                 {/* Currency Rates Bar */}
                 <div className={`flex justify-end ${hideChromeForWiring ? 'hidden' : ''}`}>
