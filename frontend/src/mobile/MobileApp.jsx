@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { hasOpenOverlay, shouldRefreshOnResume } from "./resume";
 import { startOutbox } from "./outbox";
 import { startTextSize } from "./textsize";
 import { Toaster } from "sonner";
@@ -75,13 +76,18 @@ export default function MobileApp() {
   // Aktif sekmeye tekrar dokununca yenile; farklı sekmeye geçince değiştir.
   const onTab = (key) => (key === tab ? setReloadKey((k) => k + 1) : setTab(key));
 
-  // Native: uygulama öne gelince listeyi tazele.
+  // Native: uygulama öne gelince listeyi tazele — ama açık form/sheet/görüntüleyici varsa ASLA
+  // (remount açık formu kapatıyordu: müşteri bilgisine bakmak için arka plana alınca yeni servis kayboluyordu).
   useEffect(() => {
     let sub;
+    let hiddenAt = 0;
     (async () => {
       try {
         const { App } = await import("@capacitor/app");
-        sub = await App.addListener("appStateChange", ({ isActive }) => { if (isActive) setReloadKey((k) => k + 1); });
+        sub = await App.addListener("appStateChange", ({ isActive }) => {
+          if (!isActive) { hiddenAt = Date.now(); return; }
+          if (shouldRefreshOnResume(hiddenAt ? Date.now() - hiddenAt : 0, hasOpenOverlay())) setReloadKey((k) => k + 1);
+        });
       } catch {}
     })();
     return () => { try { sub?.remove?.(); } catch {} };
