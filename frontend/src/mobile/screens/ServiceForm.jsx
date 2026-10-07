@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "../toast";
-import { Camera, Plus, Trash2, Loader2, X, Eye, EyeOff, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { Camera, Plus, Trash2, Loader2, X, Eye, EyeOff, Search, ChevronLeft, ChevronRight, Gift } from "lucide-react";
 import { useCatalog, catRate } from "../catalog";
 import { services as servicesApi } from "../api";
 import { cache } from "../cache";
 import { Sheet, money, todayISO } from "../ui";
 import { keepCaret } from "../../lib/caret";
 import BulletTextarea from "../../components/BulletTextarea";
+import ProductPickerSheet from "../ProductPickerSheet";
 
 const DRAFT_KEY = "service_draft";
 
@@ -125,6 +126,7 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
 
   const total = useMemo(
     () => f.items.reduce((a, it) => {
+      if (it.gift) return a; // hediye toplama girmez
       const q = parseFloat(it.qty) || 1;
       const up = parseFloat(it.unit_price) || 0;
       const rate = it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || 1) : 1;
@@ -141,6 +143,16 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
     if (s.length < 2) return [];
     return catalog.filter((p) => (p.name || "").toLocaleLowerCase("tr").includes(s)).slice(0, 12);
   }, [catQ, catalog]);
+  const [pickOpen, setPickOpen] = useState(false);
+  const addPicked = (picked) => {
+    const add = picked.map(({ product: p, qty }) => {
+      const rate = catRate(p);
+      const base = p.discounted_price > 0 ? p.discounted_price : p.list_price;
+      return { name: p.name, qty, unit_price: Math.round(p.list_price_try), unit_cost: Math.round(base * rate), currency: "TRY" };
+    });
+    set("items", [...f.items, ...add]);
+    toast.success(`${add.length} kalem eklendi`);
+  };
   const addFromCatalog = (p) => {
     const rate = catRate(p);
     const base = p.discounted_price > 0 ? p.discounted_price : p.list_price;
@@ -196,7 +208,7 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
     const p = Math.min(100, Math.max(0, parseFloat(v) || 0));
     set("discount_amount", p > 0 && total > 0 ? String(Math.round(total * p) / 100) : "");
   };
-  const laborTotal = f.items.reduce((a, it) => a + ((it.unit_cost !== "" && it.unit_cost != null ? parseFloat(it.unit_cost) === 0 : isLaborItem(it)) ? lineTRY(it, "unit_price") : 0), 0);
+  const laborTotal = f.items.reduce((a, it) => a + (!it.gift && (it.unit_cost !== "" && it.unit_cost != null ? parseFloat(it.unit_cost) === 0 : isLaborItem(it)) ? lineTRY(it, "unit_price") : 0), 0);
   // Tekrar gelen müşteri: eski servis kayıtlarından ad önerisi → telefon/araç/plaka doldur (sadece yeni kayıt)
   const [picked, setPicked] = useState(false);
   const suggestions = useMemo(() => {
@@ -268,6 +280,7 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
             unit_cost: it.unit_cost === "" || it.unit_cost == null ? null : (parseFloat(it.unit_cost) || 0),
             currency: it.currency || "TRY",
             rate: it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || null) : null,
+            gift: !!it.gift,
           })),
       };
       // Fotoğraflar değişmediyse gönderme: liste kaydından (photos alanı yok) açılan düzenleme mevcut fotoğrafları silmesin
@@ -344,6 +357,7 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
           <div key={i} className="border-b border-slate-100 px-3 py-2 last:border-0">
             <div className="flex items-center gap-2">
               <input className="min-w-0 flex-1 rounded-lg bg-slate-100 px-2 py-1.5 text-[14px] text-slate-800 placeholder:text-slate-400" value={it.name} onChange={(e) => updItem(i, "name", e.target.value)} placeholder="Ürün / işlem adı" list="mz-item-names" autoFocus={i === focusItem} />
+              <button onClick={() => updItem(i, "gift", !it.gift)} aria-label={it.gift ? "Hediyeyi kaldır" : "Hediye et"} className="m-press shrink-0" style={{ color: it.gift ? "#059669" : "var(--m-ink-2)", opacity: it.gift ? 1 : 0.5 }}><Gift className="h-4 w-4" /></button>
               <button onClick={() => delItem(i)} className="m-press shrink-0 text-rose-400"><Trash2 className="h-4 w-4" /></button>
             </div>
             <div className="mt-1 flex items-center gap-2">
@@ -353,6 +367,7 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
                 <option value="TRY">₺</option><option value="EUR">€</option><option value="USD">$</option>
               </select>
             </div>
+            {it.gift && <div className="mt-1 text-[12px] font-bold" style={{ color: "#059669" }}>🎁 Hediye — toplama girmez</div>}
             {showProfit && (
               <div className="mt-1 flex items-center gap-2">
                 <span className="text-[12px] text-slate-400">Geliş</span>
@@ -385,7 +400,10 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
           )}
         </div>
         <div className="flex">
-          <button onClick={addItem} className="m-press flex flex-1 items-center justify-center gap-1.5 px-4 py-3 text-[14px] font-semibold" style={{ color: "var(--m-primary-2)" }}>
+          <button onClick={() => setPickOpen(true)} className="m-press flex flex-1 items-center justify-center gap-1.5 px-3 py-3 text-[14px] font-semibold" style={{ color: "var(--m-primary-2)" }}>
+            <Search className="h-4 w-4" /> Katalog
+          </button>
+          <button onClick={addItem} className="m-press flex flex-1 items-center justify-center gap-1.5 px-3 py-3 text-[14px] font-semibold" style={{ color: "var(--m-primary-2)" }}>
             <Plus className="h-4 w-4" /> Kalem Ekle
           </button>
           {/* İşçilik: geliş 0 → tamamı kâr (Brüt kazanç özetinde ayrı satır) */}
@@ -482,6 +500,7 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
             : <span className="text-[15px] text-slate-400">Not eklemek için dokunun…</span>}
         </button>
       </Group>
+      <ProductPickerSheet open={pickOpen} onClose={() => setPickOpen(false)} onAdd={addPicked} title="Servise Ürün Ekle" addLabel="Ekle" />
       <Sheet open={notesOpen} onClose={() => setNotesOpen(false)} title="Notlar" full>
         <div className="flex h-full flex-col gap-2">
           <div className="flex items-center justify-between">

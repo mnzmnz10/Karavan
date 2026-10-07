@@ -11,7 +11,7 @@ import { Badge } from './components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from './components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select';
-import { Trash2, Upload, RefreshCw, Plus, TrendingUp, Building2, Package, DollarSign, Edit, Save, X, FileText, Check, Archive, Download, Wrench, Eye, EyeOff, AlertTriangle, Tags, Copy, Pin, StickyNote, Users, Star, Search, Phone, Mail, MapPin, Calculator, Battery, Loader2, ScanSearch, LogOut, PlusCircle, MinusCircle, History, Settings, ChevronUp, ChevronDown, GripVertical, Cable, Folder, FolderOpen, CheckCircle2, Bell, Link2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Trash2, Upload, RefreshCw, Plus, TrendingUp, Building2, Package, DollarSign, Edit, Save, X, FileText, Check, Archive, Download, Wrench, Eye, EyeOff, AlertTriangle, Tags, Copy, Pin, StickyNote, Users, Star, Search, Phone, Mail, MapPin, Calculator, Battery, Loader2, ScanSearch, LogOut, PlusCircle, MinusCircle, History, Settings, ChevronUp, ChevronDown, GripVertical, Cable, Folder, FolderOpen, CheckCircle2, Bell, Link2, ChevronLeft, ChevronRight, Gift } from 'lucide-react';
 import KabloSemasiSection from '@/features/wiringrf/WiringRfSection';
 import { toast } from 'sonner';
 import { Toaster } from './components/ui/sonner';
@@ -24,6 +24,8 @@ import { keepCaret } from './lib/caret';
 import { customerProfile } from './lib/customerProfile';
 import CartPanel, { CartAddButton } from './components/CartPanel';
 import BulletTextarea from './components/BulletTextarea';
+import ProductPicker from './components/ProductPicker';
+import { searchProducts } from './lib/productSearch';
 import { CartProvider, useCart } from './cart/CartContext';
 import { rateOf, cartTotals } from './cart/cartLogic';
 import { cart as cartApi } from './mobile/api';
@@ -1832,7 +1834,9 @@ function AppInner() {
     const r = parseFloat(it.rate) || parseFloat(exchangeRates?.[cur]) || 0;
     return line * r;
   };
-  const serviceItemsTotal = (items) => (items || []).reduce((sum, it) => sum + serviceItemLineTRY(it), 0);
+  // Hediye kalem müşteri toplamına girmez (maliyeti kâr hesabında kalır)
+  const serviceItemsTotal = (items) => (items || []).reduce((sum, it) => sum + (it.gift ? 0 : serviceItemLineTRY(it)), 0);
+  const toggleServiceItemGift = (idx) => setServiceForm((f) => ({ ...f, items: (f.items || []).map((it, i) => (i === idx ? { ...it, gift: !it.gift } : it)) }));
   // Ürün adından maliyet (geliş): ürünün indirimli fiyatı = maliyet (yoksa liste). TL döner.
   const productCostPerUnitTRY = (name) => {
     if (!name) return null;
@@ -2044,7 +2048,7 @@ function AppInner() {
           rate = live > 0 ? parseFloat(live.toFixed(4)) : null; // kur kayıt anında sabitlenir
         }
         const unit_cost = it.unit_cost !== '' && it.unit_cost != null ? parseFloat(it.unit_cost) : null;
-        return { name: (it.name || '').trim(), qty: parseFloat(it.qty) || 0, unit_price: parseFloat(it.unit_price) || 0, unit_cost: unit_cost != null && !isNaN(unit_cost) ? unit_cost : null, currency: cur, rate };
+        return { name: (it.name || '').trim(), qty: parseFloat(it.qty) || 0, unit_price: parseFloat(it.unit_price) || 0, unit_cost: unit_cost != null && !isNaN(unit_cost) ? unit_cost : null, currency: cur, rate, gift: !!it.gift };
       });
     const itemsCost = serviceItemsTotal(cleanItems);
     const cleanCollections = (serviceForm.collections || [])
@@ -2172,12 +2176,12 @@ function AppInner() {
           cost = Math.round(unit);
         }
       }
-      return { name: nm, qty, unit_price: Math.round(unit), unit_cost: cost };
+      return { name: nm, qty, unit_price: Math.round(unit), unit_cost: cost, gift: !!p.gift };
     });
     // İşçilik ayrı kalem (maliyeti yok, tamamı kâr)
     if (labor > 0) quoteItems.push({ name: 'İşçilik', qty: 1, unit_price: Math.round(labor), unit_cost: 0 });
     // İndirimi teklifin NET'ine göre uzlaştır: servis indirimi = kalemler brüt − teklif net.
-    const grossItems = quoteItems.reduce((a, it) => a + (parseFloat(it.unit_price) || 0) * (parseFloat(it.qty) || 1), 0);
+    const grossItems = quoteItems.reduce((a, it) => a + (it.gift ? 0 : (parseFloat(it.unit_price) || 0) * (parseFloat(it.qty) || 1)), 0);
     const net = parseFloat(quote?.total_net_price);
     const discountTL = (!isNaN(net) && grossItems > net) ? Math.round(grossItems - net) : 0;
     const baseNote = quote?.notes ? `${quote.notes}\n\n` : '';
@@ -3373,6 +3377,9 @@ function AppInner() {
     if (!product) {
       product = allProductsForCategory.find(p => p.id === productId);
     }
+    if (!product) {
+      product = catalogAll.find(p => p.id === productId);
+    }
     
     let isNewProductAdded = false;
 
@@ -3385,7 +3392,8 @@ function AppInner() {
         console.log('✏️ Ürün miktarı güncelleniyor:', productId, quantity);
         newSelected.set(productId, quantity);
         if (product) {
-          newSelectedData.set(productId, product);
+          const prevData = newSelectedData.get(productId);
+          newSelectedData.set(productId, prevData?.gift ? { ...product, gift: true } : product);
         }
       }
     } else {
@@ -3622,6 +3630,51 @@ function AppInner() {
     setSelectedQuoteCustomer(''); // Seçili müşteriyi de temizle
   };
 
+  // ---- Kapsamlı ürün seçici (teklif + servis) ----
+  // Ürünler sekmesindeki `products` arama/kategori filtresiyle daralabiliyor; seçici ve kalem
+  // aramaları tüm katalogdan (filtresiz) çalışır.
+  const [pickerFor, setPickerFor] = useState(null); // 'quote' | 'service' | null
+  const [catalogAll, setCatalogAll] = useState([]);
+  const catalogAllAt = useRef(0);
+  const loadCatalogAll = useCallback(async () => {
+    if (catalogAllAt.current && Date.now() - catalogAllAt.current < 5 * 60 * 1000) return;
+    try {
+      const r = await axios.get(`${API}/products?skip_pagination=true`);
+      const arr = Array.isArray(r.data) ? r.data : (r.data?.products || []);
+      if (arr.length) { catalogAllAt.current = Date.now(); setCatalogAll(arr); }
+    } catch { /* seçici `products` ile devam eder */ }
+  }, []);
+  const searchPool = catalogAll.length ? catalogAll : products;
+  const openProductPicker = (target) => { setPickerFor(target); loadCatalogAll(); };
+  const addPickedToQuote = (items) => {
+    setSelectedProducts((prev) => {
+      const m = new Map(prev);
+      items.forEach(({ product, qty }) => m.set(product.id, (m.get(product.id) || 0) + qty));
+      return m;
+    });
+    setSelectedProductsData((prev) => {
+      const m = new Map(prev);
+      items.forEach(({ product }) => { if (!m.has(product.id)) m.set(product.id, product); });
+      return m;
+    });
+    toast.success(`${items.length} ürün teklife eklendi`);
+  };
+  const addPickedToService = (items) => {
+    const newItems = items.map(({ product: p, qty }) => {
+      const list = parseFloat(p.list_price) || 0;
+      const own = p.best_discounted_price != null ? parseFloat(p.best_discounted_price) : parseFloat(p.discounted_price);
+      const currency = p.currency || 'TRY';
+      const item = { name: p.name, qty, unit_price: list, unit_cost: (own > 0 ? own : list) || 0, currency, rate: '' };
+      if (currency !== 'TRY') {
+        const live = parseFloat(exchangeRates?.[currency]);
+        if (live > 0) item.rate = live.toFixed(2);
+      }
+      return item;
+    });
+    setServiceForm((f) => ({ ...f, items: [...(f.items || []), ...newItems] }));
+    toast.success(`${items.length} kalem eklendi`);
+  };
+
   // ---- Teklif sepeti (mobil ile ortak) ----
   const cart = useCart();
   // Sepeti A4 önizlemeli editöre aktar (özel fiyat editörde ürün para biriminde tutulur; sepette TL)
@@ -3686,7 +3739,7 @@ function AppInner() {
           customPrices.set(p.id, loadedCustomPrice);
         }
         const fullProduct = products.find((prod) => prod.id === p.id);
-        productData.set(p.id, fullProduct ? { ...fullProduct, quantity: p.quantity || 1 } : p);
+        productData.set(p.id, fullProduct ? { ...fullProduct, quantity: p.quantity || 1, gift: !!p.gift } : p);
       });
       setSelectedProducts(new Map(productIds));
       setSelectedProductsData(new Map(productData));
@@ -3704,6 +3757,34 @@ function AppInner() {
     }
   };
 
+  // Teklif kalemlerini API formatına çevir (kaydet + PDF otomatik kayıt ortak)
+  const quotePayloadProducts = () => getSelectedProductsData().map(p => (
+    p.manual || String(p.id).startsWith('manual-')
+      ? {
+          manual: true,
+          id: p.id,
+          name: p.name,
+          price: parseFloat(p.customPrice ?? p.list_price) || 0,
+          cost: (p.discounted_price !== null && p.discounted_price !== undefined && p.discounted_price !== '' && parseFloat(p.discounted_price) >= 0) ? parseFloat(p.discounted_price) : undefined,
+          currency: p.currency || 'TRY',
+          quantity: p.quantity || 1,
+          gift: !!p.gift
+        }
+      : {
+          id: p.id,
+          quantity: p.quantity || 1,
+          custom_price: p.customPrice !== null && p.customPrice !== undefined ? parseFloat(p.customPrice) : null,
+          gift: !!p.gift
+        }
+  ));
+
+  // Hediye: kalem toplama girmez (maliyeti kâr hesabında kalır)
+  const toggleQuoteGift = (id) => setSelectedProductsData((prev) => {
+    const cur = prev.get(id);
+    if (!cur) return prev;
+    return new Map(prev).set(id, { ...cur, gift: !cur.gift });
+  });
+
   // Teklifi kaydet (PDF indirmeden)
   const saveQuote = async () => {
     try {
@@ -3712,23 +3793,7 @@ function AppInner() {
         return;
       }
 
-      const selectedProductData = getSelectedProductsData().map(p => (
-        p.manual || String(p.id).startsWith('manual-')
-          ? {
-              manual: true,
-              id: p.id,
-              name: p.name,
-              price: parseFloat(p.customPrice ?? p.list_price) || 0,
-              cost: (p.discounted_price !== null && p.discounted_price !== undefined && p.discounted_price !== '' && parseFloat(p.discounted_price) >= 0) ? parseFloat(p.discounted_price) : undefined,
-              currency: p.currency || 'TRY',
-              quantity: p.quantity || 1
-            }
-          : {
-              id: p.id,
-              quantity: p.quantity || 1,
-              custom_price: p.customPrice !== null && p.customPrice !== undefined ? parseFloat(p.customPrice) : null
-            }
-      ));
+      const selectedProductData = quotePayloadProducts();
 
       console.log('💾 Teklif Kaydediliyor/Güncelleniyor:');
       console.log('📦 Seçili Ürün Sayısı:', selectedProducts.size);
@@ -4687,8 +4752,8 @@ function AppInner() {
       const quantity = p.quantity || 1;
       const customPrice = selectedProductsCustomPrices.get(p.id);
       
-      // Liste/Özel Fiyat belirlenmesi
-      const unitPrice = customPrice !== undefined && customPrice !== null ? parseFloat(customPrice) : (parseFloat(p.list_price) || 0);
+      // Liste/Özel Fiyat belirlenmesi (hediye kalem satışa girmez)
+      const unitPrice = p.gift ? 0 : (customPrice !== undefined && customPrice !== null ? parseFloat(customPrice) : (parseFloat(p.list_price) || 0));
       
       // Maliyet (Geliş) Fiyatı belirlenmesi
       const discountedUnitPrice = quoteItemCostUnit(p);
@@ -4952,6 +5017,17 @@ function AppInner() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-emerald-25 to-teal-50">
+      <ProductPicker
+        open={!!pickerFor}
+        onClose={() => setPickerFor(null)}
+        onAdd={(items) => (pickerFor === 'service' ? addPickedToService(items) : addPickedToQuote(items))}
+        products={searchPool}
+        categories={categories}
+        companies={companies}
+        imgOf={imgOf}
+        title={pickerFor === 'service' ? 'Servise Ürün Ekle' : 'Teklife Ürün Ekle'}
+        addLabel={pickerFor === 'service' ? 'Servise Ekle' : 'Teklife Ekle'}
+      />
       {/* Authentication Loading */}
       {authLoading ? (
         <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50">
@@ -9368,6 +9444,11 @@ function AppInner() {
                                         {product.name}
                                       </div>
                                     )}
+                                    {product.gift && (
+                                      <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-black uppercase text-emerald-700 border border-emerald-200">
+                                        <Gift className="w-3 h-3" /> Hediye
+                                      </span>
+                                    )}
                                     {product.description && (
                                       <div className="text-xs text-slate-500 mt-1" title={product.description}>
                                         {product.description}
@@ -9480,9 +9561,13 @@ function AppInner() {
                                   {/* Line Total */}
                                   <TableCell className="p-3.5 text-right text-sm border-r border-slate-200/40">
                                     <div className="flex flex-col items-end">
+                                      {product.gift ? (
+                                        <div className="font-black text-emerald-600">HEDİYE</div>
+                                      ) : (
                                       <div className={`font-black ${customPrice !== undefined && customPrice !== null ? 'text-purple-700' : 'text-slate-900'}`}>
                                         {getCurrencySymbol(product.currency)} {formatPrice(currentUnitPrice * quantity)}
                                       </div>
+                                      )}
                                       {customPrice !== undefined && customPrice !== null && (
                                         <span className="text-[9px] text-purple-500 font-bold mt-0.5 select-none">(Özel Toplam)</span>
                                       )}
@@ -9497,10 +9582,17 @@ function AppInner() {
                                   {/* Line Total TL */}
                                   <TableCell className="p-3.5 text-right text-sm border-r border-slate-200/40">
                                     <div className="flex flex-col items-end">
+                                      {product.gift ? (
+                                        <div className="text-right">
+                                          <div className="text-[11px] text-slate-400 line-through">₺ {formatPrice(lineTotalTRY)}</div>
+                                          <div className="font-black text-emerald-600">HEDİYE</div>
+                                        </div>
+                                      ) : (
                                       <div className="font-black text-slate-900">
                                         ₺ {formatPrice(lineTotalTRY)}
                                       </div>
-                                      {customPrice !== undefined && customPrice !== null && (
+                                      )}
+                                      {!product.gift && customPrice !== undefined && customPrice !== null && (
                                         <span className="text-[9px] text-purple-500 font-bold mt-0.5 select-none">(Özel Toplam TL)</span>
                                       )}
                                       {showQuoteDiscountedPrices && (
@@ -9521,6 +9613,14 @@ function AppInner() {
                                       >
                                         <GripVertical className="w-4.5 h-4.5 stroke-[2.5]" />
                                       </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleQuoteGift(product.id)}
+                                        className={`p-1.5 rounded-lg transition-colors ${product.gift ? 'text-emerald-600 bg-emerald-50' : 'text-slate-400 hover:text-emerald-600 hover:bg-emerald-50'}`}
+                                        title={product.gift ? 'Hediyeyi kaldır' : 'Hediye et (toplama girmez)'}
+                                      >
+                                        <Gift className="w-4 h-4" />
+                                      </button>
                                       <button
                                         type="button"
                                         onClick={() => toggleProductSelection(product.id, 0)}
@@ -9568,12 +9668,8 @@ function AppInner() {
                                     zIndex: 9999
                                   }}
                                   className="bg-white border border-slate-200 rounded-xl shadow-2xl max-h-64 overflow-y-auto">
-                                  {products
-                                    .filter(p => 
-                                      p.name.toLowerCase().includes(quoteProductSearch.toLowerCase()) || 
-                                      (p.brand && p.brand.toLowerCase().includes(quoteProductSearch.toLowerCase()))
-                                    )
-                                    .slice(0, 8)
+                                  {searchProducts(searchPool, quoteProductSearch)
+                                    .slice(0, 12)
                                     .map(p => (
                                       <div
                                         key={p.id}
@@ -9599,11 +9695,11 @@ function AppInner() {
                                         <span className="font-extrabold text-emerald-700">₺ {formatPrice(p.list_price_try || 0)}</span>
                                       </div>
                                     ))}
-                                  {products.filter(p => 
-                                    p.name.toLowerCase().includes(quoteProductSearch.toLowerCase()) || 
-                                    (p.brand && p.brand.toLowerCase().includes(quoteProductSearch.toLowerCase()))
-                                  ).length === 0 && (
-                                    <div className="p-3 text-slate-400 italic text-center text-xs">Aramayla eşleşen ürün bulunamadı</div>
+                                  {searchProducts(searchPool, quoteProductSearch).length === 0 && (
+                                    <div className="p-3 text-slate-400 italic text-center text-xs">
+                                      Aramayla eşleşen ürün bulunamadı.{' '}
+                                      <button type="button" className="font-bold text-emerald-700 underline" onMouseDown={(e) => { e.preventDefault(); setQuoteProductSearch(''); openProductPicker('quote'); }}>Kataloğu aç</button>
+                                    </div>
                                   )}
                                 </div>
                               )}
@@ -9612,6 +9708,11 @@ function AppInner() {
                         </TableBody>
                       </Table>
                     </div>
+
+                    <button type="button" onClick={() => openProductPicker('quote')}
+                      className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-emerald-300 bg-white py-3 text-sm font-bold text-emerald-700 hover:bg-emerald-50">
+                      <Search className="w-4 h-4" /> Katalogdan Ürün Seç <span className="font-normal text-emerald-600/70">— kategori, marka, fotoğraf; çoklu seçim</span>
+                    </button>
 
                     {/* Manuel kalem ekleme — sistemde kayıtlı olmayan ürün/hizmeti elle gir */}
                     <div className="mt-3 rounded-xl border border-dashed border-emerald-300 bg-emerald-50/40 p-3">
@@ -9885,11 +9986,7 @@ function AppInner() {
                                 let quoteId = loadedQuote?.id;
                                 
                                 // Auto save/update quote
-                                const selectedProductData = getSelectedProductsData().map(p => ({
-                                  id: p.id,
-                                  quantity: p.quantity || 1,
-                                  custom_price: p.customPrice !== null && p.customPrice !== undefined ? parseFloat(p.customPrice) : null
-                                }));
+                                const selectedProductData = quotePayloadProducts();
                                 
                                 const newQuoteData = {
                                   name: quoteName || `Teklif - ${new Date().toLocaleDateString('tr-TR')}`,
@@ -10121,7 +10218,7 @@ function AppInner() {
                                         }
                                         const fullProduct = products.find(prod => prod.id === p.id);
                                         if (fullProduct) {
-                                          productData.set(p.id, { ...fullProduct, quantity: p.quantity || 1 });
+                                          productData.set(p.id, { ...fullProduct, quantity: p.quantity || 1, gift: !!p.gift });
                                         } else {
                                           productData.set(p.id, p);
                                         }
@@ -10804,10 +10901,10 @@ function AppInner() {
                               <tr className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
                                 <th className="text-left font-bold px-3 py-2">Parça / İşlem</th>
                                 <th className="text-center font-bold px-2 py-2 w-16">Adet</th>
-                                <th className="text-right font-bold px-2 py-2 w-28">Satış (₺)</th>
+                                <th className={`text-right font-bold px-2 py-2 ${(serviceForm.items || []).some((x) => x.currency && x.currency !== 'TRY') ? 'w-64' : 'w-36'}`}>Satış</th>
                                 {showServiceProfit && <th className="text-right font-bold px-2 py-2 w-24">Maliyet</th>}
                                 <th className="text-right font-bold px-3 py-2 w-28">Tutar (₺)</th>
-                                <th className="w-9"></th>
+                                <th className="w-16"></th>
                               </tr>
                             </thead>
                             <tbody>
@@ -10821,14 +10918,14 @@ function AppInner() {
                                   </td>
                                   <td className="px-1 py-1.5">
                                     <div className="flex items-center gap-1">
-                                      <input type="number" min="0" step="0.01" value={it.unit_price} onChange={(e) => updateServiceItem(idx, 'unit_price', e.target.value)} className="w-full h-8 px-1 border border-slate-200 rounded text-sm text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-emerald-500" />
-                                      <select value={it.currency || 'TRY'} onChange={(e) => updateServiceItem(idx, 'currency', e.target.value)} className="h-8 px-0.5 border border-slate-200 rounded text-xs bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-emerald-500" title="Para birimi">
+                                      <input type="number" min="0" step="0.01" value={it.unit_price} onChange={(e) => updateServiceItem(idx, 'unit_price', e.target.value)} className="w-full min-w-[5.5rem] h-8 px-1.5 border border-slate-200 rounded text-sm text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                                      <select value={it.currency || 'TRY'} onChange={(e) => updateServiceItem(idx, 'currency', e.target.value)} className="shrink-0 h-8 px-0.5 border border-slate-200 rounded text-xs bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-emerald-500" title="Para birimi">
                                         <option value="TRY">₺</option>
                                         <option value="EUR">€</option>
                                         <option value="USD">$</option>
                                       </select>
                                       {(it.currency && it.currency !== 'TRY') && (
-                                        <input type="number" min="0" step="0.01" value={it.rate ?? ''} onChange={(e) => updateServiceItem(idx, 'rate', e.target.value)} placeholder="kur" title="1 birim = ? ₺" className="w-20 h-8 px-1.5 border border-slate-200 rounded text-xs text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                                        <input type="number" min="0" step="0.01" value={it.rate ?? ''} onChange={(e) => updateServiceItem(idx, 'rate', e.target.value)} placeholder="kur" title="1 birim = ? ₺" className="w-20 shrink-0 h-8 px-1.5 border border-slate-200 rounded text-xs text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-emerald-500" />
                                       )}
                                     </div>
                                   </td>
@@ -10837,8 +10934,16 @@ function AppInner() {
                                       <input type="number" min="0" step="0.01" value={it.unit_cost ?? ''} onChange={(e) => updateServiceItem(idx, 'unit_cost', e.target.value)} placeholder="geliş" title="Birim maliyet (geliş)" className="w-full h-8 px-1 border border-slate-200 rounded text-sm text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-emerald-500" />
                                     </td>
                                   )}
-                                  <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-slate-700">₺ {formatPrice(serviceItemLineTRY(it))}</td>
-                                  <td className="px-1 py-1.5 text-center">
+                                  <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-slate-700">
+                                    {it.gift ? (
+                                      <span className="inline-flex flex-col items-end leading-tight">
+                                        <span className="text-[11px] font-normal text-slate-400 line-through">₺ {formatPrice(serviceItemLineTRY(it))}</span>
+                                        <span className="text-emerald-600 font-black">HEDİYE</span>
+                                      </span>
+                                    ) : <>₺ {formatPrice(serviceItemLineTRY(it))}</>}
+                                  </td>
+                                  <td className="px-1 py-1.5 text-center whitespace-nowrap">
+                                    <button type="button" onClick={() => toggleServiceItemGift(idx)} className={`mr-1.5 ${it.gift ? 'text-emerald-600' : 'text-slate-300 hover:text-emerald-600'}`} title={it.gift ? 'Hediyeyi kaldır' : 'Hediye et (toplama girmez)'}><Gift className="w-4 h-4" /></button>
                                     <button type="button" onClick={() => removeServiceItem(idx)} className="text-rose-400 hover:text-rose-600" title="Kalemi sil"><Trash2 className="w-4 h-4" /></button>
                                   </td>
                                 </tr>
@@ -10863,9 +10968,8 @@ function AppInner() {
                           </div>
                           {serviceItemSearch.trim() && (
                             <div className="absolute z-30 mt-1 left-0 right-0 bg-white border border-slate-200 rounded-xl shadow-2xl max-h-64 overflow-y-auto">
-                              {(products || [])
-                                .filter((p) => p.name.toLowerCase().includes(serviceItemSearch.toLowerCase()) || (p.brand && p.brand.toLowerCase().includes(serviceItemSearch.toLowerCase())))
-                                .slice(0, 8)
+                              {searchProducts(searchPool || [], serviceItemSearch)
+                                .slice(0, 12)
                                 .map((p) => (
                                   <div key={p.id} onClick={() => addServiceItemFromProduct(p)}
                                        className="p-2.5 hover:bg-emerald-50 cursor-pointer flex items-center justify-between text-xs border-b border-slate-50">
@@ -10883,12 +10987,15 @@ function AppInner() {
                                     <span className="font-extrabold text-emerald-700 shrink-0 ml-2">₺ {formatPrice(p.list_price_try || 0)}</span>
                                   </div>
                                 ))}
-                              {(products || []).filter((p) => p.name.toLowerCase().includes(serviceItemSearch.toLowerCase()) || (p.brand && p.brand.toLowerCase().includes(serviceItemSearch.toLowerCase()))).length === 0 && (
+                              {searchProducts(searchPool || [], serviceItemSearch).length === 0 && (
                                 <div className="p-3 text-slate-400 italic text-center text-xs">Eşleşen ürün yok</div>
                               )}
                             </div>
                           )}
                         </div>
+                        <Button type="button" size="sm" variant="outline" onClick={() => openProductPicker('service')} className="h-9 text-xs font-bold border-emerald-200 text-emerald-700 hover:bg-emerald-50 shrink-0">
+                          <Package className="w-3.5 h-3.5 mr-1" /> Katalog
+                        </Button>
                         <Button type="button" size="sm" variant="outline" onClick={addServiceItem} className="h-9 text-xs font-bold border-emerald-200 text-emerald-700 hover:bg-emerald-50 shrink-0">
                           <Plus className="w-3.5 h-3.5 mr-1" /> Boş Kalem
                         </Button>
@@ -10984,7 +11091,7 @@ function AppInner() {
                         const laborTotal = (serviceForm.items || []).reduce((a, it) => {
                           const uc = it.unit_cost;
                           const isZeroCost = uc !== '' && uc != null ? parseFloat(uc) === 0 : isLaborServiceItem(it);
-                          return isZeroCost ? a + serviceItemLineTRY(it) : a;
+                          return isZeroCost && !it.gift ? a + serviceItemLineTRY(it) : a;
                         }, 0);
                         const adv = parseFloat(serviceForm.advance_amount) || 0;
                         const collected = adv + serviceCollectedTRY(serviceForm.collections);

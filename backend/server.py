@@ -802,6 +802,7 @@ class ServiceItem(BaseModel):
     unit_cost: Optional[float] = Field(None, ge=0)              # Birim MALİYET/geliş (kâr analizi; sadece sistemde, PDF'te yok)
     currency: Optional[str] = "TRY"                              # TRY | EUR | USD
     rate: Optional[float] = Field(None, ge=0)                    # 1 birim döviz = ? ₺ (kayıt anında sabitlenir)
+    gift: Optional[bool] = False                                 # Hediye: toplama girmez, maliyeti kâr hesabında kalır
 
 class ServiceCollection(BaseModel):
     id: Optional[str] = None                                     # Satır id (frontend üretir)
@@ -2767,6 +2768,7 @@ def _process_manual_quote_item(mi: dict, exchange_rates: dict):
         "quantity": quantity,
         "custom_price": None,
         "manual": True,
+        "gift": bool(mi.get("gift")),
     }
     return entry, price_try * quantity, cost_try * quantity
 
@@ -2835,6 +2837,7 @@ async def create_quote(quote: QuoteCreate):
         # Create product-quantity mapping
         product_quantities = {p["id"]: p.get("quantity", 1) for p in db_items}
         product_custom_prices = {p["id"]: p.get("custom_price") for p in db_items}
+        product_gifts = {p["id"]: bool(p.get("gift")) for p in db_items}
         
         # Calculate totals
         total_list_price = 0
@@ -2873,9 +2876,11 @@ async def create_quote(quote: QuoteCreate):
                 list_price_try = base_list * rate
                 discounted_price_try = cost_try
 
-            # Calculate totals with quantity - SADECE LİSTE FİYATI KULLAN
-            total_list_price += list_price_try * quantity
-            total_discounted_price += list_price_try * quantity  # PDF için liste fiyatı kullan
+            # Calculate totals with quantity - SADECE LİSTE FİYATI KULLAN (hediye toplama girmez)
+            gift = product_gifts.get(product["id"], False)
+            if not gift:
+                total_list_price += list_price_try * quantity
+                total_discounted_price += list_price_try * quantity  # PDF için liste fiyatı kullan
             total_cost_price += cost_try * quantity
 
             processed_products.append({
@@ -2889,7 +2894,8 @@ async def create_quote(quote: QuoteCreate):
                 "discounted_price_try": discounted_price_try,
                 "currency": product["currency"],
                 "quantity": quantity,
-                "custom_price": custom_price
+                "custom_price": custom_price,
+                "gift": gift,
             })
 
         # Elle girilen kalemler
@@ -2899,8 +2905,9 @@ async def create_quote(quote: QuoteCreate):
                 continue
             entry, line_total, cost_line = res
             processed_products.append(entry)
-            total_list_price += line_total
-            total_discounted_price += line_total
+            if not entry.get("gift"):
+                total_list_price += line_total
+                total_discounted_price += line_total
             total_cost_price += cost_line  # geliş girilmişse gerçek maliyet, yoksa satış (kâr 0)
 
         # Apply quote discount
@@ -3080,9 +3087,11 @@ async def update_quote(quote_id: str, quote_update: Dict[str, Any]):
                         discounted_price = base_cost
                         discounted_price_try = discounted_price * rate
 
-                    # Calculate totals with quantity - SADECE LİSTE FİYATI KULLAN
-                    total_list_price += list_price_try * quantity
-                    total_discounted_price += list_price_try * quantity  # PDF için liste fiyatı kullan
+                    # Calculate totals with quantity - SADECE LİSTE FİYATI KULLAN (hediye toplama girmez)
+                    gift = bool(product_data.get("gift"))
+                    if not gift:
+                        total_list_price += list_price_try * quantity
+                        total_discounted_price += list_price_try * quantity  # PDF için liste fiyatı kullan
                     total_cost_price += cost_try * quantity
                     
                     processed_products.append({
@@ -3096,7 +3105,8 @@ async def update_quote(quote_id: str, quote_update: Dict[str, Any]):
                         "discounted_price_try": discounted_price_try,
                         "currency": product["currency"],
                         "quantity": quantity,
-                        "custom_price": custom_price
+                        "custom_price": custom_price,
+                        "gift": gift,
                     })
                 else:
                     logger.warning(f"Product not found during quote update: {product_id}")
@@ -3108,8 +3118,9 @@ async def update_quote(quote_id: str, quote_update: Dict[str, Any]):
                     continue
                 entry, line_total, cost_line = res
                 processed_products.append(entry)
-                total_list_price += line_total
-                total_discounted_price += line_total
+                if not entry.get("gift"):
+                    total_list_price += line_total
+                    total_discounted_price += line_total
                 total_cost_price += cost_line
 
             # Güncellenen ürün listesini ve toplamları ekle
@@ -3638,6 +3649,18 @@ class PDFQuoteGenerator:
             unit_try = float(product.get('list_price_try', 0))
             total_try = unit_try * qty
             name = product.get('name', '')
+            if product.get('gift'):
+                gift_c = ParagraphStyle('PTgift', parent=c_rb, textColor=colors.HexColor('#059669'))
+                data.append([
+                    Paragraph(str(i), idx_st),
+                    Paragraph(f"<b>{name}</b>  <font color='#059669'><b>(HEDİYE)</b></font>", c_l),
+                    Paragraph(str(qty), c_c),
+                    Paragraph(f"<strike>{sym} {self._format_price_modern(unit)}</strike>", c_r),
+                    Paragraph(f"<strike>₺ {self._format_price_modern(unit_try)}</strike>", c_r),
+                    Paragraph("HEDİYE", gift_c),
+                    Paragraph("<b>HEDİYE</b>", gift_c),
+                ])
+                continue
             info = f"<b>{name}</b>"
             data.append([
                 Paragraph(str(i), idx_st),
@@ -3691,6 +3714,11 @@ class PDFQuoteGenerator:
         if labor > 0:
             rows.append([Paragraph("İşçilik Maliyeti", lbl),
                 Paragraph(f"<font color='#059669'>+ ₺ {self._format_price_modern(labor)}</font>", valr)])
+        gift_value = sum(float(p.get('list_price_try', 0) or 0) * float(p.get('quantity', 1) or 1)
+                         for p in (quote_data.get('products') or []) if p.get('gift'))
+        if gift_value > 0:
+            rows.append([Paragraph("Hediye Ürünler", lbl),
+                Paragraph(f"<font color='#059669'>₺ {self._format_price_modern(gift_value)} değerinde</font>", valr)])
         sub = PDFTable(rows, colWidths=[5.0*cm, 4.0*cm], hAlign='RIGHT')
         sstyle = [
             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
@@ -11382,6 +11410,8 @@ def _service_items_total(items):
     """Kalem listesinden toplam tutar (₺). Döviz kalemler kayıtlı kurla çevrilir."""
     total = 0.0
     for it in (items or []):
+        if it.get("gift"):
+            continue  # hediye kalem müşteri toplamına girmez
         try:
             line = float(it.get("qty") or 0) * float(it.get("unit_price") or 0)
             cur = (it.get("currency") or "TRY").upper()
@@ -13745,6 +13775,16 @@ class PDFServiceGenerator(PDFContractGenerator):
                 else:
                     unit_txt = fmt(unit)
                     line_try = qty * unit
+                if it.get("gift"):
+                    gift_st = ParagraphStyle('SvcGift', parent=self.table_cell_right_bold, textColor=colors.HexColor('#059669'))
+                    rows.append([
+                        Paragraph(str(i+1), self.table_cell_style),
+                        Paragraph(f"{upper_tr(it.get('name') or '')}  <font color='#059669'><b>(HEDİYE)</b></font>", self.table_cell_style),
+                        Paragraph(f"{qty:g}", self.table_cell_right),
+                        Paragraph(f"<strike>{unit_txt}</strike>", self.table_cell_right),
+                        Paragraph("HEDİYE", gift_st),
+                    ])
+                    continue
                 rows.append([
                     Paragraph(str(i+1), self.table_cell_style),
                     Paragraph(upper_tr(it.get("name") or ""), self.table_cell_style),

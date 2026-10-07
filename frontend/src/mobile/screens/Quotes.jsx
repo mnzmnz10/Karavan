@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { AccountButton } from "../Account";
-import { FileText, User, Calendar, Share2, Trash2, Loader2, Pencil, Eye, EyeOff, Minus, Plus, Search, ListPlus, Wrench, Copy, MessageCircle } from "lucide-react";
+import { FileText, User, Calendar, Share2, Trash2, Loader2, Pencil, Eye, EyeOff, Minus, Plus, Search, ListPlus, Wrench, Copy, MessageCircle, Gift } from "lucide-react";
 import ServiceForm from "./ServiceForm";
+import ProductPickerSheet from "../ProductPickerSheet";
 import CustomerSheet from "../CustomerSheet";
 import { useCatalog, catRate } from "../catalog";
 import { toast } from "../toast";
@@ -236,12 +237,12 @@ function productsPayloadFromQuote(q, byId) {
     const qty = qtyOf(it);
     if (it.manual) {
       const dp = num(it.discounted_price);
-      return { manual: true, name: it.name || "Kalem", price: num(it.list_price) ?? 0, quantity: qty, currency: it.currency || "TRY", cost: dp == null ? undefined : dp };
+      return { manual: true, name: it.name || "Kalem", price: num(it.list_price) ?? 0, quantity: qty, currency: it.currency || "TRY", cost: dp == null ? undefined : dp, ...(it.gift ? { gift: true } : {}) };
     }
     if (!byId.has(it.id)) {
-      return { manual: true, name: it.name || "Ürün", price: Math.round((lineSaleTRY(it) / qty) * 100) / 100, quantity: qty, currency: "TRY", cost: Math.round((lineCostTRY(it) / qty) * 100) / 100 };
+      return { manual: true, name: it.name || "Ürün", price: Math.round((lineSaleTRY(it) / qty) * 100) / 100, quantity: qty, currency: "TRY", cost: Math.round((lineCostTRY(it) / qty) * 100) / 100, ...(it.gift ? { gift: true } : {}) };
     }
-    const o = { id: it.id, quantity: qty };
+    const o = { id: it.id, quantity: qty, ...(it.gift ? { gift: true } : {}) };
     if (num(it.custom_price) != null) o.custom_price = num(it.custom_price);
     return o;
   });
@@ -262,11 +263,11 @@ function quoteToServiceInit(q, byId) {
     } else {
       cost = Math.round(lineCostTRY(it) / qty); // manuel geliş (0 dahil) / eski format snapshot
     }
-    return { name: it.name || "Ürün", qty, unit_price: unit, unit_cost: cost, currency: "TRY" };
+    return { name: it.name || "Ürün", qty, unit_price: unit, unit_cost: cost, currency: "TRY", ...(it.gift ? { gift: true } : {}) };
   });
   const labor = Number(q.labor_cost || 0);
   if (labor > 0) items.push({ name: "İşçilik", qty: 1, unit_price: Math.round(labor), unit_cost: 0, currency: "TRY" });
-  const gross = items.reduce((a, it) => a + it.unit_price * it.qty, 0);
+  const gross = items.reduce((a, it) => a + (it.gift ? 0 : it.unit_price * it.qty), 0);
   const net = Number(q.total_net_price);
   const disc = Number.isFinite(net) && gross > net ? Math.round(gross - net) : 0;
   return {
@@ -300,10 +301,10 @@ function QuoteItemsSheet({ q, open, onClose, onSaved, showCost }) {
         return { key: it.id || `m${i}`, kind: "manual", id: it.id, name: it.name || "Kalem", qty,
           price: num(it.list_price) ?? 0, currency: it.currency || "TRY",
           rate: (num(it.list_price) || 0) > 0 ? (num(it.list_price_try) || 0) / num(it.list_price) : 1,
-          cost: num(it.discounted_price) };
+          cost: num(it.discounted_price), ...(it.gift ? { gift: true } : {}) };
       }
       return { key: it.id || `c${i}`, kind: "cat", id: it.id, name: it.name || "Ürün", qty,
-        custom_price: num(it.custom_price), snapSale: lineSaleTRY(it) / qty, snapCost: lineCostTRY(it) / qty };
+        custom_price: num(it.custom_price), snapSale: lineSaleTRY(it) / qty, snapCost: lineCostTRY(it) / qty, ...(it.gift ? { gift: true } : {}) };
     });
     setRows(init);
     setSnap(JSON.stringify(init));
@@ -329,7 +330,7 @@ function QuoteItemsSheet({ q, open, onClose, onSaved, showCost }) {
     if (!p) return r.snapSale;
     return r.custom_price != null ? r.custom_price * catRate(p) : p.list_price_try;
   };
-  const base = rows.reduce((s, r) => s + unitSale(r) * r.qty, 0);
+  const base = rows.reduce((s, r) => s + (r.gift ? 0 : unitSale(r) * r.qty), 0);
   const discPct = Number(q.discount_percentage || 0);
   const labor = Number(q.labor_cost || 0);
   const net = base * (1 - discPct / 100) + labor;
@@ -354,6 +355,7 @@ function QuoteItemsSheet({ q, open, onClose, onSaved, showCost }) {
   }));
   const setQty = (key, d) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, qty: Math.max(1, r.qty + d) } : r)));
   const removeRow = (key) => setRows((rs) => rs.filter((r) => r.key !== key));
+  const toggleGift = (key) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, gift: !r.gift } : r)));
   const addCat = (p) => {
     setRows((rs) => {
       const ex = rs.find((r) => r.kind === "cat" && r.id === p.id && r.custom_price == null);
@@ -362,6 +364,19 @@ function QuoteItemsSheet({ q, open, onClose, onSaved, showCost }) {
     });
     setSearch("");
     toast.success(`${p.name} eklendi`);
+  };
+  const [pickOpen, setPickOpen] = useState(false);
+  const addPicked = (picked) => {
+    setRows((rs) => {
+      let next = [...rs];
+      picked.forEach(({ product: p, qty }) => {
+        const ex = next.find((r) => r.kind === "cat" && r.id === p.id && r.custom_price == null);
+        if (ex) next = next.map((r) => (r === ex ? { ...r, qty: r.qty + qty } : r));
+        else next.push({ key: `n-${p.id}-${Date.now()}`, kind: "cat", id: p.id, name: p.name, qty, custom_price: null, snapSale: p.list_price_try, snapCost: 0 });
+      });
+      return next;
+    });
+    toast.success(`${picked.length} ürün eklendi`);
   };
   const addManual = () => {
     const price = parseFloat(man.price);
@@ -375,13 +390,13 @@ function QuoteItemsSheet({ q, open, onClose, onSaved, showCost }) {
     if (rows.length === 0) { toast.error("En az bir kalem olmalı"); return; }
     const payload = rows.map((r) => {
       if (r.kind === "manual") {
-        return { manual: true, id: r.id, name: r.name, price: r.price, quantity: r.qty, currency: r.currency, cost: r.cost == null ? undefined : r.cost };
+        return { manual: true, id: r.id, name: r.name, price: r.price, quantity: r.qty, currency: r.currency, cost: r.cost == null ? undefined : r.cost, ...(r.gift ? { gift: true } : {}) };
       }
       if (missing(r)) {
         // Katalogdan kalkmış ürün → TL manuel kalem (değer korunur)
-        return { manual: true, name: r.name, price: Math.round(r.snapSale * 100) / 100, quantity: r.qty, currency: "TRY", cost: Math.round(r.snapCost * 100) / 100 };
+        return { manual: true, name: r.name, price: Math.round(r.snapSale * 100) / 100, quantity: r.qty, currency: "TRY", cost: Math.round(r.snapCost * 100) / 100, ...(r.gift ? { gift: true } : {}) };
       }
-      const o = { id: r.id, quantity: r.qty };
+      const o = { id: r.id, quantity: r.qty, ...(r.gift ? { gift: true } : {}) };
       if (r.custom_price != null) o.custom_price = r.custom_price;
       return o;
     });
@@ -415,24 +430,29 @@ function QuoteItemsSheet({ q, open, onClose, onSaved, showCost }) {
                   className="m-tnum w-24 rounded-md bg-slate-100 px-1.5 py-0.5 text-[12px] font-semibold"
                   style={{ color: r.custom_price != null && r.kind === "cat" ? "#d9820a" : "var(--m-ink)" }}
                 />
-                <span className="truncate">{missing(r) ? "katalogda yok" : r.kind === "manual" ? "manuel" : r.custom_price != null ? "özel" : ""}</span>
+                <span className="truncate">{r.gift ? <b style={{ color: "#059669" }}>🎁 hediye</b> : missing(r) ? "katalogda yok" : r.kind === "manual" ? "manuel" : r.custom_price != null ? "özel" : ""}</span>
               </div>
             </div>
             <div className="flex items-center gap-1">
               <button onClick={() => setQty(r.key, -1)} aria-label="Azalt" className="m-press flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100"><Minus className="h-4 w-4" /></button>
               <span className="m-tnum w-7 text-center text-[14px] font-bold">{r.qty}</span>
               <button onClick={() => setQty(r.key, 1)} aria-label="Artır" className="m-press flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100"><Plus className="h-4 w-4" /></button>
-              <button onClick={() => removeRow(r.key)} aria-label="Sil" className="m-press ml-1 flex h-8 w-8 items-center justify-center rounded-lg text-rose-500"><Trash2 className="h-4 w-4" /></button>
+              <button onClick={() => toggleGift(r.key)} aria-label={r.gift ? "Hediyeyi kaldır" : "Hediye et"} className="m-press ml-1 flex h-8 w-8 items-center justify-center rounded-lg" style={{ color: r.gift ? "#059669" : "var(--m-ink-2)", background: r.gift ? "rgba(16,185,129,.12)" : "transparent" }}><Gift className="h-4 w-4" /></button>
+              <button onClick={() => removeRow(r.key)} aria-label="Sil" className="m-press flex h-8 w-8 items-center justify-center rounded-lg text-rose-500"><Trash2 className="h-4 w-4" /></button>
             </div>
           </div>
         ))}
         {rows.length === 0 && <div className="px-2 py-4 text-center text-[13px] text-slate-400">Kalem yok</div>}
       </div>
 
+      <ProductPickerSheet open={pickOpen} onClose={() => setPickOpen(false)} onAdd={addPicked} title="Teklife Ürün Ekle" addLabel="Ekle" />
       <div className="mt-3 rounded-2xl bg-white p-3">
+        <button onClick={() => setPickOpen(true)} className="m-press mb-2 flex w-full items-center justify-center gap-1.5 rounded-xl py-2.5 text-[14px] font-bold text-white" style={{ background: "var(--m-grad)" }}>
+          <Search className="h-4 w-4" /> Katalogdan seç
+        </button>
         <div className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Katalogdan ürün ekle" className={`${field} pl-9`} />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Hızlı ara" className={`${field} pl-9`} />
         </div>
         {results.length > 0 && (
           <div className="mt-2 max-h-60 overflow-y-auto">
@@ -579,9 +599,16 @@ function Detail({ q, onClose, onDeleted, onSaved, onCopied, go }) {
               {qtyOf(it) > 1 && <div className="m-tnum text-[12px] text-slate-400">{qtyOf(it)} × ₺{money(lineSaleTRY(it) / qtyOf(it))}</div>}
               {showProfit && (it.manual ? <div className="text-[11px] text-slate-400">manuel</div> : it.custom_price != null ? <div className="text-[11px]" style={{ color: "#d9820a" }}>özel fiyat</div> : null)}
             </div>
-            <div className="m-tnum shrink-0 text-[14px] font-semibold" style={{ color: "var(--m-ink)" }}>
-              ₺{money(lineSaleTRY(it))}
-            </div>
+            {it.gift ? (
+              <div className="shrink-0 text-right">
+                <div className="m-tnum text-[11px] text-slate-400 line-through">₺{money(lineSaleTRY(it))}</div>
+                <div className="text-[13px] font-extrabold" style={{ color: "#059669" }}>🎁 HEDİYE</div>
+              </div>
+            ) : (
+              <div className="m-tnum shrink-0 text-[14px] font-semibold" style={{ color: "var(--m-ink)" }}>
+                ₺{money(lineSaleTRY(it))}
+              </div>
+            )}
           </div>
         ))}
         {(q.products || []).length === 0 && <div className="px-2 py-4 text-center text-[13px] text-slate-400">Kalem yok</div>}
