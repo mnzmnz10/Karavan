@@ -65,7 +65,8 @@ export default function ProductPicker({ open, onClose, onAdd, products = [], cat
   const submit = () => { if (picked.length) { onAdd(picked); onClose(); } };
 
   if (!open) return null;
-  const catList = [...categories].filter((c) => catCounts.get(c.id)).sort((a, b) => (a.name || "").localeCompare(b.name || "", "tr"));
+  const catList = [...categories].filter((c) => catCounts.get(c.id))
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || (a.name || "").localeCompare(b.name || "", "tr"));
   const noneCount = catCounts.get("none") || 0;
 
   return createPortal(
@@ -93,10 +94,10 @@ export default function ProductPicker({ open, onClose, onAdd, products = [], cat
 
         <div className="flex min-h-0 flex-1">
           {/* Kategoriler */}
-          <div className="w-56 shrink-0 overflow-y-auto border-r border-slate-200 bg-slate-50/60 p-2">
+          <div className="w-64 shrink-0 overflow-y-auto border-r border-slate-200 bg-slate-50/60 p-2">
             <CatBtn active={cat === "all"} onClick={() => { setCat("all"); setBrand(""); }} label="Tümü" count={base.length} />
             {catList.map((c) => (
-              <CatBtn key={c.id} active={cat === c.id} onClick={() => { setCat(c.id); setBrand(""); }} label={c.name} count={catCounts.get(c.id)} color={c.color} />
+              <CatBtn key={c.id} active={cat === c.id} onClick={() => { setCat(c.id); setBrand(""); }} label={c.name} count={catCounts.get(c.id)} color={c.color} img={c.image_url ? (imgOf ? imgOf(c) : c.image_url) : null} />
             ))}
             {noneCount > 0 && <CatBtn active={cat === "none"} onClick={() => { setCat("none"); setBrand(""); }} label="Kategorisiz" count={noneCount} />}
           </div>
@@ -167,11 +168,17 @@ export default function ProductPicker({ open, onClose, onAdd, products = [], cat
   );
 }
 
-function CatBtn({ active, onClick, label, count, color }) {
+function CatBtn({ active, onClick, label, count, color, img }) {
   return (
     <button type="button" onClick={onClick}
-      className={`mb-0.5 flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm ${active ? "bg-emerald-600 font-bold text-white" : "text-slate-700 hover:bg-white"}`}>
-      {color && <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color }} />}
+      className={`mb-0.5 flex w-full items-center gap-2.5 rounded-xl px-2 py-1.5 text-left text-sm ${active ? "bg-emerald-600 font-bold text-white" : "text-slate-700 hover:bg-white"}`}>
+      {img ? (
+        <img src={img} alt="" loading="lazy" className="h-10 w-10 shrink-0 rounded-lg border border-slate-200 bg-white object-cover" />
+      ) : color ? (
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg" style={{ background: `${color}22` }}>
+          <span className="h-3 w-3 rounded-full" style={{ background: color }} />
+        </span>
+      ) : null}
       <span className="min-w-0 flex-1 truncate">{label}</span>
       <span className={`text-xs tabular-nums ${active ? "text-white/80" : "text-slate-400"}`}>{count || 0}</span>
     </button>

@@ -36,7 +36,8 @@ export default function ProductPickerSheet({ open, onClose, onAdd, title = "Ür�
     return m;
   }, [base]);
   const shown = cat === "all" ? base : base.filter((p) => (p.category_id || "none") === cat);
-  const catChips = cats.filter((c) => counts.get(c.id)).sort((a, b) => (a.name || "").localeCompare(b.name || "", "tr"));
+  const catChips = cats.filter((c) => counts.get(c.id))
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || (a.name || "").localeCompare(b.name || "", "tr"));
 
   const qtyOf = (id) => picked.find((x) => x.product.id === id)?.qty || 0;
   const setQty = (product, qty) => setPicked((prev) => {
@@ -60,7 +61,12 @@ export default function ProductPickerSheet({ open, onClose, onAdd, title = "Ür�
         <div className="-mx-4 mt-2 flex gap-1.5 overflow-x-auto px-4 pb-1">
           <PChip on={favOnly} onClick={() => setFavOnly((v) => !v)}><Star className="h-3.5 w-3.5" /> Favori</PChip>
           <PChip on={cat === "all"} onClick={() => setCat("all")}>Tümü {base.length}</PChip>
-          {catChips.map((c) => <PChip key={c.id} on={cat === c.id} onClick={() => setCat(cat === c.id ? "all" : c.id)}>{c.name} {counts.get(c.id)}</PChip>)}
+          {catChips.map((c) => (
+            <PChip key={c.id} on={cat === c.id} onClick={() => setCat(cat === c.id ? "all" : c.id)}>
+              {c.image_url && <img src={imgOf(c)} alt="" className="h-6 w-6 rounded-md bg-white object-cover" />}
+              {c.name} {counts.get(c.id)}
+            </PChip>
+          ))}
         </div>
 
         <div className="m-scroll -mx-1 mt-2 min-h-0 flex-1 px-1">
