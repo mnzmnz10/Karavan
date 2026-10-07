@@ -1,18 +1,12 @@
 # TestFlight iç test grubu kur (tek seferlik / gerektiğinde): uygulamaya "Ben" iç grubunu açar,
 # tüm build'lere erişim verir ve verilen e-postayı (App Store Connect kullanıcısı) gruba ekler.
-# Çalıştırma: Actions → "TestFlight internal group" → Run workflow  (ya da gh workflow run)
+# Çalıştırma: `git tag tfgroup-N && git push origin tfgroup-N` (beta uygulaması için).
+# Test kullanıcıları App Store Connect'teki kullanıcılardan alınır (e-posta depoya yazılmaz).
 name: TestFlight internal group
 
 on:
-  workflow_dispatch:
-    inputs:
-      bundle_id:
-        description: "Bundle ID"
-        default: "shop.corlukaravan.app.beta"
-        required: true
-      tester_email:
-        description: "Eklenecek App Store Connect kullanıcısının e-postası"
-        required: true
+  push:
+    tags: ["tfgroup-*"]
 
 jobs:
   group:
@@ -23,8 +17,7 @@ jobs:
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
           KID_RAW: ${{ secrets.ASC_KEY_ID }}
           ISS_RAW: ${{ secrets.ASC_ISSUER_ID }}
-          BID: ${{ inputs.bundle_id }}
-          EMAIL: ${{ inputs.tester_email }}
+          BID: shop.corlukaravan.app.beta
         run: |
           pip install --quiet pyjwt cryptography
           python3 - <<'PY'
@@ -43,7 +36,9 @@ jobs:
                       return json.loads(t) if t else {}
               except urllib.error.HTTPError as e:
                   print(method, path, e.code, e.read().decode()[:500]); raise
-          bid, email = os.environ["BID"], os.environ["EMAIL"].strip()
+          bid = os.environ["BID"]
+          emails = [u["attributes"]["username"] for u in api("GET", "/v1/users?limit=50")["data"] if u["attributes"].get("username")]
+          print("ASC users:", len(emails))
           apps = api("GET", f"/v1/apps?filter[bundleId]={bid}")["data"]
           if not apps: raise SystemExit(f"No app for {bid}")
           app_id = apps[0]["id"]; print("app", apps[0]["attributes"]["name"])
@@ -58,9 +53,10 @@ jobs:
               print("created internal group:", grp["attributes"]["name"])
           gid = grp["id"]
           testers = api("GET", f"/v1/betaGroups/{gid}/betaTesters?limit=200")["data"]
-          if any((t["attributes"].get("email") or "").lower() == email.lower() for t in testers):
-              print("tester already in group")
-          else:
+          have = {(t["attributes"].get("email") or "").lower() for t in testers}
+          for email in emails:
+              if email.lower() in have:
+                  print("tester already in group"); continue
               api("POST", "/v1/betaTesters", {"data": {"type": "betaTesters", "attributes": {"email": email},
                   "relationships": {"betaGroups": {"data": [{"type": "betaGroups", "id": gid}]}}}})
               print("tester added")
