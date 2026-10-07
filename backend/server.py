@@ -3653,7 +3653,7 @@ class PDFQuoteGenerator:
                 gift_c = ParagraphStyle('PTgift', parent=c_rb, textColor=colors.HexColor('#059669'))
                 data.append([
                     Paragraph(str(i), idx_st),
-                    Paragraph(f"<b>{name}</b>  <font color='#059669'><b>(HEDİYE)</b></font>", c_l),
+                    Paragraph(f"<b>{name}</b>", c_l),
                     Paragraph(str(qty), c_c),
                     Paragraph(f"<strike>{sym} {self._format_price_modern(unit)}</strike>", c_r),
                     Paragraph(f"<strike>₺ {self._format_price_modern(unit_try)}</strike>", c_r),
@@ -13781,7 +13781,7 @@ class PDFServiceGenerator(PDFContractGenerator):
                     gift_st = ParagraphStyle('SvcGift', parent=self.table_cell_right_bold, textColor=colors.HexColor('#059669'))
                     rows.append([
                         Paragraph(str(i+1), self.table_cell_style),
-                        Paragraph(f"{upper_tr(it.get('name') or '')}  <font color='#059669'><b>(HEDİYE)</b></font>", self.table_cell_style),
+                        Paragraph(upper_tr(it.get('name') or ''), self.table_cell_style),
                         Paragraph(f"{qty:g}", self.table_cell_right),
                         Paragraph(f"<strike>{unit_txt}</strike>", self.table_cell_right),
                         Paragraph("HEDİYE", gift_st),
