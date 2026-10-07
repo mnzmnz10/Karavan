@@ -34,8 +34,8 @@ APPS = {
     "bms": {
         "title": "Lityum Akü (Megacell 12.8V 200Ah)",
         "what": "Akünün doluluk oranı (%), voltaj, şarj/deşarj akımı, sıcaklık ve hücre voltajları",
-        "ios": ("BETA BMS", "https://apps.apple.com/tr/app/beta-bms/id6808483278"),
-        "android": ("BETA Monitor", "https://play.google.com/store/apps/details?id=com.inuker.bluetooth.nengxiang"),
+        "ios": ("BMS Meta", "https://apps.apple.com/tr/app/bms-meta/id1619258052"),
+        "android": ("BMS Meta", "https://play.google.com/store/apps/details?id=com.inuker.bluetooth.xundian"),
     },
     "srne": {
         "title": "Güneş Şarj Cihazı (Electrozirve 40A MPPT)",
@@ -131,7 +131,7 @@ def build(customer, plate, out):
         "Karavanın içinde, cihazlara <b>5 metreden yakın</b> olun. Telefonun Bluetooth ayarlarından eşleştirme yapmanız <b>gerekmez</b>; bağlantı uygulamanın içinden kurulur.",
     ]), Spacer(1, 10)]
 
-    story += [KeepTogether([band("3 · AKÜYE BAĞLANMA  (BETA BMS / BETA Monitor)"), Spacer(1, 6), steps_table([
+    story += [KeepTogether([band("3 · AKÜYE BAĞLANMA  (BMS Meta)"), Spacer(1, 6), steps_table([
         "Uygulamayı açın. Ana ekranda yakındaki aküler otomatik taranır; taranmazsa <b>Tara / Yenile</b> düğmesine basın.",
         "Listede çıkan akünüze dokunun. Bağlantı birkaç saniye sürer.",
         "Ana ekranda akünün <b>doluluk yüzdesini (SOC)</b>, voltajını ve akımını görürsünüz. Akım <b>artı (+)</b> ise akü şarj oluyor, <b>eksi (−)</b> ise harcanıyor demektir.",
