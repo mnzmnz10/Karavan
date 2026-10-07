@@ -120,3 +120,6 @@ migrate_*.py
 _external/
 brain/
 graphify-out/cache/
+
+# Müşteriye özel kılavuz PDFleri (kişisel veri) depoya girmez
+design/musteri-kilavuz/*.pdf
