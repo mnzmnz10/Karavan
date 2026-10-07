@@ -4675,12 +4675,14 @@ class PDFPackageGenerator(PDFQuoteGenerator):
                     else:
                         unit_price = float(product.get('list_price_try', 0))
                     line_total = unit_price * quantity
-                    
+                    # Özel fiyat 0 = hediye → "₺ 0" yerine HEDİYE yaz
+                    is_gift = product.get('has_custom_price') and product.get('custom_price') is not None and float(product.get('custom_price') or 0) == 0
+                    gift_txt = "<font color='#059669'><b>HEDİYE</b></font>"
                     row = [
                         Paragraph(display_name, small_data_style),
                         Paragraph(str(quantity), small_data_style),
-                        Paragraph(f"₺ {self._format_price_modern(unit_price)}", small_data_style),
-                        Paragraph(f"₺ {self._format_price_modern(line_total)}", small_data_style)
+                        Paragraph(gift_txt if is_gift else f"₺ {self._format_price_modern(unit_price)}", small_data_style),
+                        Paragraph(gift_txt if is_gift else f"₺ {self._format_price_modern(line_total)}", small_data_style)
                     ]
                 else:
                     row = [

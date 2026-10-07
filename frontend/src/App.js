@@ -25,6 +25,7 @@ import { customerProfile } from './lib/customerProfile';
 import CartPanel, { CartAddButton } from './components/CartPanel';
 import BulletTextarea from './components/BulletTextarea';
 import ProductPicker from './components/ProductPicker';
+import PhotoGallery from './components/PhotoGallery';
 import { searchProducts } from './lib/productSearch';
 import { CartProvider, useCart } from './cart/CartContext';
 import { rateOf, cartTotals } from './cart/cartLogic';
@@ -128,7 +129,7 @@ function AppInner() {
   const emptyServiceForm = { customer_name: '', phone: '', vehicle_brand: '', vehicle_model: '', plate: '', is_trailer: false, arrival_date: '', delivery_date: '', operations: '', items: [], photos: [], notes: '', cost: '', advance_amount: '', discount_amount: '', discount_percent: '', collections: [], payment_account: '', warranty_months: '', warranty_note: '', status: 'received' };
   const [services, setServices] = useState([]);
   const [serviceForm, setServiceForm] = useState(emptyServiceForm);
-  const [photoLightbox, setPhotoLightbox] = useState(null); // büyütülen servis fotosu (data:/url) — read modunda tıkla-aç
+  const [photoLightbox, setPhotoLightbox] = useState(null); // { photos, i } — servis foto galerisi (oklarla geçiş)
   const [serviceItemSearch, setServiceItemSearch] = useState(''); // servis kalemine üründen ekleme araması
   const [termosaChanges, setTermosaChanges] = useState(null); // Termosa fiyat değişiklik popup'ı: { source, sessions:[{id,company_id}], rows:[changed+_sessionId+_company], applying }
   const [serviceEditingId, setServiceEditingId] = useState(null); // düzenlenen kayıt id (null = yeni)
@@ -5017,6 +5018,11 @@ function AppInner() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-emerald-25 to-teal-50">
+      <PhotoGallery
+        photos={photoLightbox?.photos || []}
+        index={photoLightbox ? photoLightbox.i : null}
+        onIndex={(i) => setPhotoLightbox((cur) => (i == null || !cur ? null : { ...cur, i }))}
+      />
       <ProductPicker
         open={!!pickerFor}
         onClose={() => setPickerFor(null)}
@@ -7207,7 +7213,9 @@ function AppInner() {
                                                 <span>Adet: {product.quantity}</span>
                                                 <span>•</span>
                                                 <span>
-                                                  {product.has_custom_price ? (
+                                                  {product.has_custom_price && Number(product.custom_price) === 0 ? (
+                                                    <span className="text-emerald-600 font-bold">🎁 HEDİYE</span>
+                                                  ) : product.has_custom_price ? (
                                                     <span className="text-purple-600 font-medium">
                                                       ₺ {formatPrice(product.custom_price)} (özel fiyat)
                                                     </span>
@@ -7306,12 +7314,15 @@ function AppInner() {
                                           </div>
                                           
                                           {/* Özel Fiyat Bilgi Göstergesi */}
-                                          {product.has_custom_price && (
-                                            <div className="mt-2 text-xs text-purple-600 bg-purple-50 px-2 py-1 rounded">
-                                              <span className="font-medium">Özel fiyat uygulandı:</span> ₺{formatPrice(product.custom_price)} 
-                                              {product.custom_price === 0 && <span className="ml-1 font-medium">(HEDİYE)</span>}
+                                          {product.has_custom_price && (Number(product.custom_price) === 0 ? (
+                                            <div className="mt-2 text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-1 rounded">
+                                              🎁 Hediye — pakete ücretsiz eklendi
                                             </div>
-                                          )}
+                                          ) : (
+                                            <div className="mt-2 text-xs text-purple-600 bg-purple-50 px-2 py-1 rounded">
+                                              <span className="font-medium">Özel fiyat uygulandı:</span> ₺{formatPrice(product.custom_price)}
+                                            </div>
+                                          ))}
                                           
                                           {/* Ürün Notları Göstergesi */}
                                           {product.has_notes && (
@@ -11019,7 +11030,7 @@ function AppInner() {
                         <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
                           {(serviceForm.photos || []).map((src, idx) => (
                             <div key={idx} className="relative group aspect-square rounded-lg overflow-hidden border border-slate-200">
-                              <img src={src} alt={`Foto ${idx + 1}`} onClick={() => openImagePreview(src, `Servis Fotoğrafı ${idx + 1}`)} className="w-full h-full object-cover cursor-zoom-in hover:opacity-90 transition-opacity" title="Görüntülemek için tıklayın" />
+                              <img src={src} alt={`Foto ${idx + 1}`} onClick={() => setPhotoLightbox({ photos: serviceForm.photos || [], i: idx })} className="w-full h-full object-cover cursor-zoom-in hover:opacity-90 transition-opacity" title="Görüntülemek için tıklayın" />
                               <button type="button" onClick={() => removeServicePhoto(idx)} className="absolute top-1 right-1 bg-rose-600 text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity" title="Kaldır">
                                 <X className="w-3 h-3" />
                               </button>
@@ -11313,7 +11324,7 @@ function AppInner() {
                           <div className="mb-3 flex items-center gap-2 text-[11px] font-black uppercase tracking-wider text-[#1B3A5C]"><Eye className="w-3.5 h-3.5" /> Fotoğraflar ({s.photos.length})</div>
                           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
                             {s.photos.map((src, i) => (
-                              <button key={i} type="button" onClick={() => setPhotoLightbox(src)}
+                              <button key={i} type="button" onClick={() => setPhotoLightbox({ photos: s.photos, i })}
                                 className="block aspect-square rounded-lg overflow-hidden ring-1 ring-slate-200 hover:ring-emerald-400 cursor-zoom-in">
                                 <img src={src} alt={`foto ${i + 1}`} className="w-full h-full object-cover" />
                               </button>
@@ -11327,14 +11338,6 @@ function AppInner() {
                         setServices((prev) => prev.map((x) => (x.id === s.id ? { ...x, invoices } : x)));
                       }} />
 
-                      {photoLightbox && (
-                        <div className="fixed inset-0 z-[200] bg-black/80 flex items-center justify-center p-4 cursor-zoom-out"
-                             onClick={() => setPhotoLightbox(null)}>
-                          <img src={photoLightbox} alt="foto" className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" />
-                          <button type="button" onClick={() => setPhotoLightbox(null)}
-                                  className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/90 text-slate-800 flex items-center justify-center text-xl font-bold hover:bg-white">×</button>
-                        </div>
-                      )}
 
                       {total > 0 && (
                         <div className="px-4 sm:px-8 pb-6 bg-[#FBFCFD]">

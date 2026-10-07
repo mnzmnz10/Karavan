@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cache } from "./cache";
-import { ChevronLeft, Search, X, Loader2, WifiOff, RotateCw, Copy, Check } from "lucide-react";
+import { ChevronLeft, ChevronRight, Search, X, Loader2, WifiOff, RotateCw, Copy, Check } from "lucide-react";
 import { toast } from "./toast";
 
 // Yerel (cihaz saat dilimi) bugün YYYY-MM-DD — toISOString UTC'dir; TR'de 00:00-03:00 arası bir önceki günü verirdi
@@ -258,14 +258,35 @@ export function Sheet({ open, onClose, title, children, full = false }) {
   );
 }
 
-// Tam ekran görsel (tıkla-kapat)
-export function Lightbox({ src, onClose }) {
-  useBackClose(!!src, onClose);
-  if (!src) return null;
+// Tam ekran görsel (tıkla-kapat). Galeri modu: srcs + index + onIndex → oklar, kaydırma, "3 / 7".
+export function Lightbox({ src, onClose, srcs, index, onIndex }) {
+  const gallery = Array.isArray(srcs) && srcs.length > 0 && index != null;
+  const cur = gallery ? srcs[index] : src;
+  const close = gallery ? () => onIndex(null) : onClose;
+  useBackClose(!!cur, close);
+  const touchX = useRef(null);
+  if (!cur) return null;
+  const n = gallery ? srcs.length : 1;
+  const go = (d) => onIndex(((index + d) % n + n) % n);
+  const navBtn = "absolute top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/20 text-white";
   return createPortal(
-    <div className="m-backdrop-enter fixed inset-0 z-[60] flex items-center justify-center bg-black" onClick={onClose}>
-      <img src={src} alt="" className="max-h-[92dvh] max-w-full object-contain" />
-      <button onClick={onClose} aria-label="Kapat" className="absolute right-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white" style={{ top: "calc(env(safe-area-inset-top) + 12px)" }}>
+    <div className="m-backdrop-enter fixed inset-0 z-[60] flex items-center justify-center bg-black" onClick={close}
+      onTouchStart={(e) => { touchX.current = e.touches[0].clientX; }}
+      onTouchEnd={(e) => {
+        if (!gallery || n < 2 || touchX.current == null) return;
+        const dx = e.changedTouches[0].clientX - touchX.current;
+        touchX.current = null;
+        if (Math.abs(dx) > 50) { e.preventDefault(); go(dx < 0 ? 1 : -1); }
+      }}>
+      <img src={cur} alt="" className="max-h-[92dvh] max-w-full object-contain" onClick={(e) => gallery && e.stopPropagation()} />
+      {gallery && n > 1 && (
+        <>
+          <button onClick={(e) => { e.stopPropagation(); go(-1); }} aria-label="Önceki fotoğraf" className={`${navBtn} left-3`}><ChevronLeft className="h-6 w-6" /></button>
+          <button onClick={(e) => { e.stopPropagation(); go(1); }} aria-label="Sonraki fotoğraf" className={`${navBtn} right-3`}><ChevronRight className="h-6 w-6" /></button>
+          <div className="m-tnum absolute left-1/2 -translate-x-1/2 rounded-full bg-white/15 px-3 py-1 text-[13px] font-semibold text-white" style={{ bottom: "calc(env(safe-area-inset-bottom) + 16px)" }}>{index + 1} / {n}</div>
+        </>
+      )}
+      <button onClick={(e) => { e.stopPropagation(); close(); }} aria-label="Kapat" className="absolute right-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white" style={{ top: "calc(env(safe-area-inset-top) + 12px)" }}>
         <X className="h-5 w-5" />
       </button>
     </div>,
