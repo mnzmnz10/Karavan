@@ -2,6 +2,10 @@
 #
 # Tetikleme: `ios-*` etiketi push'la (ör. git tag ios-1 && git push origin ios-1)
 #            veya varsayılan dalda Actions → "iOS TestFlight" → Run workflow.
+# Beta:      `beta-*` etiketi → ayrı "MSZ Beta" uygulaması (shop.corlukaravan.app.beta,
+#            simgede BETA şeridi). Resmi sürümle aynı telefonda yan yana kurulur.
+#            İlk çalıştırmada bundle ID API ile kaydedilir; App Store Connect'te
+#            "MSZ Karavan Beta" uygulama kaydı bir kez elle açılmalıdır.
 #
 # Gerekli repo secret'ları (Settings → Secrets and variables → Actions):
 #   APPLE_TEAM_ID   Apple Developer Team ID (10 karakter, developer.apple.com → Membership)
@@ -13,7 +17,7 @@ name: iOS TestFlight
 
 on:
   push:
-    tags: ["ios-*"]
+    tags: ["ios-*", "beta-*"]
   workflow_dispatch:
 
 concurrency:
@@ -29,6 +33,8 @@ jobs:
         working-directory: frontend
     env:
       CI: "false" # CRA: uyarıları hata sayma
+      BETA: ${{ startsWith(github.ref_name, 'beta-') && 'true' || 'false' }}
+      APP_BUNDLE_ID: ${{ startsWith(github.ref_name, 'beta-') && 'shop.corlukaravan.app.beta' || 'shop.corlukaravan.app' }}
     steps:
       - uses: actions/checkout@v5
 
@@ -46,6 +52,38 @@ jobs:
 
       - name: Capacitor sync (iOS)
         run: npx cap sync ios
+
+      - name: Beta flavor (name + BETA icon)
+        if: env.BETA == 'true'
+        run: |
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName MSZ Beta" ios/App/App/Info.plist
+          # Yalnız App hedefinin kimliği (komut satırı override'ı SPM paketlerine de uygulanırdı)
+          sed -i '' 's/PRODUCT_BUNDLE_IDENTIFIER = shop\.corlukaravan\.app;/PRODUCT_BUNDLE_IDENTIFIER = shop.corlukaravan.app.beta;/g' ios/App/App.xcodeproj/project.pbxproj
+          grep -c "shop.corlukaravan.app.beta;" ios/App/App.xcodeproj/project.pbxproj
+          python3 -m pip install --quiet --break-system-packages pillow 2>/dev/null || python3 -m pip install --quiet pillow
+          python3 - <<'PY'
+          from PIL import Image, ImageDraw, ImageFont
+          import glob
+          font = None
+          for f in ["/System/Library/Fonts/Supplemental/Arial Bold.ttf", "/Library/Fonts/Arial Bold.ttf", "/System/Library/Fonts/Helvetica.ttc"]:
+              try:
+                  font = ImageFont.truetype(f, 230); break
+              except Exception:
+                  pass
+          for path in glob.glob("ios/App/App/Assets.xcassets/AppIcon.appiconset/*.png"):
+              if "tinted" in path:
+                  continue
+              im = Image.open(path).convert("RGB")
+              w, h = im.size
+              d = ImageDraw.Draw(im)
+              band = int(h * 0.27)
+              d.rectangle([0, h - band, w, h], fill=(234, 88, 12))
+              f = font.font_variant(size=int(band * 0.72)) if font else ImageFont.load_default()
+              tw = d.textlength("BETA", font=f)
+              d.text(((w - tw) / 2, h - band + band * 0.1), "BETA", font=f, fill=(255, 255, 255))
+              im.save(path)
+              print("beta icon:", path, im.size)
+          PY
 
       - name: Check secrets (lengths only, values never printed)
         env:
@@ -86,8 +124,9 @@ jobs:
           key = open(os.path.join(os.environ["RUNNER_TEMP"], "keys", f"AuthKey_{kid}.p8")).read()
           tok = jwt.encode({"iss": iss, "iat": int(time.time()), "exp": int(time.time()) + 600, "aud": "appstoreconnect-v1"},
                            key, algorithm="ES256", headers={"kid": kid, "typ": "JWT"})
+          bid = os.environ["APP_BUNDLE_ID"]
           for url in ("https://api.appstoreconnect.apple.com/v1/apps?limit=5",
-                      "https://api.appstoreconnect.apple.com/v1/bundleIds?filter[identifier]=shop.corlukaravan.app"):
+                      f"https://api.appstoreconnect.apple.com/v1/bundleIds?filter[identifier]={bid}"):
               req = urllib.request.Request(url, headers={"Authorization": f"Bearer {tok}"})
               try:
                   with urllib.request.urlopen(req) as r:
@@ -96,6 +135,27 @@ jobs:
               except urllib.error.HTTPError as e:
                   body = e.read().decode()[:600]
                   print(url.split("/v1/")[1].split("?")[0], e.code, body)
+
+          def api(method, path, body=None):
+              req = urllib.request.Request("https://api.appstoreconnect.apple.com" + path, method=method,
+                                           data=json.dumps(body).encode() if body else None,
+                                           headers={"Authorization": f"Bearer {tok}", "Content-Type": "application/json"})
+              with urllib.request.urlopen(req) as r:
+                  return json.load(r)
+
+          if os.environ.get("BETA") == "true":
+              found = api("GET", f"/v1/bundleIds?filter[identifier]={bid}").get("data", [])
+              if not any(x["attributes"]["identifier"] == bid for x in found):
+                  try:
+                      api("POST", "/v1/bundleIds", {"data": {"type": "bundleIds", "attributes": {"identifier": bid, "name": "MSZ Karavan Beta", "platform": "IOS"}}})
+                      print("Registered bundle ID", bid)
+                  except urllib.error.HTTPError as e:
+                      print("::error::Bundle ID could not be registered:", e.code, e.read().decode()[:400]); raise SystemExit(1)
+              apps = api("GET", f"/v1/apps?filter[bundleId]={bid}").get("data", [])
+              if not apps:
+                  print(f"::error::App Store Connect'te {bid} için uygulama kaydı yok. Apps → + → New App ile 'MSZ Karavan Beta' oluşturun, sonra etiketi yeniden gönderin.")
+                  raise SystemExit(1)
+              print("Beta app record OK:", apps[0]["attributes"]["name"])
           PY
 
       - name: Archive
