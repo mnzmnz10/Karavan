@@ -11,15 +11,15 @@
 #   ASC_ISSUER_ID   App Store Connect Issuer ID
 #   ASC_KEY_P8      .p8 dosyasının TÜM içeriği (-----BEGIN PRIVATE KEY----- dahil)
 # API anahtarı "Admin" rolünde olmalı: imza sertifikası/profil bulutta otomatik oluşturulur.
-name: iOS TestFlight
+name: LKM iOS TestFlight
 
 on:
   push:
-    tags: ["ios-*"]
+    tags: ["lkm-ios-*"]
   workflow_dispatch:
 
 concurrency:
-  group: ios-testflight
+  group: lkm-ios-testflight
   cancel-in-progress: false
 
 jobs:

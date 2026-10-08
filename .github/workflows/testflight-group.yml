@@ -3,11 +3,11 @@
 # Çalıştırma: Actions → "TestFlight internal group" → Run workflow
 #             veya `git tag tfgroup-1 && git push origin tfgroup-1`.
 # Test kullanıcıları App Store Connect'teki kullanıcılardan alınır (e-posta depoya yazılmaz).
-name: TestFlight internal group
+name: LKM TestFlight internal group
 
 on:
   push:
-    tags: ["tfgroup-*"]
+    tags: ["lkm-tfgroup-*"]
   workflow_dispatch:
 
 jobs:
