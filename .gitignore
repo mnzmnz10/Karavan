@@ -1,0 +1,12 @@
+node_modules/
+.DS_Store
+*.p8
+*.mobileprovision
+*.p12
+.env*
+
+# Xcode
+ios/App/build/
+ios/DerivedData/
+xcuserdata/
+*.xcarchive
