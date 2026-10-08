@@ -25,12 +25,9 @@ Mac gerekmiyor. İmzalama ve yükleme Karavan'daki akışın aynısı: App Store
    - SKU: `lkm-ios`
    - Kullanıcı erişimi: Tam erişim
 
-### b) Özel GitHub deposu ve push
+### b) Özel GitHub deposu (yapıldı)
 
-```powershell
-cd "C:\Users\Mehmet Necdet\Documents\ChatGPT\lkm-ios"
-gh repo create lkm-ios --private --source . --remote origin --push
-```
+Depo açıldı ve gönderildi: https://github.com/mnzmnz10/lkm-ios (özel). Not: özel depoda macOS derlemesi ücretsiz Actions dakikasından 10 kat düşer (ayda ~200 macOS dakikası; bir derleme ~15 dk).
 
 ### c) Secret'lar (Karavan deposundakilerle aynı değerler)
 
