@@ -5,7 +5,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 import type { KeyboardResize } from '@capacitor/keyboard';
 
 /**
- * Kontrol Merkezi (LKM) iOS kabuğu.
+ * Kontrol Merkezi (LKM) iOS ve Android kabuğu.
  *
  * Uygulama kendi arayüzünü taşımaz: masaüstündeki LKM'nin Tailscale üzerinden
  * yayınladığı telefon arayüzünü (server.url) WKWebView içinde açar.
@@ -33,7 +33,18 @@ const config: CapacitorConfig = {
     scrollEnabled: false,
     allowsLinkPreview: false,
   },
+  android: {
+    backgroundColor: '#eef1f7',
+    // Uzun basınca bağlantı/görsel menüsü ve metin seçimi web sayfasının işi; WebView hata ayıklaması kapalı.
+    webContentsDebuggingEnabled: false,
+    allowMixedContent: false,
+  },
   plugins: {
+    SystemBars: {
+      // Telefon arayüzü viewport-fit=cover + env(safe-area-inset-*) kullanıyor; Android'de de kenardan kenara açılsın.
+      insetsHandling: 'native',
+      initialViewportFitValueHint: 'cover',
+    },
     SplashScreen: {
       launchShowDuration: 400,
       launchAutoHide: true,

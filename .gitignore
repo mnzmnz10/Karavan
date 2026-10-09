@@ -10,3 +10,6 @@ ios/App/build/
 ios/DerivedData/
 xcuserdata/
 *.xcarchive
+
+# Android APK çıktısı
+KontrolMerkezi.apk

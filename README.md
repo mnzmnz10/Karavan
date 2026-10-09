@@ -1,4 +1,4 @@
-# Kontrol Merkezi — iOS kabuğu
+# Kontrol Merkezi — iOS ve Android kabuğu
 
 LKM'nin telefon arayüzünü iPhone'da uygulama olarak açan Capacitor 8 kabuğu. Uygulamanın içinde arayüz yok: açılınca `https://mnz-home.silverside-elnath.ts.net` adresini yükler. Bu adres yalnızca telefon Tailscale ağındayken açılır. Ulaşılamazsa uygulamaya gömülü `www/offline.html` gösterilir.
 
@@ -81,3 +81,14 @@ npx cap doctor
 ```
 
 `ios/` klasörü Windows'ta `npx cap add ios` ile üretildi (Capacitor 8, Swift Package Manager; CocoaPods yok). Elle yapılan değişiklikler: Info.plist'e `ITSAppUsesNonExemptEncryption=false`, `UIStatusBarStyle`, `CFBundleDevelopmentRegion=tr`; `MARKETING_VERSION = 1.0.0`; uygulama simgesi (LKM PWA simgesinden 1024 px, opak) ve düz `#eef1f7` açılış görseli.
+
+## Android
+
+Aynı kabuğun Android sürümü (`android/`). Mağaza yok; APK telefona elle kurulur.
+
+- Derleme bu PC'de: `npm run android:apk` → depo kökünde `KontrolMerkezi.apk`. Android Studio'nun JDK'sı ve SDK'sı kullanılır.
+- İmza: bu PC'nin `~/.android/debug.keystore` anahtarı. Güncelleme aynı anahtarla imzalanmalı. Anahtar kaybolursa uygulama silinip yeniden kurulur.
+- Sürüm: `android/app/build.gradle` içinde `versionCode` her yeni APK'da bir artırılmalı.
+- Telefonda Tailscale uygulaması açık ve aynı ağda olmalı. Yoksa `offline.html` görünür.
+- İndirmeler (`Telefona al`, `İndir`) Android indirme yöneticisine gider ve İndirilenler klasörüne iner (`MainActivity.java`).
+- Güvenli alanlar: `SystemBars.insetsHandling: native` + `viewport-fit=cover`; klavye: `adjustResize`.

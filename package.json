@@ -2,13 +2,15 @@
   "name": "lkm-ios",
   "version": "1.0.0",
   "private": true,
-  "description": "Kontrol Merkezi (LKM) telefon arayüzü için Capacitor iOS kabuğu",
+  "description": "Kontrol Merkezi (LKM) telefon arayüzü için Capacitor iOS ve Android kabuğu",
   "scripts": {
     "sync": "cap sync ios",
+    "android:apk": "powershell -ExecutionPolicy Bypass -File scripts/android-apk.ps1",
     "doctor": "cap doctor",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.3",
     "@capacitor/app": "^8.1.1",
     "@capacitor/core": "^8.5.0",
     "@capacitor/haptics": "^8.0.2",

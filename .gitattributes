@@ -1,3 +1,5 @@
 * text=auto eol=lf
 *.png binary
 *.p8 binary
+*.bat text eol=crlf
+*.jar binary
