@@ -158,7 +158,7 @@ function CartSheet({ open, onClose }) {
           const p = x.product;
           return (
             <div key={p.id} className="flex items-center gap-3 rounded-2xl bg-white p-3">
-              {p.image_url ? (
+              {imgOf(p) ? (
                 <img src={imgOf(p)} alt="" loading="lazy" decoding="async" className="m-img h-12 w-12 shrink-0 rounded-xl object-cover" onError={imgFallback(p)} />
               ) : (
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-slate-100"><Package className="h-5 w-5 text-slate-300" /></div>

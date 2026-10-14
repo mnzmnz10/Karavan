@@ -123,3 +123,4 @@ graphify-out/cache/
 
 # Müşteriye özel kılavuz PDFleri (kişisel veri) depoya girmez
 design/musteri-kilavuz/*.pdf
+design/gorsel-onarim/

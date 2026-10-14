@@ -63,7 +63,7 @@ export default function ProductPickerSheet({ open, onClose, onAdd, title = "Ür�
           <PChip on={cat === "all"} onClick={() => setCat("all")}>Tümü {base.length}</PChip>
           {catChips.map((c) => (
             <PChip key={c.id} on={cat === c.id} onClick={() => setCat(cat === c.id ? "all" : c.id)}>
-              {c.image_url && <img src={imgOf(c)} alt="" className="h-6 w-6 rounded-md bg-white object-cover" />}
+              {imgOf(c) && <img src={imgOf(c)} alt="" className="h-6 w-6 rounded-md bg-white object-cover" />}
               {c.name} {counts.get(c.id)}
             </PChip>
           ))}

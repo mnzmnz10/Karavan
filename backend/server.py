@@ -428,23 +428,29 @@ async def _archive_image(url: str) -> str:
 
 
 async def _archive_pending_images() -> dict:
-    """Kopyası olmayan/bayat ürün ve kategori görsellerini arşivle. Başarısız link bir kez işaretlenir
-    (image_cache_err_src); link değişince yeniden denenir."""
+    """Kopyası olmayan/bayat ürün ve kategori görsellerini arşivle. Başarısız link işaretlenir
+    (image_cache_err_src — arayüz ölü linki göstermez); link değişince hemen, değişmezse günde bir
+    yeniden denenir (geçici DNS/site kesintisi görseli kalıcı gizlemesin)."""
     done = failed = 0
+    retry_before = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
     q = {"image_url": {"$regex": "^https?://"},
-         "$expr": {"$and": [{"$ne": ["$image_cached_src", "$image_url"]}, {"$ne": ["$image_cache_err_src", "$image_url"]}]}}
+         "$expr": {"$ne": ["$image_cached_src", "$image_url"]},
+         "$or": [{"$expr": {"$ne": ["$image_cache_err_src", "$image_url"]}},
+                 {"image_cache_err_at": {"$exists": False}}, {"image_cache_err_at": {"$lt": retry_before}}]}
     for coll in (db.products, db.categories):
         docs = await coll.find(q, {"_id": 0, "id": 1, "image_url": 1}).to_list(length=None)
         for d in docs:
             url = d["image_url"]
             try:
                 path = await _archive_image(url)
-                await coll.update_one({"id": d["id"], "image_url": url}, {"$set": {"image_cached": path, "image_cached_src": url}})
+                await coll.update_one({"id": d["id"], "image_url": url},
+                                      {"$set": {"image_cached": path, "image_cached_src": url},
+                                       "$unset": {"image_cache_err_src": "", "image_cache_err_at": ""}})
                 done += 1
             except Exception as e:
                 failed += 1
                 logger.warning(f"Görsel arşivlenemedi ({coll.name} {d['id']}): {url[:120]} — {e}")
-                await coll.update_one({"id": d["id"], "image_url": url}, {"$set": {"image_cache_err_src": url}})
+                await coll.update_one({"id": d["id"], "image_url": url}, {"$set": {"image_cache_err_src": url, "image_cache_err_at": datetime.now(timezone.utc).isoformat()}})
     if done or failed:
         logger.info(f"Görsel arşivi: {done} kopyalandı, {failed} başarısız")
     return {"archived": done, "failed": failed}
@@ -524,6 +530,7 @@ class Product(BaseModel):
     image_url: Optional[str] = None
     image_cached: Optional[str] = None      # sunucu kopyası (/api/img/{id}) — link ölse de görünür
     image_cached_src: Optional[str] = None  # kopyanın alındığı image_url (değişince kopya geçersiz)
+    image_cache_err_src: Optional[str] = None  # bu image_url indirilemedi (ölü link) — arayüz göstermez
     # Aynı ürün birden çok tedarikçide: kayıtlar ayrı kalır, link_group ile bağlanır (listede tek satır)
     link_group: Optional[str] = None
     link_primary: Optional[bool] = None
@@ -561,6 +568,7 @@ class Category(BaseModel):
     image_url: Optional[str] = None  # Kategori küçük resmi
     image_cached: Optional[str] = None
     image_cached_src: Optional[str] = None
+    image_cache_err_src: Optional[str] = None
     sort_order: int = 0  # Kategori sıralama numarası
     is_deletable: bool = True
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -7162,6 +7170,7 @@ async def add_supplier_to_product(product_id: str, req: AddSupplierRequest):
         "category_id": src.get("category_id"), "brand": src.get("brand") or "",
         "description": src.get("description"), "specs": src.get("specs"), "image_url": src.get("image_url"),
         "image_cached": src.get("image_cached"), "image_cached_src": src.get("image_cached_src"),
+        "image_cache_err_src": src.get("image_cache_err_src"),
         "list_price": lp, "discounted_price": dp, "currency": req.currency,
         "list_price_try": lp * r, "discounted_price_try": (dp * r) if dp else None,
         "is_favorite": False, "created_at": datetime.now(timezone.utc),

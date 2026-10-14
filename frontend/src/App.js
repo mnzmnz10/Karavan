@@ -41,7 +41,12 @@ import { CSS } from '@dnd-kit/utilities';
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 const API = `${BACKEND_URL}/api`;
 // Görsel: sunucu kopyası (link ölse de görünür) güncelse onu, değilse orijinal linki kullan
-const imgOf = (x) => (x && x.image_cached && x.image_cached_src === x.image_url ? `${BACKEND_URL}${x.image_cached}` : x?.image_url);
+// Görsel: güncel sunucu kopyası (/api/img) → orijinal link; link ölü işaretliyse (image_cache_err_src) null → yer tutucu
+const imgOf = (x) => {
+  if (!x || !x.image_url) return null;
+  if (x.image_cached && x.image_cached_src === x.image_url) return `${BACKEND_URL}${x.image_cached}`;
+  return x.image_cache_err_src === x.image_url ? null : x.image_url;
+};
 
 // Sözleşme kalem satırı — dnd-kit ile sürükle-bırak (telefon uygulaması gibi animasyonlu yeniden sıralama).
 // children render-prop'una drag dinleyicileri verilir (sadece tutamaca bağlanır, input'lar serbest kalır).
@@ -5527,7 +5532,7 @@ function AppInner() {
                             <svg className="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
                               <path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z" />
                             </svg>
-                            {category.image_url ? (
+                            {imgOf(category) ? (
                               <img 
                                 src={imgOf(category)} 
                                 alt={category.name}
@@ -8693,7 +8698,7 @@ function AppInner() {
                                 {productCount}
                               </span>
                               
-                              {category.image_url ? (
+                              {imgOf(category) ? (
                                 <img 
                                   src={imgOf(category)} 
                                   alt={category.name}
@@ -8802,7 +8807,7 @@ function AppInner() {
                           {/* Category Header */}
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b-2" style={{borderColor: categoryColor}}>
                             <div className="flex items-center gap-3">
-                              {category && category.image_url ? (
+                              {category && imgOf(category) ? (
                                 <img 
                                   src={imgOf(category)} 
                                   alt={categoryName}
@@ -8963,13 +8968,13 @@ function AppInner() {
                                         ) : (
                                           <div className="space-y-1 w-[min(42vw,560px)] min-w-[260px]">
                                             <div className="flex items-start gap-3 relative z-0 ml-2">
-                                              {product.image_url && (
+                                              {imgOf(product) && (
                                                 <img
                                                   src={imgOf(product)}
                                                   alt={product.name}
                                                   className="w-12 h-12 object-cover rounded border cursor-zoom-in hover:opacity-75 transition-opacity relative z-0 flex-shrink-0"
                                                   onError={(e) => {e.target.style.display = 'none'}}
-                                                  onClick={() => openImagePreview(product.image_url, product.name)}
+                                                  onClick={() => openImagePreview(imgOf(product), product.name)}
                                                   title="Görseli büyük boyutta görüntülemek için tıklayın"
                                                 />
                                               )}
@@ -9433,7 +9438,7 @@ function AppInner() {
                                   >
                                   {/* Product Image */}
                                   <TableCell className="p-3.5 text-center select-none border-r border-slate-200/40">
-                                    {product.image_url ? (
+                                    {imgOf(product) ? (
                                       <img 
                                         src={imgOf(product)} 
                                         alt="" 
@@ -9701,7 +9706,7 @@ function AppInner() {
                                         className="p-3 hover:bg-emerald-50/40 hover:text-emerald-950 cursor-pointer flex items-center justify-between text-xs transition-colors border-b border-slate-50"
                                       >
                                         <div className="flex items-center gap-2">
-                                          {p.image_url ? (
+                                          {imgOf(p) ? (
                                             <img src={imgOf(p)} alt="" className="w-8 h-8 min-w-[32px] min-h-[32px] max-w-[32px] max-h-[32px] object-cover rounded" />
                                           ) : (
                                             <div className="w-8 h-8 min-w-[32px] min-h-[32px] bg-slate-100 rounded flex items-center justify-center text-slate-300">
@@ -10995,7 +11000,7 @@ function AppInner() {
                                   <div key={p.id} onClick={() => addServiceItemFromProduct(p)}
                                        className="p-2.5 hover:bg-emerald-50 cursor-pointer flex items-center justify-between text-xs border-b border-slate-50">
                                     <div className="flex items-center gap-2 min-w-0">
-                                      {p.image_url ? (
+                                      {imgOf(p) ? (
                                         <img src={imgOf(p)} alt="" className="w-8 h-8 object-cover rounded shrink-0" />
                                       ) : (
                                         <div className="w-8 h-8 bg-slate-100 rounded flex items-center justify-center text-slate-300 shrink-0"><Package className="w-4 h-4" /></div>
@@ -12276,11 +12281,11 @@ function AppInner() {
                   {/* Left Column - Large Image */}
                   <div className="flex flex-col gap-3">
                     <div className="relative aspect-square bg-slate-50 border border-slate-150 rounded-2xl overflow-hidden flex items-center justify-center group shadow-xxs">
-                      {product.image_url ? (
+                      {imgOf(product) ? (
                         <img 
                           src={imgOf(product)} 
                           alt={product.name}
-                          onClick={() => window.open(product.image_url, '_blank')}
+                          onClick={() => window.open(imgOf(product), '_blank')}
                           className="max-w-full max-h-full object-contain cursor-zoom-in group-hover:scale-[1.02] transition-transform duration-200"
                         />
                       ) : (
@@ -12296,7 +12301,7 @@ function AppInner() {
                         </span>
                       )}
                     </div>
-                    {product.image_url && (
+                    {imgOf(product) && (
                       <div className="text-[10px] font-bold text-slate-400 text-center select-none">
                         💡 Görseli yeni sekmede açmak için üzerine tıklayın
                       </div>
@@ -12649,7 +12654,7 @@ function AppInner() {
                             }}
                             className="rounded"
                           />
-                          {product.image_url && (
+                          {imgOf(product) && (
                             <img
                               src={imgOf(product)}
                               alt={product.name}

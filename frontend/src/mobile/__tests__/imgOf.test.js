@@ -19,3 +19,8 @@ test("kopya yüklenemezse bir kez linke düşer, sonra gizlenir", () => {
   imgFallback(p)({ currentTarget: el });
   expect(el.style.visibility).toBe("hidden");
 });
+test("ölü link (sunucu indiremedi) → null; kopya varsa yine kopya", () => {
+  expect(imgOf({ image_url: "https://x.com/a.jpg", image_cache_err_src: "https://x.com/a.jpg" })).toBeNull();
+  expect(imgOf({ image_url: "https://x.com/b.jpg", image_cache_err_src: "https://x.com/a.jpg" })).toBe("https://x.com/b.jpg");
+  expect(imgOf({ image_url: "https://x.com/a.jpg", image_cached: "/api/img/abc", image_cached_src: "https://x.com/a.jpg", image_cache_err_src: "https://x.com/a.jpg" })).toBe("/api/img/abc");
+});

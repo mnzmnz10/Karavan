@@ -53,7 +53,7 @@ export default function CartPanel({ imgOf, onCreate }) {
                 <button type="button" onClick={() => cart.remove(p.id)} aria-label={`${p.name} sepetten çıkar`}
                   className="absolute right-1.5 top-1.5 rounded-full bg-white p-1 text-slate-400 shadow-sm hover:bg-rose-50 hover:text-rose-500"><X className="h-3.5 w-3.5" /></button>
                 <div className="flex gap-2">
-                  {p.image_url
+                  {(imgOf ? imgOf(p) : p.image_url)
                     ? <img src={imgOf ? imgOf(p) : p.image_url} alt="" loading="lazy" className="h-11 w-11 shrink-0 rounded-lg border border-slate-100 bg-white object-cover" />
                     : <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-white"><Package className="h-5 w-5 text-slate-300" /></div>}
                   <span className="line-clamp-2 pr-4 text-xs font-semibold leading-snug text-slate-700" title={p.name}>{p.name}</span>

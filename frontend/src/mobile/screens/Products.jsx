@@ -79,7 +79,7 @@ function Row({ p, onOpen, onAdd, onDec, qty, showDisc }) {
   return (
     <Card onClick={() => onOpen(p)} className="p-3">
       <div className="flex items-center gap-3">
-        {p.image_url ? (
+        {imgOf(p) ? (
           <img src={imgOf(p)} alt="" loading="lazy" decoding="async" className="m-img h-14 w-14 shrink-0 rounded-xl object-cover" onError={imgFallback(p)} />
         ) : (
           <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-slate-100">
@@ -148,7 +148,7 @@ function Detail({ p, onClose, onAdd, showDisc, onFav, inCart = 0 }) {
   const pr = priceTRY(p);
   return (
     <Sheet open={!!p} onClose={onClose} title="Ürün" full>
-      {p.image_url && (
+      {imgOf(p) && (
         <div className="m-press mb-3 flex items-center justify-center overflow-hidden rounded-2xl bg-white p-2" onClick={() => setLb(true)}>
           <img src={imgOf(p)} alt="" className="max-h-56 w-auto object-contain" onError={imgFallback(p)} />
         </div>

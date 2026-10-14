@@ -21,6 +21,7 @@ export function useCatalog(open) {
         // ürün seçici (kategori/marka filtresi, küçük resim)
         brand: p.brand || "", category_id: p.category_id || null, company_id: p.company_id || null,
         image_url: p.image_url || null, image_cached: p.image_cached || null, image_cached_src: p.image_cached_src || null,
+        image_cache_err_src: p.image_cache_err_src || null,
         is_favorite: !!p.is_favorite,
       }));
       if (arr.length) { setCat(arr); cache.set("catalog_min", arr); }

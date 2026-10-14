@@ -97,7 +97,7 @@ export default function ProductPicker({ open, onClose, onAdd, products = [], cat
           <div className="w-64 shrink-0 overflow-y-auto border-r border-slate-200 bg-slate-50/60 p-2">
             <CatBtn active={cat === "all"} onClick={() => { setCat("all"); setBrand(""); }} label="Tümü" count={base.length} />
             {catList.map((c) => (
-              <CatBtn key={c.id} active={cat === c.id} onClick={() => { setCat(c.id); setBrand(""); }} label={c.name} count={catCounts.get(c.id)} color={c.color} img={c.image_url ? (imgOf ? imgOf(c) : c.image_url) : null} />
+              <CatBtn key={c.id} active={cat === c.id} onClick={() => { setCat(c.id); setBrand(""); }} label={c.name} count={catCounts.get(c.id)} color={c.color} img={imgOf ? imgOf(c) : c.image_url || null} />
             ))}
             {noneCount > 0 && <CatBtn active={cat === "none"} onClick={() => { setCat("none"); setBrand(""); }} label="Kategorisiz" count={noneCount} />}
           </div>
