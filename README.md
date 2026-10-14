@@ -1,6 +1,6 @@
 # Kontrol Merkezi — iOS ve Android kabuğu
 
-LKM'nin telefon arayüzünü iPhone'da uygulama olarak açan Capacitor 8 kabuğu. Uygulamanın içinde arayüz yok: açılınca `https://mnz-home.silverside-elnath.ts.net` adresini yükler. Bu adres yalnızca telefon Tailscale ağındayken açılır. Ulaşılamazsa uygulamaya gömülü `www/offline.html` gösterilir.
+LKM'nin telefon arayüzünü iPhone'da uygulama olarak açan Capacitor 8 kabuğu. Uygulamanın içinde arayüz yok: açılınca `https://asistanpc.silverside-elnath.ts.net` adresini yükler. Bu adres yalnızca telefon Tailscale ağındayken açılır. Ulaşılamazsa uygulamaya gömülü `www/offline.html` gösterilir.
 
 | Ayar | Değer |
 |---|---|

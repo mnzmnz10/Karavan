@@ -13,7 +13,7 @@ import type { KeyboardResize } from '@capacitor/keyboard';
  * Capacitor, uygulama içine gömülü www/offline.html sayfasını gösterir
  * (server.errorPath; iOS'ta capacitor://localhost/offline.html olarak yüklenir).
  */
-const LKM_HOST = 'mnz-home.silverside-elnath.ts.net';
+const LKM_HOST = 'asistanpc.silverside-elnath.ts.net';
 
 const config: CapacitorConfig = {
   appId: 'com.mnzmnz10.lkm',
