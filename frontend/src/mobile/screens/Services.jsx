@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { AccountButton } from "../Account";
 import { Wrench, Car, Phone, MessageCircle, Image as ImageIcon, Loader2, Plus, Pencil, Share2, Trash2, Eye, EyeOff, Wallet, X, FileText, Camera, Receipt, ClipboardList } from "lucide-react";
 import { toast } from "../toast";
-import { services as servicesApi, rates as ratesApi, docUrl, openDoc } from "../api";
+import { services as servicesApi, rates as ratesApi, docUrl, openDoc, API } from "../api";
 import { applyPending, onOutbox, pendingCount, isTmpId } from "../outbox";
 import { useCatalog, catRate } from "../catalog";
 import { Header, SearchBar, Card, EmptyState, ErrorState, SkeletonList, Sheet, money, Pill, Lightbox, RefreshScroll, OfflineBar, todayISO, waNumber, fmtDate, CopyBtn } from "../ui";
@@ -10,6 +10,7 @@ import { cache } from "../cache";
 import ServiceForm, { compressImage, isLaborItem } from "./ServiceForm";
 import { VehicleIcon } from "../vehicleIcons";
 import CustomerSheet from "../CustomerSheet";
+import { worklistItems, hasText, worklistUrl } from "../../lib/worklist";
 
 const STATUS = {
   received: { label: "Geldi", color: "amber" },
@@ -148,6 +149,39 @@ const baseCollections = (s) => {
   return colls;
 };
 
+// Fiyatsız iş listesi: hangi kalemler PDF'e girsin (hepsi seçili gelir)
+function WorklistSheet({ open, onClose, s }) {
+  const [off, setOff] = useState(() => new Set());
+  const [notes, setNotes] = useState(true);
+  const [ops, setOps] = useState(true);
+  useEffect(() => { if (open) { setOff(new Set()); setNotes(true); setOps(true); } }, [open]);
+  if (!s) return null;
+  const items = worklistItems(s);
+  const toggle = (i) => setOff((cur) => { const n = new Set(cur); n.has(i) ? n.delete(i) : n.add(i); return n; });
+  const Row = ({ checked, onChange, children }) => (
+    <label className="m-press flex items-center gap-3 rounded-2xl bg-white px-4 py-3 text-[15px]">
+      <input type="checkbox" checked={checked} onChange={onChange} className="h-5 w-5 accent-emerald-600" />
+      <span className="flex-1">{children}</span>
+    </label>
+  );
+  return (
+    <Sheet open={open} onClose={onClose} title="Fiyatsız iş listesi">
+      <div className="mb-2 text-[13px]" style={{ color: "var(--m-ink-2)" }}>Listeye girmesini istemediğin kalemlerin işaretini kaldır.</div>
+      <div className="space-y-2">
+        {items.map((x) => (
+          <Row key={x.idx} checked={!off.has(x.idx)} onChange={() => toggle(x.idx)}>{x.name} <span className="text-slate-400">× {x.qty}</span></Row>
+        ))}
+        {hasText(s.operations) && <Row checked={ops} onChange={() => setOps(!ops)}><b>Yapılacak işlemler</b> bölümü</Row>}
+        {hasText(s.notes) && <Row checked={notes} onChange={() => setNotes(!notes)}><b>Notlar</b> bölümü</Row>}
+      </div>
+      <button onClick={() => { openDoc(worklistUrl(API, s.id, { skip: [...off], notes, ops })); onClose(); }}
+        className="m-press mt-4 flex w-full items-center justify-center gap-2 rounded-2xl py-3 text-[15px] font-bold text-white" style={{ background: "var(--m-grad)" }}>
+        <ClipboardList className="h-4 w-4" /> PDF Oluştur
+      </button>
+    </Sheet>
+  );
+}
+
 function CollectionSheet({ open, onClose, onAdd, remaining = 0 }) {
   const [desc, setDesc] = useState("");
   const [amount, setAmount] = useState("");
@@ -215,6 +249,7 @@ function CollectionSheet({ open, onClose, onAdd, remaining = 0 }) {
 
 function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuote, prodCost, go }) {
   const [custOpen, setCustOpen] = useState(false);
+  const [wlOpen, setWlOpen] = useState(false);
   const [s, setS] = useState(null);
   const [loading, setLoading] = useState(true);
   const [lb, setLb] = useState(null);
@@ -382,7 +417,7 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuo
               <Share2 className="h-4 w-4" /> PDF
             </button>
           </div>
-          <button onClick={() => openDoc(docUrl.serviceWorklist(s.id))} className="m-press -mt-1 mb-3 flex w-full items-center justify-center gap-1.5 rounded-2xl bg-white py-2.5 text-[14px] font-bold" style={{ color: "var(--m-ink-2)" }} title="Fiyatsız iş listesi (araca asmak için)">
+          <button onClick={() => setWlOpen(true)} className="m-press -mt-1 mb-3 flex w-full items-center justify-center gap-1.5 rounded-2xl bg-white py-2.5 text-[14px] font-bold" style={{ color: "var(--m-ink-2)" }} title="Fiyatsız iş listesi (araca asmak için)">
             <ClipboardList className="h-4 w-4" /> İş Listesi (fiyatsız)
           </button>
           <div className="rounded-2xl bg-white p-4">
@@ -619,6 +654,7 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuo
             {del ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Servis Kaydını Sil
           </button>
           <Lightbox srcs={s?.photos || []} index={lb} onIndex={setLb} />
+          <WorklistSheet open={wlOpen} onClose={() => setWlOpen(false)} s={s} />
         </>
       )}
     </Sheet>

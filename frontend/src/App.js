@@ -26,6 +26,7 @@ import CartPanel, { CartAddButton } from './components/CartPanel';
 import BulletTextarea from './components/BulletTextarea';
 import ProductPicker from './components/ProductPicker';
 import PhotoGallery from './components/PhotoGallery';
+import WorklistPicker from './components/WorklistPicker';
 import { searchProducts } from './lib/productSearch';
 import { CartProvider, useCart } from './cart/CartContext';
 import { rateOf, cartTotals } from './cart/cartLogic';
@@ -134,6 +135,7 @@ function AppInner() {
   const emptyServiceForm = { customer_name: '', phone: '', vehicle_brand: '', vehicle_model: '', plate: '', is_trailer: false, arrival_date: '', delivery_date: '', operations: '', items: [], photos: [], notes: '', cost: '', advance_amount: '', discount_amount: '', discount_percent: '', collections: [], payment_account: '', warranty_months: '', warranty_note: '', status: 'received' };
   const [services, setServices] = useState([]);
   const [serviceForm, setServiceForm] = useState(emptyServiceForm);
+  const [worklistSvc, setWorklistSvc] = useState(null); // fiyatsız iş listesi: kalem seçimi açık olan servis
   const [photoLightbox, setPhotoLightbox] = useState(null); // { photos, i } — servis foto galerisi (oklarla geçiş)
   const [serviceItemSearch, setServiceItemSearch] = useState(''); // servis kalemine üründen ekleme araması
   const [termosaChanges, setTermosaChanges] = useState(null); // Termosa fiyat değişiklik popup'ı: { source, sessions:[{id,company_id}], rows:[changed+_sessionId+_company], applying }
@@ -5033,6 +5035,7 @@ function AppInner() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-emerald-25 to-teal-50">
+      <WorklistPicker service={worklistSvc} api={API} onClose={() => setWorklistSvc(null)} />
       <PhotoGallery
         photos={photoLightbox?.photos || []}
         index={photoLightbox ? photoLightbox.i : null}
@@ -11273,7 +11276,7 @@ function AppInner() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <Button variant="outline" size="sm" onClick={() => openEditServiceDialog(s)} className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"><Edit className="w-4 h-4 mr-2" /> Düzenle</Button>
                         <Button variant="outline" size="sm" onClick={() => window.open(`${API}/services/${s.id}/pdf`, '_blank')} className="border-blue-300 text-blue-700 hover:bg-blue-50"><Download className="w-4 h-4 mr-2" /> PDF İndir</Button>
-                        <Button variant="outline" size="sm" onClick={() => window.open(`${API}/services/${s.id}/pdf?plain=1`, '_blank')} className="border-slate-300 text-slate-700 hover:bg-slate-50" title="Fiyatsız iş listesi: parça/işlem, adet ve notlar (araca asmak için)"><FileText className="w-4 h-4 mr-2" /> Fiyatsız PDF</Button>
+                        <Button variant="outline" size="sm" onClick={() => setWorklistSvc(s)} className="border-slate-300 text-slate-700 hover:bg-slate-50" title="Fiyatsız iş listesi: parça/işlem, adet ve notlar (araca asmak için)"><FileText className="w-4 h-4 mr-2" /> Fiyatsız PDF</Button>
                       </div>
                     </div>
 

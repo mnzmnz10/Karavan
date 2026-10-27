@@ -121,7 +121,6 @@ export const services = {
 export const docUrl = {
   quote: (id) => `${API}/quotes/${id}/pdf`,
   service: (id) => `${API}/services/${id}/pdf`,
-  serviceWorklist: (id) => `${API}/services/${id}/pdf?plain=1`, // fiyatsız iş listesi (araca asmak için)
   invoice: (id, invId) => `${API}/services/${id}/invoices/${invId}`,
   contract: (id) => `${API}/contracts/${id}/download`,
   worklist: (id) => `${API}/contracts/${id}/pdf?plain=1`, // fiyatsız iş listesi (ürün + adet)

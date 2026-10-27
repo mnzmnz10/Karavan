@@ -13083,7 +13083,8 @@ class PDFContractGenerator(PDFQuoteGenerator):
     def _worklist_pdf(self, **kw) -> BytesIO:
         """Tek sayfaya sığana kadar yazı/boşluk ölçeğini küçülterek iş listesi üretir."""
         last = None
-        for scale in (1.0, 0.94, 0.88, 0.82, 0.77, 0.72, 0.67, 0.62, 0.58, 0.54):
+        big = (1.5, 1.35, 1.2, 1.1) if kw.get("cols") == 1 else ()  # tek sütun (kısa liste): uzaktan okunsun
+        for scale in big + (1.0, 0.94, 0.88, 0.82, 0.77, 0.72, 0.67, 0.62, 0.58, 0.54):
             buf, pages = self._build_worklist(k=scale, **kw)
             last = buf
             if pages <= 1:
@@ -13092,14 +13093,14 @@ class PDFContractGenerator(PDFQuoteGenerator):
         return last
 
     def _build_worklist(self, customer: str, vehicle: str, date_str: str, blocks: list, pairs: Optional[list],
-                        fallback_title: str, k: float):
+                        fallback_title: str, k: float, cols: int = 2):
         """blocks: [(başlık, [(sno, ad, adet)])]; adet None → adet hücresi boş (madde satırı).
         pairs: alt şerit [(etiket, değer)]; None → şerit yok."""
         from reportlab.platypus import BaseDocTemplate, PageTemplate, Frame
         buffer = BytesIO()
         width, height = A4
         margin, gap, head_h = 0.9 * cm, 0.5 * cm, 1.45 * cm
-        col_w = (width - 2 * margin - gap) / 2
+        col_w = (width - 2 * margin - gap * (cols - 1)) / cols
         font, bold = self.get_font_name(), self.get_font_name(is_bold=True)
         navy = colors.HexColor('#1B3A5C')
         strip, strip_h, strip_title_h = None, 0, 0
@@ -13147,7 +13148,7 @@ class PDFContractGenerator(PDFQuoteGenerator):
         frame_bottom = margin + strip_h + strip_title_h + 0.15 * cm
         frame_h = height - margin - head_h - 0.15 * cm - frame_bottom
         frames = [Frame(margin + i * (col_w + gap), frame_bottom, col_w, frame_h, leftPadding=0, rightPadding=0,
-                        topPadding=0, bottomPadding=0, id=f"col{i}") for i in range(2)]
+                        topPadding=0, bottomPadding=0, id=f"col{i}") for i in range(cols)]
         doc = BaseDocTemplate(buffer, pagesize=A4, leftMargin=margin, rightMargin=margin, topMargin=margin,
                               bottomMargin=margin, title=f"İş Listesi - {customer or vehicle}", author="MSZ Karavan")
         doc.addPageTemplates([PageTemplate(id="cols", frames=frames, onPage=on_page)])
@@ -13168,7 +13169,7 @@ class PDFContractGenerator(PDFQuoteGenerator):
                 return str(q or "")
 
         story = []
-        widths = [0.7 * cm, col_w - 0.7 * cm - 1.05 * cm, 1.05 * cm]
+        widths = [0.7 * cm * max(k, 1), col_w - (0.7 + 1.05) * cm * max(k, 1), 1.05 * cm * max(k, 1)]
         for title, rows in blocks:
             data = [[Paragraph(title, sec_st), "", Paragraph("ADET" if any(q is not None for _, _, q in rows) else "", sec_r)]]
             data += [[Paragraph(str(sno), num), Paragraph(upper_tr(name), cell), Paragraph("" if q is None else fmt_qty(q), qty_st)] for sno, name, q in rows]
@@ -13666,22 +13667,26 @@ class PDFContractGenerator(PDFQuoteGenerator):
 class PDFServiceGenerator(PDFContractGenerator):
     """Servis / İş Emri teslim formu PDF üreticisi (sözleşme stillerini yeniden kullanır)."""
 
-    def create_service_worklist_pdf(self, svc: Dict) -> BytesIO:
-        """Fiyatsız iş listesi (araca asmak için): kalemler + adet, yapılacak işlemler ve notlar madde madde."""
+    def create_service_worklist_pdf(self, svc: Dict, skip: Optional[set] = None, notes: bool = True, ops: bool = True) -> BytesIO:
+        """Fiyatsız iş listesi (araca asmak için), tek sütun: kalemler + adet, yapılacak işlemler ve notlar madde madde.
+        skip: listeye alınmayacak kalemlerin svc.items içindeki sıra no'ları (0'dan); notes/ops: o bölüm eklensin mi."""
+        skip = skip or set()
         def lines(txt):
-            return [re.sub(r"^\s*[•·\-*]\s*", "", ln).strip() for ln in str(txt or "").splitlines() if ln.strip()]
+            ls = [re.sub(r"^\s*[•·\-*]\s*", "", ln).strip() for ln in str(txt or "").splitlines() if ln.strip()]
+            return [ln for ln in ls if not re.fullmatch(r"\[Teklif:[^\]]*\]", ln)]  # iç bağlantı etiketi, ustaya gerekmez
         blocks = []
-        items = [it for it in (svc.get("items") or []) if (it.get("name") or "").strip() and self._wl_included(it.get("qty"))]
+        items = [it for i, it in enumerate(svc.get("items") or [])
+                 if i not in skip and (it.get("name") or "").strip() and self._wl_included(it.get("qty"))]
         if items:
             blocks.append(("PARÇA / İŞLEM", [(str(i + 1), it.get("name", ""), it.get("qty")) for i, it in enumerate(items)]))
-        for title, field in (("YAPILACAK İŞLEMLER", "operations"), ("NOTLAR", "notes")):
-            ls = lines(svc.get(field))
+        for title, field, on in (("YAPILACAK İŞLEMLER", "operations", ops), ("NOTLAR", "notes", notes)):
+            ls = lines(svc.get(field)) if on else []
             if ls:
                 blocks.append((title, [("•", ln, None) for ln in ls]))
         vehicle = " ".join(x for x in [svc.get("plate"), svc.get("vehicle_brand"), svc.get("vehicle_model")] if x).strip()
         return self._worklist_pdf(customer=(svc.get("customer_name") or "").strip(), vehicle=vehicle,
                                   date_str=self._wl_date(svc.get("arrival_date") or svc.get("created_at")),
-                                  blocks=blocks, pairs=None, fallback_title=svc.get("order_no") or "SERVİS")
+                                  blocks=blocks, pairs=None, fallback_title=svc.get("order_no") or "SERVİS", cols=1)
 
     def create_service_pdf(self, svc: Dict) -> BytesIO:
         from reportlab.platypus import Table as PDFTable, Image as PDFImage
@@ -14010,7 +14015,7 @@ class PDFServiceGenerator(PDFContractGenerator):
 
 
 @api_router.get("/services/{service_id}/pdf")
-async def download_service_pdf(service_id: str, plain: bool = False):
+async def download_service_pdf(service_id: str, plain: bool = False, skip: str = "", notes: bool = True, ops: bool = True):
     """Servis / iş emri teslim formunu PDF olarak indir. plain=1 → fiyatsız iş listesi (araca asmak için)."""
     try:
         svc = await db.services.find_one({"id": service_id})
@@ -14018,7 +14023,8 @@ async def download_service_pdf(service_id: str, plain: bool = False):
             raise HTTPException(status_code=404, detail="Servis kaydı bulunamadı")
         svc.pop("_id", None)
         gen = PDFServiceGenerator()
-        pdf_buffer = gen.create_service_worklist_pdf(svc) if plain else gen.create_service_pdf(svc)
+        skip_set = {int(x) for x in skip.split(",") if x.strip().isdigit()}  # iş listesinde seçilmeyen kalemler
+        pdf_buffer = gen.create_service_worklist_pdf(svc, skip_set, notes, ops) if plain else gen.create_service_pdf(svc)
         raw = (svc.get("order_no") or "servis-formu") + (" - is listesi" if plain else "")
         ascii_name = raw.encode("ascii", "ignore").decode("ascii").strip() or "servis-formu"
         return StreamingResponse(
