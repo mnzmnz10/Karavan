@@ -13048,54 +13048,80 @@ class PDFContractGenerator(PDFQuoteGenerator):
         """Fiyatsız iş listesi (araca asmak için): yalnız ürün/işlem + adet, iki sütun, TEK SAYFA.
         Adedi 0/boş kalemler atlanır; ilaveler ayrı bölüm. Müşteri seçimleri (kumaş, renkler…)
         sayfa altında yatay şerit. Tek sayfaya sığana kadar yazı/boşluk ölçeği küçültülür."""
+        data_block = contract_data.get("data") or {}
+        # Alt şerit: müşteri seçimleri yatay (etiket küçük, değer altında)
+        specs, _ = self._contract_specs(data_block)
+        pairs = [(l, (specs or {}).get(l, '') or '') for l in self.SPEC_LABELS]
+        pairs += [(kk, vv) for kk, vv in (specs or {}).items() if kk not in self.SPEC_LABELS and str(vv or '').strip()]
+        blocks = []
+        for si, sec in enumerate(data_block.get("sections") or []):
+            items = [it for it in (sec.get("items") or []) if self._wl_included(it.get("qty"))]
+            if items:
+                blocks.append((f"{si + 1:02d} · {upper_tr(sec.get('name') or '')}", [(it.get("sno", ""), it.get("name", ""), it.get("qty")) for it in items]))
+        addons = [a for a in (data_block.get("addons") or []) if (a.get("name") or "").strip()]
+        if addons:
+            blocks.append(("İLAVELER", [(str(i + 1), a.get("name", ""), a.get("qty") or 1) for i, a in enumerate(addons)]))
+        return self._worklist_pdf(customer=(contract_data.get("customer_name") or "").strip(),
+                                  vehicle=(contract_data.get("title") or "").strip(),
+                                  date_str=self._wl_date(contract_data.get("doc_date") or contract_data.get("created_at")),
+                                  blocks=blocks, pairs=pairs, fallback_title="SÖZLEŞME")
+
+    @staticmethod
+    def _wl_included(q):
+        try:
+            return float(str(q).replace(",", ".")) > 0
+        except (TypeError, ValueError):
+            return bool(str(q or "").strip())
+
+    @staticmethod
+    def _wl_date(dv):
+        try:
+            return (dv if isinstance(dv, datetime) else datetime.fromisoformat(str(dv).replace('Z', '+00:00'))).strftime('%d.%m.%Y')
+        except Exception:
+            return datetime.now().strftime('%d.%m.%Y')
+
+    def _worklist_pdf(self, **kw) -> BytesIO:
+        """Tek sayfaya sığana kadar yazı/boşluk ölçeğini küçülterek iş listesi üretir."""
         last = None
         for scale in (1.0, 0.94, 0.88, 0.82, 0.77, 0.72, 0.67, 0.62, 0.58, 0.54):
-            buf, pages = self._build_worklist(contract_data, scale)
+            buf, pages = self._build_worklist(k=scale, **kw)
             last = buf
             if pages <= 1:
                 break
         last.seek(0)
         return last
 
-    def _build_worklist(self, contract_data: Dict, k: float):
+    def _build_worklist(self, customer: str, vehicle: str, date_str: str, blocks: list, pairs: Optional[list],
+                        fallback_title: str, k: float):
+        """blocks: [(başlık, [(sno, ad, adet)])]; adet None → adet hücresi boş (madde satırı).
+        pairs: alt şerit [(etiket, değer)]; None → şerit yok."""
         from reportlab.platypus import BaseDocTemplate, PageTemplate, Frame
         buffer = BytesIO()
         width, height = A4
         margin, gap, head_h = 0.9 * cm, 0.5 * cm, 1.45 * cm
         col_w = (width - 2 * margin - gap) / 2
-        data_block = contract_data.get("data") or {}
-        customer = (contract_data.get("customer_name") or "").strip()
-        vehicle = (contract_data.get("title") or "").strip()
-        dv = contract_data.get("doc_date") or contract_data.get("created_at")
-        try:
-            date_str = (dv if isinstance(dv, datetime) else datetime.fromisoformat(str(dv).replace('Z', '+00:00'))).strftime('%d.%m.%Y')
-        except Exception:
-            date_str = datetime.now().strftime('%d.%m.%Y')
         font, bold = self.get_font_name(), self.get_font_name(is_bold=True)
         navy = colors.HexColor('#1B3A5C')
-
-        # --- Alt şerit: müşteri seçimleri yatay (etiket küçük, değer altında) ---
-        specs, _ = self._contract_specs(data_block)
-        pairs = [(l, (specs or {}).get(l, '') or '') for l in self.SPEC_LABELS]
-        pairs += [(kk, vv) for kk, vv in (specs or {}).items() if kk not in self.SPEC_LABELS and str(vv or '').strip()]
-        lbl = ParagraphStyle('WLSpecL', parent=self.styles['Normal'], fontName=bold, fontSize=5.8, leading=7, textColor=colors.HexColor('#64748B'))
-        val = ParagraphStyle('WLSpecV', parent=self.styles['Normal'], fontName=bold, fontSize=7.4, leading=8.6, textColor=navy)
-        strip_w = width - 2 * margin
-        cw = strip_w / max(1, len(pairs))
-        strip = Table([[Paragraph(upper_tr(l), lbl) for l, _ in pairs],
-                       [Paragraph(upper_tr(v) if v else '________', val) for _, v in pairs]],
-                      colWidths=[cw] * len(pairs))
-        strip.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F4F6F9')),
-            ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#D9E0E8')),
-            ('LINEAFTER', (0, 0), (-2, -1), 0.4, colors.HexColor('#D9E0E8')),
-            ('LINEABOVE', (0, 0), (-1, 0), 1.6, navy),
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('TOPPADDING', (0, 0), (-1, -1), 2), ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
-            ('LEFTPADDING', (0, 0), (-1, -1), 4), ('RIGHTPADDING', (0, 0), (-1, -1), 4),
-        ]))
-        _, strip_h = strip.wrap(strip_w, height)
-        strip_title_h = 0.36 * cm
+        strip, strip_h, strip_title_h = None, 0, 0
+        if pairs:
+            lbl = ParagraphStyle('WLSpecL', parent=self.styles['Normal'], fontName=bold, fontSize=5.8, leading=7, textColor=colors.HexColor('#64748B'))
+            val = ParagraphStyle('WLSpecV', parent=self.styles['Normal'], fontName=bold, fontSize=7.4, leading=8.6, textColor=navy)
+            strip_w = width - 2 * margin
+            cw = strip_w / len(pairs)
+            strip = Table([[Paragraph(upper_tr(l), lbl) for l, _ in pairs],
+                           [Paragraph(upper_tr(v) if v else '________', val) for _, v in pairs]],
+                          colWidths=[cw] * len(pairs))
+            strip.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F4F6F9')),
+                ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#D9E0E8')),
+                ('LINEAFTER', (0, 0), (-2, -1), 0.4, colors.HexColor('#D9E0E8')),
+                ('LINEABOVE', (0, 0), (-1, 0), 1.6, navy),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('TOPPADDING', (0, 0), (-1, -1), 2), ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+                ('LEFTPADDING', (0, 0), (-1, -1), 4), ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+            ]))
+            _, strip_h = strip.wrap(strip_w, height)
+            strip_title_h = 0.36 * cm
 
         def on_page(canvas, doc):
             canvas.saveState()
@@ -13107,15 +13133,15 @@ class PDFContractGenerator(PDFQuoteGenerator):
             canvas.drawString(margin + 0.4 * cm, top - 0.55 * cm, "İŞ LİSTESİ  ·  ÜRÜN VE ADETLER")
             canvas.setFillColor(colors.white)
             canvas.setFont(bold, 12)
-            canvas.drawString(margin + 0.4 * cm, top - 1.0 * cm, upper_tr(customer or vehicle or "SÖZLEŞME")[:48])
+            canvas.drawString(margin + 0.4 * cm, top - 1.0 * cm, upper_tr(customer or vehicle or fallback_title)[:48])
             canvas.setFont(bold, 9.2)
             right = f"{upper_tr(vehicle)}  ·  {date_str}" if (vehicle and customer) else date_str
             canvas.drawRightString(width - margin - 0.4 * cm, top - 1.0 * cm, right[:60])
-            # alt şerit
-            canvas.setFillColor(navy)
-            canvas.setFont(bold, 6.5)
-            canvas.drawString(margin, margin + strip_h + 0.1 * cm, "MÜŞTERİ SEÇİMLERİ (RENK / MALZEME)")
-            strip.drawOn(canvas, margin, margin)
+            if strip:  # alt şerit
+                canvas.setFillColor(navy)
+                canvas.setFont(bold, 6.5)
+                canvas.drawString(margin, margin + strip_h + 0.1 * cm, "MÜŞTERİ SEÇİMLERİ (RENK / MALZEME)")
+                strip.drawOn(canvas, margin, margin)
             canvas.restoreState()
 
         frame_bottom = margin + strip_h + strip_title_h + 0.15 * cm
@@ -13141,26 +13167,11 @@ class PDFContractGenerator(PDFQuoteGenerator):
             except (TypeError, ValueError):
                 return str(q or "")
 
-        def included(q):
-            try:
-                return float(str(q).replace(",", ".")) > 0
-            except (TypeError, ValueError):
-                return bool(str(q or "").strip())
-
-        blocks = []
-        for si, sec in enumerate(data_block.get("sections") or []):
-            items = [it for it in (sec.get("items") or []) if included(it.get("qty"))]
-            if items:
-                blocks.append((f"{si + 1:02d} · {upper_tr(sec.get('name') or '')}", [(it.get("sno", ""), it.get("name", ""), it.get("qty")) for it in items]))
-        addons = [a for a in (data_block.get("addons") or []) if (a.get("name") or "").strip()]
-        if addons:
-            blocks.append(("İLAVELER", [(str(i + 1), a.get("name", ""), a.get("qty") or 1) for i, a in enumerate(addons)]))
-
         story = []
         widths = [0.7 * cm, col_w - 0.7 * cm - 1.05 * cm, 1.05 * cm]
         for title, rows in blocks:
-            data = [[Paragraph(title, sec_st), "", Paragraph("ADET", sec_r)]]
-            data += [[Paragraph(str(sno), num), Paragraph(upper_tr(name), cell), Paragraph(fmt_qty(q), qty_st)] for sno, name, q in rows]
+            data = [[Paragraph(title, sec_st), "", Paragraph("ADET" if any(q is not None for _, _, q in rows) else "", sec_r)]]
+            data += [[Paragraph(str(sno), num), Paragraph(upper_tr(name), cell), Paragraph("" if q is None else fmt_qty(q), qty_st)] for sno, name, q in rows]
             t = Table(data, colWidths=widths, repeatRows=1)
             t.setStyle(TableStyle([
                 ('SPAN', (0, 0), (1, 0)),
@@ -13655,6 +13666,23 @@ class PDFContractGenerator(PDFQuoteGenerator):
 class PDFServiceGenerator(PDFContractGenerator):
     """Servis / İş Emri teslim formu PDF üreticisi (sözleşme stillerini yeniden kullanır)."""
 
+    def create_service_worklist_pdf(self, svc: Dict) -> BytesIO:
+        """Fiyatsız iş listesi (araca asmak için): kalemler + adet, yapılacak işlemler ve notlar madde madde."""
+        def lines(txt):
+            return [re.sub(r"^\s*[•·\-*]\s*", "", ln).strip() for ln in str(txt or "").splitlines() if ln.strip()]
+        blocks = []
+        items = [it for it in (svc.get("items") or []) if (it.get("name") or "").strip() and self._wl_included(it.get("qty"))]
+        if items:
+            blocks.append(("PARÇA / İŞLEM", [(str(i + 1), it.get("name", ""), it.get("qty")) for i, it in enumerate(items)]))
+        for title, field in (("YAPILACAK İŞLEMLER", "operations"), ("NOTLAR", "notes")):
+            ls = lines(svc.get(field))
+            if ls:
+                blocks.append((title, [("•", ln, None) for ln in ls]))
+        vehicle = " ".join(x for x in [svc.get("plate"), svc.get("vehicle_brand"), svc.get("vehicle_model")] if x).strip()
+        return self._worklist_pdf(customer=(svc.get("customer_name") or "").strip(), vehicle=vehicle,
+                                  date_str=self._wl_date(svc.get("arrival_date") or svc.get("created_at")),
+                                  blocks=blocks, pairs=None, fallback_title=svc.get("order_no") or "SERVİS")
+
     def create_service_pdf(self, svc: Dict) -> BytesIO:
         from reportlab.platypus import Table as PDFTable, Image as PDFImage
         buffer = BytesIO()
@@ -13982,15 +14010,16 @@ class PDFServiceGenerator(PDFContractGenerator):
 
 
 @api_router.get("/services/{service_id}/pdf")
-async def download_service_pdf(service_id: str):
-    """Servis / iş emri teslim formunu PDF olarak indir."""
+async def download_service_pdf(service_id: str, plain: bool = False):
+    """Servis / iş emri teslim formunu PDF olarak indir. plain=1 → fiyatsız iş listesi (araca asmak için)."""
     try:
         svc = await db.services.find_one({"id": service_id})
         if not svc:
             raise HTTPException(status_code=404, detail="Servis kaydı bulunamadı")
         svc.pop("_id", None)
-        pdf_buffer = PDFServiceGenerator().create_service_pdf(svc)
-        raw = (svc.get("order_no") or "servis-formu")
+        gen = PDFServiceGenerator()
+        pdf_buffer = gen.create_service_worklist_pdf(svc) if plain else gen.create_service_pdf(svc)
+        raw = (svc.get("order_no") or "servis-formu") + (" - is listesi" if plain else "")
         ascii_name = raw.encode("ascii", "ignore").decode("ascii").strip() or "servis-formu"
         return StreamingResponse(
             pdf_buffer, media_type='application/pdf',

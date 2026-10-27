@@ -11273,6 +11273,7 @@ function AppInner() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <Button variant="outline" size="sm" onClick={() => openEditServiceDialog(s)} className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"><Edit className="w-4 h-4 mr-2" /> Düzenle</Button>
                         <Button variant="outline" size="sm" onClick={() => window.open(`${API}/services/${s.id}/pdf`, '_blank')} className="border-blue-300 text-blue-700 hover:bg-blue-50"><Download className="w-4 h-4 mr-2" /> PDF İndir</Button>
+                        <Button variant="outline" size="sm" onClick={() => window.open(`${API}/services/${s.id}/pdf?plain=1`, '_blank')} className="border-slate-300 text-slate-700 hover:bg-slate-50" title="Fiyatsız iş listesi: parça/işlem, adet ve notlar (araca asmak için)"><FileText className="w-4 h-4 mr-2" /> Fiyatsız PDF</Button>
                       </div>
                     </div>
 

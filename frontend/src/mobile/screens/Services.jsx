@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { AccountButton } from "../Account";
-import { Wrench, Car, Phone, MessageCircle, Image as ImageIcon, Loader2, Plus, Pencil, Share2, Trash2, Eye, EyeOff, Wallet, X, FileText, Camera, Receipt } from "lucide-react";
+import { Wrench, Car, Phone, MessageCircle, Image as ImageIcon, Loader2, Plus, Pencil, Share2, Trash2, Eye, EyeOff, Wallet, X, FileText, Camera, Receipt, ClipboardList } from "lucide-react";
 import { toast } from "../toast";
 import { services as servicesApi, rates as ratesApi, docUrl, openDoc } from "../api";
 import { applyPending, onOutbox, pendingCount, isTmpId } from "../outbox";
@@ -382,6 +382,9 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuo
               <Share2 className="h-4 w-4" /> PDF
             </button>
           </div>
+          <button onClick={() => openDoc(docUrl.serviceWorklist(s.id))} className="m-press -mt-1 mb-3 flex w-full items-center justify-center gap-1.5 rounded-2xl bg-white py-2.5 text-[14px] font-bold" style={{ color: "var(--m-ink-2)" }} title="Fiyatsız iş listesi (araca asmak için)">
+            <ClipboardList className="h-4 w-4" /> İş Listesi (fiyatsız)
+          </button>
           <div className="rounded-2xl bg-white p-4">
             <div className="flex items-center gap-2">
               <button onClick={() => s.customer_name && setCustOpen(true)} className="m-press text-left text-[19px] font-bold underline decoration-dotted decoration-slate-300 underline-offset-4">{s.customer_name || "İsimsiz"}</button>
