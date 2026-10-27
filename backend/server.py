@@ -13159,7 +13159,7 @@ class PDFContractGenerator(PDFQuoteGenerator):
         qty_st = ParagraphStyle('WLQty', parent=cell, fontName=bold, fontSize=9.5 * k, alignment=TA_CENTER, textColor=navy)
         sec_st = ParagraphStyle('WLSec', parent=cell, fontName=bold, fontSize=8.2 * k, textColor=colors.white)
         sec_r = ParagraphStyle('WLSecR', parent=sec_st, alignment=TA_CENTER, fontSize=6.8 * k)
-        pad = 2.2 * k
+        pad = (4.6 if cols == 1 else 2.2) * k  # tek sütun (servis): araca asılır, satırlar ferah
 
         def fmt_qty(q):
             try:
