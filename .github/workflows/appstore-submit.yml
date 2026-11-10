@@ -1,9 +1,14 @@
 # TestFlight'taki bir build'i App Store incelemesine gönderir (Mac gerekmez).
 #
-# Tetikleme: `submit-*` etiketi push'la (ör. git tag submit-1 && git push origin submit-1)
-#            veya Actions → "App Store submit" → Run workflow (version / build_number girilebilir).
-# build_number boşsa: o sürümün (varsayılan 1.1) en yeni, süresi dolmamış build'i seçilir ve
-#            işlenmesi (VALID) beklenir.
+# Tetikleme:
+#   submit-N    etiketi (ör. git tag submit-1 && git push origin submit-1): sürümün en yeni build'i.
+#   submit-bNN  etiketi (ör. submit-b26): tam olarak NN numaralı build gönderilir; o sürüm
+#               başka bir build'le WAITING_FOR_REVIEW durumundaysa o gönderim iptal edilip
+#               yerine bu build gönderilir.
+#   Actions → "App Store submit" → Run workflow: version / build_number / replace girilebilir.
+# build_number boşsa: sürümün sayıca en büyük build'i seçilir. ios-testflight'ın daha yeni bir
+#   (beta olmayan, başarılı ya da süren) koşusu varsa onun build numarası beklenir.
+# Seçilen build VALID olana (ve henüz görünmüyorsa görünene) kadar en çok ~30 dk beklenir.
 # Sürüm yayın türü MANUAL: onaydan sonra App Store Connect'ten elle yayınlanır.
 # Dağıtım/fiyat/erişilebilirlik ayarlarına dokunulmaz (uygulama unlisted kalır).
 #
@@ -23,24 +28,36 @@ on:
         description: "Build numarası (ios-testflight run_number); boş = sürümün en yeni build'i"
         default: ""
         required: false
+      replace:
+        description: "İncelemede bekleyen gönderimi iptal edip bu build'le yeniden gönder"
+        type: boolean
+        default: false
 
 concurrency:
   group: appstore-submit
   cancel-in-progress: false
 
+permissions:
+  actions: read # ios-testflight koşularını okumak için
+
 jobs:
   submit:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - name: Submit build for App Store review
         env:
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
           KID_RAW: ${{ secrets.ASC_KEY_ID }}
           ISS_RAW: ${{ secrets.ASC_ISSUER_ID }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          REF_NAME: ${{ github.ref_name }}
+          EVENT: ${{ github.event_name }}
           BID: shop.corlukaravan.app
           VERSION: ${{ inputs.version || '1.1' }}
           BUILD_NUMBER: ${{ inputs.build_number || '' }}
+          REPLACE: ${{ inputs.replace && 'true' || 'false' }}
           WHATS_NEW: "Servis için fiyatsız iş listesi PDF'i: araca asmak için kalem seçimiyle. Ölü ürün görselleri yerine yer tutucu. Arka plandan dönünce açık formlar korunuyor; kaydettikten sonra sayfa en üste dönüyor."
         run: |
           pip install --quiet pyjwt cryptography
@@ -51,7 +68,13 @@ jobs:
           iss = re.sub(r"[^A-Za-z0-9-]", "", os.environ["ISS_RAW"])
           bid, version = os.environ["BID"], os.environ["VERSION"].strip()
           build_number = os.environ["BUILD_NUMBER"].strip()
+          replace = os.environ["REPLACE"] == "true"
           whats_new = os.environ["WHATS_NEW"]
+          m = re.fullmatch(r"submit-b(\d+)", os.environ["REF_NAME"]) if os.environ["EVENT"] == "push" else None
+          if m:
+              build_number = m.group(1)
+          explicit_build = bool(build_number)
+          print(f"version={version} build_number={build_number or '(latest)'} replace={replace}")
 
           def token():
               # Token en çok 20 dk geçerli; build beklerken süre dolmasın diye her çağrıda yeniden üretilir.
@@ -82,6 +105,10 @@ jobs:
                   fail(f"{step or method + ' ' + path.split('?')[0]} failed (HTTP {e.code}): {'; '.join(details)[:400]}")
 
           q = urllib.parse.quote
+          EDITABLE = {"PREPARE_FOR_SUBMISSION", "DEVELOPER_REJECTED", "REJECTED", "METADATA_REJECTED", "INVALID_BINARY", "READY_FOR_REVIEW"}
+
+          def vstate(v):
+              return v["attributes"].get("appStoreState") or v["attributes"].get("appVersionState")
 
           # 1) Uygulama
           apps = api("GET", f"/v1/apps?filter[bundleId]={bid}", step="find app")["data"]
@@ -91,17 +118,102 @@ jobs:
           app_id = app["id"]
           print("App:", app["attributes"]["name"], app_id)
 
-          # 2) App Store sürümü (iOS, versionString); yoksa oluştur
-          vers = api("GET", f"/v1/apps/{app_id}/appStoreVersions?filter[platform]=IOS&filter[versionString]={q(version)}&limit=5",
-                     step="find appStoreVersion")["data"]
-          EDITABLE = {"PREPARE_FOR_SUBMISSION", "DEVELOPER_REJECTED", "REJECTED", "METADATA_REJECTED", "INVALID_BINARY"}
-          IN_FLIGHT = {"WAITING_FOR_REVIEW", "IN_REVIEW", "PENDING_DEVELOPER_RELEASE", "PROCESSING_FOR_APP_STORE"}
-          if vers:
-              ver = vers[0]
-              state = ver["attributes"].get("appStoreState") or ver["attributes"].get("appVersionState")
+          def list_builds():
+              path = f"/v1/builds?filter[app]={app_id}&filter[preReleaseVersion.version]={q(version)}&limit=50"
+              if build_number:
+                  path += f"&filter[version]={q(build_number)}"
+              blds = [b for b in api("GET", path, step="list builds")["data"] if not b["attributes"].get("expired")]
+              return sorted(blds, key=lambda b: int(b["attributes"]["version"]) if str(b["attributes"].get("version")).isdigit() else -1,
+                            reverse=True)
+
+          # 2) Varsayılan yolda koruma: ios-testflight'ın en yeni (beta olmayan) koşusu ASC'de görünen
+          #    en büyük build'den yeniyse (yükleme ASC'ye henüz düşmemiş) o build numarasını bekle.
+          if not build_number:
+              req = urllib.request.Request(
+                  f"https://api.github.com/repos/{os.environ['REPO']}/actions/workflows/ios-testflight.yml/runs?per_page=30",
+                  headers={"Authorization": f"Bearer {os.environ['GH_TOKEN']}", "Accept": "application/vnd.github+json"})
+              try:
+                  with urllib.request.urlopen(req) as r:
+                      runs = json.load(r)["workflow_runs"]
+              except urllib.error.HTTPError as e:
+                  fail(f"Could not read ios-testflight runs (HTTP {e.code}); pass build_number explicitly")
+              runs = [x for x in runs if not (x.get("head_branch") or "").startswith("beta-")
+                      and (x["status"] != "completed" or x.get("conclusion") == "success")]
+              newest_run = max((x["run_number"] for x in runs), default=0)
+              blds = list_builds()
+              top = int(blds[0]["attributes"]["version"]) if blds else 0
+              print(f"Newest ios-testflight run: #{newest_run}; highest ASC build for {version}: {top or 'none'}")
+              if newest_run > top:
+                  build_number = str(newest_run)
+                  print(f"ASC does not show build {build_number} yet; waiting for it")
+
+          # 3) Build'i bul ve VALID olana kadar bekle (görünmüyorsa görünene kadar da; en çok ~30 dk)
+          deadline = time.time() + 30 * 60
+          while True:
+              blds = list_builds()
+              build = blds[0] if blds else None
+              st = build["attributes"].get("processingState") if build else None
+              if build:
+                  print(f"Build {version} ({build['attributes'].get('version')}): {build['id']} processingState={st}")
+              else:
+                  print(f"Build {version} ({build_number or 'latest'}) not visible in App Store Connect yet")
+              if st == "VALID":
+                  break
+              if st in ("FAILED", "INVALID"):
+                  fail(f"Build processing ended with {st}")
+              if time.time() > deadline:
+                  fail("Timed out (~30 min) waiting for build to appear and become VALID")
+              time.sleep(60)
+          build_id = build["id"]
+          build_ver = build["attributes"].get("version")
+
+          # 4) App Store sürümü (iOS, versionString); yoksa oluştur
+          def get_version():
+              vs = api("GET", f"/v1/apps/{app_id}/appStoreVersions?filter[platform]=IOS&filter[versionString]={q(version)}&limit=5",
+                       step="find appStoreVersion")["data"]
+              return vs[0] if vs else None
+
+          def sub_has_version(sub_id, ver_id):
+              items = api("GET", f"/v1/reviewSubmissions/{sub_id}/items?include=appStoreVersion&limit=50",
+                          step="list submission items")["data"]
+              return any((((i.get("relationships") or {}).get("appStoreVersion") or {}).get("data") or {}).get("id") == ver_id
+                         for i in items)
+
+          ver = get_version()
+          if ver:
+              state = vstate(ver)
               print(f"appStoreVersion {version}: {ver['id']} state={state}")
-              if state in IN_FLIGHT or ver["attributes"].get("appVersionState") in {"WAITING_FOR_REVIEW", "IN_REVIEW"}:
-                  print(f"Version {version} is already submitted ({state}); nothing to do.")
+              if state == "WAITING_FOR_REVIEW":
+                  cur = api("GET", f"/v1/appStoreVersions/{ver['id']}/build", step="get attached build").get("data")
+                  cur_ver = cur["attributes"].get("version") if cur else None
+                  print(f"Build attached to waiting version: {cur_ver}")
+                  if not (replace or (explicit_build and cur_ver != build_ver)):
+                      print(f"Version {version} is already waiting for review with build {cur_ver}; nothing to do.")
+                      raise SystemExit(0)
+                  # Bekleyen gönderimi iptal et, CANCELING bitene kadar bekle
+                  waiting = api("GET", f"/v1/reviewSubmissions?filter[app]={app_id}&filter[platform]=IOS"
+                                       f"&filter[state]=WAITING_FOR_REVIEW&limit=20", step="list waiting submissions")["data"]
+                  old = next((s for s in waiting if sub_has_version(s["id"], ver["id"])), None)
+                  if not old:
+                      fail("Version is WAITING_FOR_REVIEW but no waiting reviewSubmission holds it")
+                  print(f"Canceling submission {old['id']} (build {cur_ver}) to replace with build {build_ver}")
+                  api("PATCH", f"/v1/reviewSubmissions/{old['id']}", {"data": {"type": "reviewSubmissions", "id": old["id"],
+                      "attributes": {"canceled": True}}}, step="cancel submission")
+                  cdeadline = time.time() + 10 * 60
+                  while True:
+                      sst = api("GET", f"/v1/reviewSubmissions/{old['id']}", step="poll canceled submission")["data"]["attributes"].get("state")
+                      ver = get_version()
+                      state = vstate(ver)
+                      print(f"  submission state={sst}, version state={state}")
+                      if sst != "CANCELING" and state in EDITABLE:
+                          break
+                      if time.time() > cdeadline:
+                          fail(f"Timed out (~10 min) after cancel: submission={sst}, version={state}")
+                      time.sleep(20)
+              elif state in {"IN_REVIEW", "PENDING_DEVELOPER_RELEASE", "PROCESSING_FOR_APP_STORE"}:
+                  if replace or explicit_build:
+                      fail(f"Version {version} is {state}; it can no longer be replaced from CI")
+                  print(f"Version {version} is already {state}; nothing to do.")
                   raise SystemExit(0)
               if state not in EDITABLE:
                   fail(f"Version {version} is in state {state}, not editable (bump MARKETING_VERSION?)")
@@ -116,32 +228,7 @@ jobs:
               print(f"Created appStoreVersion {version}: {ver['id']}")
           ver_id = ver["id"]
 
-          # 3) Build seç ve VALID olana kadar bekle (en çok ~30 dk)
-          def find_build():
-              path = f"/v1/builds?filter[app]={app_id}&filter[preReleaseVersion.version]={q(version)}&sort=-uploadedDate&limit=20"
-              if build_number:
-                  path += f"&filter[version]={q(build_number)}"
-              blds = [b for b in api("GET", path, step="list builds")["data"] if not b["attributes"].get("expired")]
-              return blds[0] if blds else None
-
-          deadline = time.time() + 30 * 60
-          while True:
-              build = find_build()
-              st = build["attributes"].get("processingState") if build else None
-              if build:
-                  print(f"Build {version} ({build['attributes'].get('version')}): {build['id']} processingState={st}")
-              else:
-                  print(f"Build {version} ({build_number or 'latest'}) not visible yet")
-              if st == "VALID":
-                  break
-              if st in ("FAILED", "INVALID"):
-                  fail(f"Build processing ended with {st}")
-              if time.time() > deadline:
-                  fail("Timed out (~30 min) waiting for build to become VALID")
-              time.sleep(60)
-          build_id = build["id"]
-
-          # 4) Şifreleme beyanı (Info.plist'te ITSAppUsesNonExemptEncryption=false var; boşsa API ile ayarla)
+          # 5) Şifreleme beyanı (Info.plist'te ITSAppUsesNonExemptEncryption=false var; boşsa API ile ayarla)
           if build["attributes"].get("usesNonExemptEncryption") is None:
               api("PATCH", f"/v1/builds/{build_id}", {"data": {"type": "builds", "id": build_id,
                   "attributes": {"usesNonExemptEncryption": False}}}, step="set usesNonExemptEncryption")
@@ -149,12 +236,12 @@ jobs:
           else:
               print("usesNonExemptEncryption:", build["attributes"]["usesNonExemptEncryption"])
 
-          # 5) Build'i sürüme bağla
+          # 6) Build'i sürüme bağla
           api("PATCH", f"/v1/appStoreVersions/{ver_id}/relationships/build",
               {"data": {"type": "builds", "id": build_id}}, step="attach build to version")
-          print("Build attached to version")
+          print(f"Build {build_ver} attached to version {version}")
 
-          # 6) What's New (tüm mevcut localization'lar)
+          # 7) What's New (tüm mevcut localization'lar)
           locs = api("GET", f"/v1/appStoreVersions/{ver_id}/appStoreVersionLocalizations?limit=50", step="list localizations")["data"]
           if not locs:
               fail("Version has no localizations (whatsNew could not be set)")
@@ -163,7 +250,7 @@ jobs:
                   "id": loc["id"], "attributes": {"whatsNew": whats_new}}}, step=f"set whatsNew ({loc['attributes'].get('locale')})")
               print("whatsNew set:", loc["attributes"].get("locale"))
 
-          # 7) reviewSubmission: açık olanı kullan ya da oluştur, sürümü ekle, gönder
+          # 8) reviewSubmission: açık olanı kullan ya da oluştur, sürümü ekle, gönder
           subs = api("GET", f"/v1/reviewSubmissions?filter[app]={app_id}&filter[platform]=IOS"
                             f"&filter[state]=READY_FOR_REVIEW,WAITING_FOR_REVIEW,IN_REVIEW,UNRESOLVED_ISSUES&limit=20",
                      step="list reviewSubmissions")["data"]
@@ -179,10 +266,7 @@ jobs:
               print("Created reviewSubmission:", sub["id"])
           sub_id = sub["id"]
 
-          items = api("GET", f"/v1/reviewSubmissions/{sub_id}/items?include=appStoreVersion&limit=50", step="list submission items")["data"]
-          has_ver = any((((i.get("relationships") or {}).get("appStoreVersion") or {}).get("data") or {}).get("id") == ver_id
-                        for i in items)
-          if has_ver:
+          if sub_has_version(sub_id, ver_id):
               print("Version already in submission")
           else:
               api("POST", "/v1/reviewSubmissionItems", {"data": {"type": "reviewSubmissionItems", "relationships": {
@@ -193,5 +277,5 @@ jobs:
           res = api("PATCH", f"/v1/reviewSubmissions/{sub_id}", {"data": {"type": "reviewSubmissions", "id": sub_id,
               "attributes": {"submitted": True}}}, step="submit for review")["data"]
           print(f"Submitted for review: submission {sub_id} state={res['attributes'].get('state')}, "
-                f"version {version} build {build['attributes'].get('version')} (releaseType MANUAL)")
+                f"version {version} build {build_ver} (releaseType MANUAL)")
           PY
