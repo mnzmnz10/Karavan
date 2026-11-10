@@ -1,0 +1,197 @@
+# TestFlight'taki bir build'i App Store incelemesine gönderir (Mac gerekmez).
+#
+# Tetikleme: `submit-*` etiketi push'la (ör. git tag submit-1 && git push origin submit-1)
+#            veya Actions → "App Store submit" → Run workflow (version / build_number girilebilir).
+# build_number boşsa: o sürümün (varsayılan 1.1) en yeni, süresi dolmamış build'i seçilir ve
+#            işlenmesi (VALID) beklenir.
+# Sürüm yayın türü MANUAL: onaydan sonra App Store Connect'ten elle yayınlanır.
+# Dağıtım/fiyat/erişilebilirlik ayarlarına dokunulmaz (uygulama unlisted kalır).
+#
+# Secret'lar ios-testflight.yml ile aynı: ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8 (değerleri yazdırılmaz).
+name: App Store submit
+
+on:
+  push:
+    tags: ["submit-*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "App Store sürümü (MARKETING_VERSION)"
+        default: "1.1"
+        required: false
+      build_number:
+        description: "Build numarası (ios-testflight run_number); boş = sürümün en yeni build'i"
+        default: ""
+        required: false
+
+concurrency:
+  group: appstore-submit
+  cancel-in-progress: false
+
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Submit build for App Store review
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          KID_RAW: ${{ secrets.ASC_KEY_ID }}
+          ISS_RAW: ${{ secrets.ASC_ISSUER_ID }}
+          BID: shop.corlukaravan.app
+          VERSION: ${{ inputs.version || '1.1' }}
+          BUILD_NUMBER: ${{ inputs.build_number || '' }}
+          WHATS_NEW: "Servis için fiyatsız iş listesi PDF'i: araca asmak için kalem seçimiyle. Ölü ürün görselleri yerine yer tutucu. Arka plandan dönünce açık formlar korunuyor; kaydettikten sonra sayfa en üste dönüyor."
+        run: |
+          pip install --quiet pyjwt cryptography
+          python3 - <<'PY'
+          import os, time, json, re, urllib.request, urllib.error, urllib.parse, jwt
+
+          kid = re.sub(r"[^A-Za-z0-9]", "", os.environ["KID_RAW"])
+          iss = re.sub(r"[^A-Za-z0-9-]", "", os.environ["ISS_RAW"])
+          bid, version = os.environ["BID"], os.environ["VERSION"].strip()
+          build_number = os.environ["BUILD_NUMBER"].strip()
+          whats_new = os.environ["WHATS_NEW"]
+
+          def token():
+              # Token en çok 20 dk geçerli; build beklerken süre dolmasın diye her çağrıda yeniden üretilir.
+              now = int(time.time())
+              return jwt.encode({"iss": iss, "iat": now, "exp": now + 900, "aud": "appstoreconnect-v1"},
+                                os.environ["ASC_KEY_P8"], algorithm="ES256", headers={"kid": kid, "typ": "JWT"})
+
+          def fail(msg):
+              print(f"::error::{msg}")
+              raise SystemExit(1)
+
+          def api(method, path, body=None, step=""):
+              req = urllib.request.Request("https://api.appstoreconnect.apple.com" + path, method=method,
+                                           data=json.dumps(body).encode() if body else None,
+                                           headers={"Authorization": f"Bearer {token()}", "Content-Type": "application/json"})
+              try:
+                  with urllib.request.urlopen(req) as r:
+                      t = r.read()
+                      return json.loads(t) if t else {}
+              except urllib.error.HTTPError as e:
+                  raw = e.read().decode(errors="replace")
+                  try:
+                      details = [f"{x.get('code')}: {x.get('detail') or x.get('title')}" for x in json.loads(raw).get("errors", [])]
+                  except ValueError:
+                      details = [raw[:500]]
+                  for d in details:
+                      print(f"  Apple: {d}")
+                  fail(f"{step or method + ' ' + path.split('?')[0]} failed (HTTP {e.code}): {'; '.join(details)[:400]}")
+
+          q = urllib.parse.quote
+
+          # 1) Uygulama
+          apps = api("GET", f"/v1/apps?filter[bundleId]={bid}", step="find app")["data"]
+          app = next((a for a in apps if a["attributes"]["bundleId"] == bid), None)
+          if not app:
+              fail(f"No app for bundle ID {bid}")
+          app_id = app["id"]
+          print("App:", app["attributes"]["name"], app_id)
+
+          # 2) App Store sürümü (iOS, versionString); yoksa oluştur
+          vers = api("GET", f"/v1/apps/{app_id}/appStoreVersions?filter[platform]=IOS&filter[versionString]={q(version)}&limit=5",
+                     step="find appStoreVersion")["data"]
+          EDITABLE = {"PREPARE_FOR_SUBMISSION", "DEVELOPER_REJECTED", "REJECTED", "METADATA_REJECTED", "INVALID_BINARY"}
+          IN_FLIGHT = {"WAITING_FOR_REVIEW", "IN_REVIEW", "PENDING_DEVELOPER_RELEASE", "PROCESSING_FOR_APP_STORE"}
+          if vers:
+              ver = vers[0]
+              state = ver["attributes"].get("appStoreState") or ver["attributes"].get("appVersionState")
+              print(f"appStoreVersion {version}: {ver['id']} state={state}")
+              if state in IN_FLIGHT or ver["attributes"].get("appVersionState") in {"WAITING_FOR_REVIEW", "IN_REVIEW"}:
+                  print(f"Version {version} is already submitted ({state}); nothing to do.")
+                  raise SystemExit(0)
+              if state not in EDITABLE:
+                  fail(f"Version {version} is in state {state}, not editable (bump MARKETING_VERSION?)")
+              if ver["attributes"].get("releaseType") != "MANUAL":
+                  api("PATCH", f"/v1/appStoreVersions/{ver['id']}", {"data": {"type": "appStoreVersions", "id": ver["id"],
+                      "attributes": {"releaseType": "MANUAL"}}}, step="set releaseType MANUAL")
+                  print("releaseType -> MANUAL")
+          else:
+              ver = api("POST", "/v1/appStoreVersions", {"data": {"type": "appStoreVersions",
+                  "attributes": {"platform": "IOS", "versionString": version, "releaseType": "MANUAL"},
+                  "relationships": {"app": {"data": {"type": "apps", "id": app_id}}}}}, step="create appStoreVersion")["data"]
+              print(f"Created appStoreVersion {version}: {ver['id']}")
+          ver_id = ver["id"]
+
+          # 3) Build seç ve VALID olana kadar bekle (en çok ~30 dk)
+          def find_build():
+              path = f"/v1/builds?filter[app]={app_id}&filter[preReleaseVersion.version]={q(version)}&sort=-uploadedDate&limit=20"
+              if build_number:
+                  path += f"&filter[version]={q(build_number)}"
+              blds = [b for b in api("GET", path, step="list builds")["data"] if not b["attributes"].get("expired")]
+              return blds[0] if blds else None
+
+          deadline = time.time() + 30 * 60
+          while True:
+              build = find_build()
+              st = build["attributes"].get("processingState") if build else None
+              if build:
+                  print(f"Build {version} ({build['attributes'].get('version')}): {build['id']} processingState={st}")
+              else:
+                  print(f"Build {version} ({build_number or 'latest'}) not visible yet")
+              if st == "VALID":
+                  break
+              if st in ("FAILED", "INVALID"):
+                  fail(f"Build processing ended with {st}")
+              if time.time() > deadline:
+                  fail("Timed out (~30 min) waiting for build to become VALID")
+              time.sleep(60)
+          build_id = build["id"]
+
+          # 4) Şifreleme beyanı (Info.plist'te ITSAppUsesNonExemptEncryption=false var; boşsa API ile ayarla)
+          if build["attributes"].get("usesNonExemptEncryption") is None:
+              api("PATCH", f"/v1/builds/{build_id}", {"data": {"type": "builds", "id": build_id,
+                  "attributes": {"usesNonExemptEncryption": False}}}, step="set usesNonExemptEncryption")
+              print("usesNonExemptEncryption -> false")
+          else:
+              print("usesNonExemptEncryption:", build["attributes"]["usesNonExemptEncryption"])
+
+          # 5) Build'i sürüme bağla
+          api("PATCH", f"/v1/appStoreVersions/{ver_id}/relationships/build",
+              {"data": {"type": "builds", "id": build_id}}, step="attach build to version")
+          print("Build attached to version")
+
+          # 6) What's New (tüm mevcut localization'lar)
+          locs = api("GET", f"/v1/appStoreVersions/{ver_id}/appStoreVersionLocalizations?limit=50", step="list localizations")["data"]
+          if not locs:
+              fail("Version has no localizations (whatsNew could not be set)")
+          for loc in locs:
+              api("PATCH", f"/v1/appStoreVersionLocalizations/{loc['id']}", {"data": {"type": "appStoreVersionLocalizations",
+                  "id": loc["id"], "attributes": {"whatsNew": whats_new}}}, step=f"set whatsNew ({loc['attributes'].get('locale')})")
+              print("whatsNew set:", loc["attributes"].get("locale"))
+
+          # 7) reviewSubmission: açık olanı kullan ya da oluştur, sürümü ekle, gönder
+          subs = api("GET", f"/v1/reviewSubmissions?filter[app]={app_id}&filter[platform]=IOS"
+                            f"&filter[state]=READY_FOR_REVIEW,WAITING_FOR_REVIEW,IN_REVIEW,UNRESOLVED_ISSUES&limit=20",
+                     step="list reviewSubmissions")["data"]
+          for s in subs:
+              print("Open reviewSubmission:", s["id"], s["attributes"].get("state"))
+          sub = next((s for s in subs if s["attributes"].get("state") in ("READY_FOR_REVIEW", "UNRESOLVED_ISSUES")), None)
+          busy = next((s for s in subs if s["attributes"].get("state") in ("WAITING_FOR_REVIEW", "IN_REVIEW")), None)
+          if not sub and busy:
+              fail(f"Another submission is already {busy['attributes']['state']} ({busy['id']}); cancel it in App Store Connect first")
+          if not sub:
+              sub = api("POST", "/v1/reviewSubmissions", {"data": {"type": "reviewSubmissions", "attributes": {"platform": "IOS"},
+                  "relationships": {"app": {"data": {"type": "apps", "id": app_id}}}}}, step="create reviewSubmission")["data"]
+              print("Created reviewSubmission:", sub["id"])
+          sub_id = sub["id"]
+
+          items = api("GET", f"/v1/reviewSubmissions/{sub_id}/items?include=appStoreVersion&limit=50", step="list submission items")["data"]
+          has_ver = any((((i.get("relationships") or {}).get("appStoreVersion") or {}).get("data") or {}).get("id") == ver_id
+                        for i in items)
+          if has_ver:
+              print("Version already in submission")
+          else:
+              api("POST", "/v1/reviewSubmissionItems", {"data": {"type": "reviewSubmissionItems", "relationships": {
+                  "reviewSubmission": {"data": {"type": "reviewSubmissions", "id": sub_id}},
+                  "appStoreVersion": {"data": {"type": "appStoreVersions", "id": ver_id}}}}}, step="add version to submission")
+              print("Version added to submission")
+
+          res = api("PATCH", f"/v1/reviewSubmissions/{sub_id}", {"data": {"type": "reviewSubmissions", "id": sub_id,
+              "attributes": {"submitted": True}}}, step="submit for review")["data"]
+          print(f"Submitted for review: submission {sub_id} state={res['attributes'].get('state')}, "
+                f"version {version} build {build['attributes'].get('version')} (releaseType MANUAL)")
+          PY
