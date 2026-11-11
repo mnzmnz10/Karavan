@@ -50,3 +50,42 @@ test("pickDownloaded takes the newest usable bundle, never a failed one", () => 
   expect(pickDownloaded(bundles, "web-202611200000-fffffff")).toBe(null);
   expect(pickDownloaded([], CUR)).toBe(null);
 });
+
+describe("initOta", () => {
+  const V = (t) => `web-2026111${t}0000-abcdef1`;
+  let plugin;
+  const load = () => require("../ota");
+  beforeEach(() => {
+    jest.resetModules(); // ota.js ve eklenti taklidi her testte taze yüklensin
+    process.env.REACT_APP_WEB_VERSION = V(1);
+    global.fetch = jest.fn().mockRejectedValue(new Error("offline"));
+    plugin = {
+      notifyAppReady: jest.fn().mockResolvedValue({}),
+      current: jest.fn().mockResolvedValue({ bundle: { id: "builtin" }, native: "1.2.0" }),
+      list: jest.fn().mockResolvedValue({ bundles: [{ id: "n1", version: V(2), status: "success" }] }),
+      set: jest.fn().mockResolvedValue({}),
+      download: jest.fn(),
+    };
+    jest.doMock("@capgo/capacitor-updater", () => ({ CapacitorUpdater: plugin }));
+    jest.doMock("@capacitor/app", () => ({ App: { getInfo: async () => ({ id: "shop.corlukaravan.app" }), addListener: jest.fn() } }));
+  });
+  afterEach(() => { document.body.innerHTML = ""; delete process.env.REACT_APP_WEB_VERSION; });
+
+  test("offline: notifyAppReady still runs, downloaded newer bundle is applied", async () => {
+    await load().initOta();
+    expect(plugin.notifyAppReady).toHaveBeenCalled();
+    expect(plugin.set).toHaveBeenCalledWith({ id: "n1" });
+  });
+
+  test("never sets while a form/sheet is open", async () => {
+    document.body.innerHTML = '<div class="m-backdrop-enter"></div>';
+    await load().initOta();
+    expect(plugin.set).not.toHaveBeenCalled();
+  });
+
+  test("never re-sets the bundle that is already running (no reload loop)", async () => {
+    plugin.current.mockResolvedValue({ bundle: { id: "n1" }, native: "1.2.0" });
+    await load().initOta();
+    expect(plugin.set).not.toHaveBeenCalled();
+  });
+});

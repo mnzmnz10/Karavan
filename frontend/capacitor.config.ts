@@ -21,7 +21,9 @@ const config: CapacitorConfig = {
       autoUpdate: false,
       statsUrl: '',
       autoDeletePrevious: true,
-      autoDeleteFailed: true,
+      // false: geri dönülen paket 'error' durumuyla listede kalır, ota.js onu bir daha indirmez
+      // (silinirse list()'ten düşer ve bozuk paket her açılışta yeniden indirilip kurulurdu).
+      autoDeleteFailed: false,
     },
     Keyboard: {
       resizeOnFullScreen: true,

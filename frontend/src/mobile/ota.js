@@ -47,7 +47,10 @@ let lastCheck = 0;
 let busy = false;
 
 async function apply() {
-  if (!ready || hasOpenOverlay()) return;
+  if (!ready) return;
+  // Zaten bu paketteysek set() yine yeniden yükler: gömülü kimlik tutmazsa sonsuz döngü olurdu.
+  if ((await updater.current()).bundle?.id === ready?.id) { ready = null; return; }
+  if (!ready || hasOpenOverlay()) return; // form kontrolü await'ten sonra, set()'in hemen önünde
   const id = ready.id;
   ready = null;
   await updater.set({ id }); // webview yeni paketle yeniden yüklenir
