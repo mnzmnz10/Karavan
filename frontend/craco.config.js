@@ -1,6 +1,9 @@
 // Load configuration from environment or config file
 const path = require('path');
 
+// OTA: build'e gömülü web paketi kimliği (mobile/ota.js bununla karşılaştırır)
+process.env.REACT_APP_WEB_VERSION = process.env.REACT_APP_WEB_VERSION || require('./scripts/web-version')();
+
 // Environment variable overrides
 const config = {
   disableHotReload: process.env.DISABLE_HOT_RELOAD === 'true',

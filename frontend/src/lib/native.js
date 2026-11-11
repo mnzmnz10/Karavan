@@ -19,6 +19,9 @@ export async function initNative() {
   document.documentElement.classList.add('native-app');
   document.documentElement.classList.add(`platform-${Capacitor.getPlatform()}`);
 
+  // OTA arayüz güncellemesi (notifyAppReady + manifest kontrolü); hatada app etkilenmez
+  import('../mobile/ota').then((m) => m.initOta()).catch(() => {});
+
   // Dosya indirme/açma köprüsü (window.open + <a download> yakalar)
   installMobileDownload();
 

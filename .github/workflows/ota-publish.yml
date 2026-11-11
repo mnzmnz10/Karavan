@@ -1,0 +1,91 @@
+# OTA arayüz paketi yayını (App Store'suz güncelleme, mobile/ota.js okur)
+#
+# Tetikleme: `ota-beta-*` etiketi → beta kanalı (MSZ Beta uygulaması),
+#            `ota-prod-*` etiketi → resmi uygulama.
+#            Veya Actions → "OTA publish" → Run workflow (kanal seçilir).
+# Çıktı:     sabit `ota-<kanal>` release'i (prerelease, latest değil) içinde
+#            bundle-<sürüm>.zip + manifest.json. Önce zip, en son manifest yüklenir.
+# Sürüm:     scripts/web-version.js (commit tarihi + kısa SHA); TestFlight build'i aynı
+#            commit'ten aynı kimliği gömer. Uygulama yalnız daha yeni paketi indirir,
+#            geri almak için revert commit'i yayınlanır.
+# min_native: varsayılan pbxproj MARKETING_VERSION; elle çalıştırmada değiştirilebilir.
+name: OTA publish
+
+on:
+  push:
+    tags: ["ota-beta-*", "ota-prod-*"]
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "Kanal"
+        type: choice
+        options: [beta, prod]
+        default: beta
+      min_native:
+        description: "Gereken en düşük yerel sürüm (boş: pbxproj MARKETING_VERSION)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ota-publish-${{ inputs.channel || (startsWith(github.ref_name, 'ota-prod-') && 'prod' || 'beta') }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      CI: "false" # CRA: uyarıları hata sayma
+      CHANNEL: ${{ inputs.channel || (startsWith(github.ref_name, 'ota-prod-') && 'prod' || 'beta') }}
+      MIN_NATIVE_INPUT: ${{ inputs.min_native }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
+
+      - name: Install
+        run: yarn install --frozen-lockfile --network-timeout 600000
+
+      - name: Build web bundle
+        run: yarn build:mobile
+
+      - name: Package bundle + manifest
+        run: |
+          VERSION=$(node scripts/web-version.js)
+          [[ "$VERSION" =~ ^web-[0-9]{12}-[0-9a-f]{7}$ ]] || { echo "::error::Bad version: $VERSION"; exit 1; }
+          grep -q "$VERSION" build/static/js/main.*.js || { echo "::error::Build does not embed $VERSION"; exit 1; }
+          MIN_NATIVE="${MIN_NATIVE_INPUT:-$(grep -m1 -oE 'MARKETING_VERSION = [0-9.]+' ios/App/App.xcodeproj/project.pbxproj | awk '{print $3}')}"
+          [[ "$MIN_NATIVE" =~ ^[0-9]+(\.[0-9]+)*$ ]] || { echo "::error::Bad min_native: $MIN_NATIVE"; exit 1; }
+          ZIP="bundle-$VERSION.zip"
+          OUT="$RUNNER_TEMP/ota"; mkdir -p "$OUT"
+          (cd build && zip -qr "$OUT/$ZIP" .)
+          SHA=$(sha256sum "$OUT/$ZIP" | cut -d' ' -f1)
+          URL="https://github.com/$GH_REPO/releases/download/ota-$CHANNEL/$ZIP"
+          jq -n --arg v "$VERSION" --arg u "$URL" --arg m "$MIN_NATIVE" --arg s "$SHA" \
+                --arg n "$(git log -1 --format=%s)" \
+                '{version: $v, url: $u, min_native: $m, sha256: $s, notes: $n}' > "$OUT/manifest.json"
+          cat "$OUT/manifest.json"
+          echo "ZIP_PATH=$OUT/$ZIP" >> "$GITHUB_ENV"
+          echo "MANIFEST_PATH=$OUT/manifest.json" >> "$GITHUB_ENV"
+
+      - name: Upload to release
+        run: |
+          TAG="ota-$CHANNEL"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --prerelease --latest=false --target "$GITHUB_SHA" \
+              --title "OTA $CHANNEL" --notes "Mobil arayüz paketleri ($CHANNEL kanalı). Elle düzenlemeyin; OTA publish workflow'u yönetir."
+          fi
+          gh release upload "$TAG" "$ZIP_PATH" --clobber
+          gh release upload "$TAG" "$MANIFEST_PATH" --clobber

@@ -16,6 +16,13 @@ const config: CapacitorConfig = {
       showSpinner: false,
       androidScaleType: 'CENTER_CROP',
     },
+    // OTA: kendi barındırdığımız manuel mod (mobile/ota.js). Capgo bulutu ve istatistik yok.
+    CapacitorUpdater: {
+      autoUpdate: false,
+      statsUrl: '',
+      autoDeletePrevious: true,
+      autoDeleteFailed: true,
+    },
     Keyboard: {
       resizeOnFullScreen: true,
     },

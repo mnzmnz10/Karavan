@@ -6,15 +6,10 @@ import { Sheet } from "./ui";
 import { cache } from "./cache";
 import { useSession } from "./session";
 import { bioLabel, bioSaved, bioDelete } from "./biometric";
+import { WEB_VERSION } from "./ota";
 
-// Yüklü bundle hash'i (main.<hash>.js) — "eski sürüm mü?" kontrolü için
-function appVersion() {
-  try {
-    const src = Array.from(document.scripts).map((x) => x.src).find((u) => /\/main\.[a-z0-9]+\.js/.test(u));
-    const m = src && /main\.([a-z0-9]+)\.js/.exec(src);
-    return m ? m[1] : "geliştirme";
-  } catch { return "?"; }
-}
+// Çalışan web paketinin kimliği (OTA ile değişir) — "eski sürüm mü?" kontrolü için
+const appVersion = () => WEB_VERSION;
 
 export function AccountButton() {
   const s = useSession();
