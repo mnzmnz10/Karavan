@@ -58,7 +58,7 @@ jobs:
           VERSION: ${{ inputs.version || '1.1' }}
           BUILD_NUMBER: ${{ inputs.build_number || '' }}
           REPLACE: ${{ inputs.replace && 'true' || 'false' }}
-          WHATS_NEW: "Servis için fiyatsız iş listesi PDF'i: araca asmak için kalem seçimiyle. Ölü ürün görselleri yerine yer tutucu. Arka plandan dönünce açık formlar korunuyor; kaydettikten sonra sayfa en üste dönüyor."
+          WHATS_NEW: "Uygulama artık arayüz güncellemelerini kendisi indiriyor; yeni ekranlar ve düzeltmeler mağaza güncellemesi beklemeden gelir. Hesap ekranında çalışan sürüm görünüyor."
         run: |
           pip install --quiet pyjwt cryptography
           python3 - <<'PY'
