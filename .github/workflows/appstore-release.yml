@@ -1,0 +1,107 @@
+# Onaylanmış (PENDING_DEVELOPER_RELEASE) App Store sürümünü yayınlar (releaseType MANUAL sonrası "Release").
+#
+# Tetikleme: `release-*` etiketi push'la (ör. git tag release-1 && git push origin release-1)
+#            veya Actions → "App Store release" → Run workflow (version girilebilir).
+# Sürüm zaten yayında / yayına hazırlanıyorsa "already released" deyip başarıyla çıkar.
+# Dağıtım/fiyat/erişilebilirlik ayarlarına dokunulmaz (uygulama unlisted kalır).
+#
+# Secret'lar ios-testflight.yml ile aynı: ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8 (değerleri yazdırılmaz).
+name: App Store release
+
+on:
+  push:
+    tags: ["release-*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Yayınlanacak App Store sürümü (MARKETING_VERSION)"
+        default: "1.1"
+        required: false
+
+concurrency:
+  group: appstore-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Release approved version
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          KID_RAW: ${{ secrets.ASC_KEY_ID }}
+          ISS_RAW: ${{ secrets.ASC_ISSUER_ID }}
+          BID: shop.corlukaravan.app
+          VERSION: ${{ inputs.version || '1.1' }}
+        run: |
+          pip install --quiet pyjwt cryptography
+          python3 - <<'PY'
+          import os, time, json, re, urllib.request, urllib.error, urllib.parse, jwt
+
+          kid = re.sub(r"[^A-Za-z0-9]", "", os.environ["KID_RAW"])
+          iss = re.sub(r"[^A-Za-z0-9-]", "", os.environ["ISS_RAW"])
+          bid, version = os.environ["BID"], os.environ["VERSION"].strip()
+
+          def token():
+              now = int(time.time())
+              return jwt.encode({"iss": iss, "iat": now, "exp": now + 900, "aud": "appstoreconnect-v1"},
+                                os.environ["ASC_KEY_P8"], algorithm="ES256", headers={"kid": kid, "typ": "JWT"})
+
+          def fail(msg):
+              print(f"::error::{msg}")
+              raise SystemExit(1)
+
+          def api(method, path, body=None, step=""):
+              req = urllib.request.Request("https://api.appstoreconnect.apple.com" + path, method=method,
+                                           data=json.dumps(body).encode() if body else None,
+                                           headers={"Authorization": f"Bearer {token()}", "Content-Type": "application/json"})
+              try:
+                  with urllib.request.urlopen(req) as r:
+                      t = r.read()
+                      return json.loads(t) if t else {}
+              except urllib.error.HTTPError as e:
+                  raw = e.read().decode(errors="replace")
+                  try:
+                      details = [f"{x.get('code')}: {x.get('detail') or x.get('title')}" for x in json.loads(raw).get("errors", [])]
+                  except ValueError:
+                      details = [raw[:500]]
+                  for d in details:
+                      print(f"  Apple: {d}")
+                  fail(f"{step or method + ' ' + path.split('?')[0]} failed (HTTP {e.code}): {'; '.join(details)[:400]}")
+
+          RELEASED = {"READY_FOR_SALE", "READY_FOR_DISTRIBUTION", "PROCESSING_FOR_APP_STORE", "PROCESSING_FOR_DISTRIBUTION"}
+
+          apps = api("GET", f"/v1/apps?filter[bundleId]={bid}", step="find app")["data"]
+          app = next((a for a in apps if a["attributes"]["bundleId"] == bid), None)
+          if not app:
+              fail(f"No app for bundle ID {bid}")
+          app_id = app["id"]
+          print("App:", app["attributes"]["name"], app_id)
+
+          def get_version():
+              vs = api("GET", f"/v1/apps/{app_id}/appStoreVersions?filter[platform]=IOS"
+                              f"&filter[versionString]={urllib.parse.quote(version)}&limit=5", step="find appStoreVersion")["data"]
+              if not vs:
+                  fail(f"No iOS appStoreVersion {version}")
+              a = vs[0]["attributes"]
+              return vs[0], a.get("appStoreState"), a.get("appVersionState")
+
+          ver, store_state, ver_state = get_version()
+          print(f"appStoreVersion {version}: {ver['id']} appStoreState={store_state} appVersionState={ver_state}")
+          states = {store_state, ver_state}
+          if states & RELEASED:
+              print(f"Version {version} already released ({store_state or ver_state}); nothing to do.")
+              raise SystemExit(0)
+          if "PENDING_DEVELOPER_RELEASE" not in states:
+              fail(f"Version {version} is not releasable: appStoreState={store_state} appVersionState={ver_state}")
+
+          api("POST", "/v1/appStoreVersionReleaseRequests", {"data": {"type": "appStoreVersionReleaseRequests",
+              "relationships": {"appStoreVersion": {"data": {"type": "appStoreVersions", "id": ver["id"]}}}}},
+              step="release request")
+          print("Release request accepted")
+
+          time.sleep(5)
+          _, store_state, ver_state = get_version()
+          print(f"Version {version} now: appStoreState={store_state} appVersionState={ver_state}")
+          PY
