@@ -22,7 +22,7 @@ on:
     inputs:
       version:
         description: "App Store sürümü (MARKETING_VERSION)"
-        default: "1.1"
+        default: ""
         required: false
       build_number:
         description: "Build numarası (ios-testflight run_number); boş = sürümün en yeni build'i"
@@ -45,6 +45,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: frontend/ios/App/App.xcodeproj
       - name: Submit build for App Store review
         env:
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
@@ -55,7 +58,7 @@ jobs:
           REF_NAME: ${{ github.ref_name }}
           EVENT: ${{ github.event_name }}
           BID: shop.corlukaravan.app
-          VERSION: ${{ inputs.version || '1.1' }}
+          VERSION: ${{ inputs.version }}
           BUILD_NUMBER: ${{ inputs.build_number || '' }}
           REPLACE: ${{ inputs.replace && 'true' || 'false' }}
           WHATS_NEW: "Uygulama artık arayüz güncellemelerini kendisi indiriyor; yeni ekranlar ve düzeltmeler mağaza güncellemesi beklemeden gelir. Hesap ekranında çalışan sürüm görünüyor."
@@ -66,7 +69,7 @@ jobs:
 
           kid = re.sub(r"[^A-Za-z0-9]", "", os.environ["KID_RAW"])
           iss = re.sub(r"[^A-Za-z0-9-]", "", os.environ["ISS_RAW"])
-          bid, version = os.environ["BID"], os.environ["VERSION"].strip()
+          bid, version = os.environ["BID"], (os.environ["VERSION"].strip() or __import__("re").search(r"MARKETING_VERSION = ([0-9.]+);", open("frontend/ios/App/App.xcodeproj/project.pbxproj").read()).group(1))
           build_number = os.environ["BUILD_NUMBER"].strip()
           replace = os.environ["REPLACE"] == "true"
           whats_new = os.environ["WHATS_NEW"]

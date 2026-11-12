@@ -15,7 +15,7 @@ on:
     inputs:
       version:
         description: "Yayınlanacak App Store sürümü (MARKETING_VERSION)"
-        default: "1.1"
+        default: ""
         required: false
 
 concurrency:
@@ -27,13 +27,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: frontend/ios/App/App.xcodeproj
       - name: Release approved version
         env:
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
           KID_RAW: ${{ secrets.ASC_KEY_ID }}
           ISS_RAW: ${{ secrets.ASC_ISSUER_ID }}
           BID: shop.corlukaravan.app
-          VERSION: ${{ inputs.version || '1.1' }}
+          VERSION: ${{ inputs.version }}
         run: |
           pip install --quiet pyjwt cryptography
           python3 - <<'PY'
@@ -41,7 +44,7 @@ jobs:
 
           kid = re.sub(r"[^A-Za-z0-9]", "", os.environ["KID_RAW"])
           iss = re.sub(r"[^A-Za-z0-9-]", "", os.environ["ISS_RAW"])
-          bid, version = os.environ["BID"], os.environ["VERSION"].strip()
+          bid, version = os.environ["BID"], (os.environ["VERSION"].strip() or __import__("re").search(r"MARKETING_VERSION = ([0-9.]+);", open("frontend/ios/App/App.xcodeproj/project.pbxproj").read()).group(1))
 
           def token():
               now = int(time.time())
