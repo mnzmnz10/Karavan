@@ -8,7 +8,7 @@ import { Sheet, money, todayISO } from "../ui";
 import { keepCaret } from "../../lib/caret";
 import BulletTextarea from "../../components/BulletTextarea";
 import ProductPickerSheet from "../ProductPickerSheet";
-import { insertSubItem, removeItemWithSubs, normalizeSubs } from "../../lib/serviceItems";
+import { insertSubItem, removeItemWithSubs, cleanServiceItems, serviceItemQty } from "../../lib/serviceItems";
 
 const DRAFT_KEY = "service_draft";
 
@@ -128,7 +128,7 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
   const total = useMemo(
     () => f.items.reduce((a, it) => {
       if (it.gift) return a; // hediye toplama girmez
-      const q = parseFloat(it.qty) || 1;
+      const q = serviceItemQty(it.qty);
       const up = parseFloat(it.unit_price) || 0;
       const rate = it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || 1) : 1;
       return a + up * q * rate;
@@ -181,7 +181,7 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
   };
   // Kâr = satış − maliyet. Maliyet boşsa ürünün indirimli fiyatından (prodCost) türet, o da yoksa kâr 0.
   const lineTRY = (it, field) => {
-    const q = parseFloat(it.qty) || 1;
+    const q = serviceItemQty(it.qty);
     const v = parseFloat(it[field]) || 0;
     const rate = it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || 1) : 1;
     return v * q * rate;
@@ -194,7 +194,7 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
     if (it.unit_cost !== "" && it.unit_cost != null) return lineTRY(it, "unit_cost");
     if (isLaborItem(it)) return 0;
     const pc = prodCostUnit(it.name);
-    if (pc != null) return pc * (parseFloat(it.qty) || 1);
+    if (pc != null) return pc * (serviceItemQty(it.qty));
     return lineTRY(it, "unit_price");
   };
   const costTotal = useMemo(
@@ -273,11 +273,10 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
         payment_account: (f.payment_account || "").trim() || null,
         customer_name: f.customer_name.trim(),
         plate: f.is_trailer ? "" : f.plate,
-        items: normalizeSubs(f.items
-          .filter((it) => (it.name || "").trim() || parseFloat(it.unit_price) > 0))
+        items: cleanServiceItems(f.items)
           .map((it) => ({
             name: (it.name || "").trim(),
-            qty: parseFloat(it.qty) || 1,
+            qty: serviceItemQty(it.qty),
             unit_price: parseFloat(it.unit_price) || 0,
             unit_cost: it.unit_cost === "" || it.unit_cost == null ? null : (parseFloat(it.unit_cost) || 0),
             currency: it.currency || "TRY",
@@ -383,7 +382,7 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
               <div className="mt-1 flex items-center gap-2">
                 <span className="text-[12px] text-slate-400">Kur (1 {it.currency === "USD" ? "$" : "€"} = ₺)</span>
                 <input type="number" min="0" inputMode="decimal" className="w-20 rounded-lg bg-slate-100 px-2 py-1 text-right text-[13px] m-tnum" value={it.rate ?? ""} onChange={(e) => updItem(i, "rate", e.target.value)} placeholder="kur" />
-                <span className="m-tnum ml-auto text-[12px] font-semibold text-slate-500">₺{money((parseFloat(it.unit_price) || 0) * (parseFloat(it.qty) || 1) * (parseFloat(it.rate) || 0))}</span>
+                <span className="m-tnum ml-auto text-[12px] font-semibold text-slate-500">₺{money((parseFloat(it.unit_price) || 0) * (serviceItemQty(it.qty)) * (parseFloat(it.rate) || 0))}</span>
               </div>
             )}
           </div>

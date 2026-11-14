@@ -44,3 +44,26 @@ def test_pdfs_render_sub_items_under_parent():
     # ana kalem listeden çıkarılınca alt kalemi de çıkar
     skipped = _pdf_text(gen.create_service_worklist_pdf(svc, {0}))
     assert "AKÜ İŞÇİLİĞİ" not in skipped and "SOLAR PANEL" in skipped
+
+
+def test_pdf_sub_item_indentation_and_price_free_worklist():
+    import fitz
+    svc = {"id": "x", "customer_name": "Test", "items": ITEMS}
+    gen = server.PDFServiceGenerator()
+    for buf in (gen.create_service_pdf(svc), gen.create_service_worklist_pdf(svc)):
+        with fitz.open(stream=buf.getvalue(), filetype="pdf") as doc:
+            parent = doc[0].search_for("200 AH")[0]
+            child = doc[0].search_for("AKÜ İŞÇİLİĞİ")[0]
+            assert child.x0 > parent.x0 + 8
+    plain = _pdf_text(gen.create_service_worklist_pdf(svc))
+    for price in ("35.000", "2.000", "5.000", "47.000", "₺", "€", "$"):
+        assert price not in plain
+
+
+def test_sub_totals_with_gifts_currency_and_zero_quantity():
+    assert server._service_items_total([
+        *ITEMS,
+        {"name": "Hediye", "sub": True, "gift": True, "qty": 1, "unit_price": 999},
+        {"name": "Döviz", "sub": True, "qty": 2, "unit_price": 10, "currency": "EUR", "rate": 40},
+        {"name": "Sıfır", "sub": True, "qty": 0, "unit_price": 999},
+    ]) == 47800

@@ -22,3 +22,18 @@ test("normalizeSubs never leaves an orphan sub at the top", () => {
   expect(normalizeSubs([{ name: "s", sub: true }, { name: "t", sub: true }]).map((x) => x.sub)).toEqual([false, true]);
   expect(normalizeSubs([{ name: "eski" }])[0].sub).toBe(false);
 });
+
+
+test("saving an empty parent never reparents its children to the previous block", () => {
+  const { cleanServiceItems } = require("../../lib/serviceItems");
+  const saved = cleanServiceItems([A, { name: "", sub: false }, { name: "s1", sub: true }, { name: "s2", sub: true }, B]);
+  expect(saved.map((it) => it.sub)).toEqual([false, false, true, false]);
+  expect(removeItemWithSubs(saved, 0).map((it) => it.name)).toEqual(["s1", "s2", "Panel"]);
+});
+
+test("mobile quantity preserves zero and defaults only empty quantities", () => {
+  const { serviceItemQty } = require("../../lib/serviceItems");
+  expect(serviceItemQty(0)).toBe(0);
+  expect(serviceItemQty("0")).toBe(0);
+  expect(serviceItemQty("")).toBe(1);
+});

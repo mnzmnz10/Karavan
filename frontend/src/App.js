@@ -28,7 +28,7 @@ import ProductPicker from './components/ProductPicker';
 import PhotoGallery from './components/PhotoGallery';
 import WorklistPicker from './components/WorklistPicker';
 import { searchProducts } from './lib/productSearch';
-import { insertSubItem, removeItemWithSubs, normalizeSubs } from './lib/serviceItems';
+import { insertSubItem, removeItemWithSubs, cleanServiceItems } from './lib/serviceItems';
 import { CartProvider, useCart } from './cart/CartContext';
 import { rateOf, cartTotals } from './cart/cartLogic';
 import { cart as cartApi } from './mobile/api';
@@ -2059,8 +2059,7 @@ function AppInner() {
       toast.error('En az müşteri, araç veya plaka bilgisi girin');
       return;
     }
-    const cleanItems = normalizeSubs((serviceForm.items || [])
-      .filter((it) => (it.name || '').trim() || parseFloat(it.unit_price) > 0))
+    const cleanItems = cleanServiceItems(serviceForm.items)
       .map((it) => {
         const cur = it.currency || 'TRY';
         let rate = cur !== 'TRY' && it.rate !== '' && it.rate != null ? parseFloat(it.rate) : null;

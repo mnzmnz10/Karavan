@@ -27,3 +27,20 @@ export const removeItemWithSubs = (items, idx) => {
 
 // Kayıttan önce: baştaki (ana kalemi olmayan) alt kalemi ana kaleme çevir
 export const normalizeSubs = (items) => (items || []).map((it, i) => ({ ...it, sub: i > 0 && !!it.sub }));
+
+// Boş ana satır ayıklanırken ilk kalan alt kalem yeni ana olur; önceki bloğa bağlanmaz.
+export const cleanServiceItems = (items) => {
+  let parentKept = false;
+  return (items || []).reduce((out, it) => {
+    if (!it.sub) parentKept = false;
+    if (!(it.name || '').trim() && !(parseFloat(it.unit_price) > 0)) return out;
+    out.push({ ...it, sub: !!it.sub && parentKept });
+    parentKept = true;
+    return out;
+  }, []);
+};
+
+export const serviceItemQty = (qty) => {
+  const value = parseFloat(qty);
+  return Number.isNaN(value) ? 1 : value;
+};
