@@ -30,7 +30,7 @@ export default function WorklistPicker({ service, api, onClose }) {
         <div className="max-h-[50vh] space-y-0.5 overflow-y-auto">
           {items.map((x) => (
             <Row key={x.idx} checked={!off.has(x.idx)} onChange={() => toggle(x.idx)}>
-              {x.name} <span className="text-slate-400">× {x.qty}</span>
+              {x.sub && <span className="pl-4 text-slate-400">↳ </span>}{x.name} <span className="text-slate-400">× {x.qty}</span>
             </Row>
           ))}
           {hasText(service.operations) && <Row checked={ops} onChange={() => setOps(!ops)}><b>Yapılacak işlemler</b> bölümü</Row>}

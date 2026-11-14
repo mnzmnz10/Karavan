@@ -3,7 +3,7 @@
 // Listeye girebilecek kalemler (adı dolu, adedi > 0); idx = svc.items içindeki sıra (backend skip bununla eşleşir)
 export const worklistItems = (svc) =>
   (svc?.items || [])
-    .map((it, idx) => ({ idx, name: (it?.name || "").trim(), qty: Number(it?.qty) }))
+    .map((it, idx) => ({ idx, name: (it?.name || "").trim(), qty: Number(it?.qty), ...(it?.sub ? { sub: true } : {}) }))
     .filter((x) => x.name && x.qty > 0);
 
 export const hasText = (t) => !!String(t || "").trim();

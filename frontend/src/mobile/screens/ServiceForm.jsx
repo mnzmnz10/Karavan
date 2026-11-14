@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "../toast";
-import { Camera, Plus, Trash2, Loader2, X, Eye, EyeOff, Search, ChevronLeft, ChevronRight, Gift } from "lucide-react";
+import { Camera, Plus, Trash2, Loader2, X, Eye, EyeOff, Search, ChevronLeft, ChevronRight, Gift, CornerDownRight } from "lucide-react";
 import { useCatalog, catRate } from "../catalog";
 import { services as servicesApi } from "../api";
 import { cache } from "../cache";
@@ -8,6 +8,7 @@ import { Sheet, money, todayISO } from "../ui";
 import { keepCaret } from "../../lib/caret";
 import BulletTextarea from "../../components/BulletTextarea";
 import ProductPickerSheet from "../ProductPickerSheet";
+import { insertSubItem, removeItemWithSubs, normalizeSubs } from "../../lib/serviceItems";
 
 const DRAFT_KEY = "service_draft";
 
@@ -240,7 +241,8 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
     setPicked(true);
   };
   const updItem = (i, k, v) => set("items", f.items.map((it, j) => (j === i ? { ...it, [k]: v } : it)));
-  const delItem = (i) => set("items", f.items.filter((_, j) => j !== i));
+  const delItem = (i) => set("items", removeItemWithSubs(f.items, i)); // ana kalem alt kalemleriyle gider
+  const addSubItem = (i) => set("items", insertSubItem(f.items, i, { name: "", qty: 1, unit_price: "", unit_cost: "", currency: "TRY" }));
 
   const onFiles = async (files) => {
     if (!files?.length) return;
@@ -271,8 +273,8 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
         payment_account: (f.payment_account || "").trim() || null,
         customer_name: f.customer_name.trim(),
         plate: f.is_trailer ? "" : f.plate,
-        items: f.items
-          .filter((it) => (it.name || "").trim() || parseFloat(it.unit_price) > 0)
+        items: normalizeSubs(f.items
+          .filter((it) => (it.name || "").trim() || parseFloat(it.unit_price) > 0))
           .map((it) => ({
             name: (it.name || "").trim(),
             qty: parseFloat(it.qty) || 1,
@@ -281,6 +283,7 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
             currency: it.currency || "TRY",
             rate: it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || null) : null,
             gift: !!it.gift,
+            sub: !!it.sub,
           })),
       };
       // Fotoğraflar değişmediyse gönderme: liste kaydından (photos alanı yok) açılan düzenleme mevcut fotoğrafları silmesin
@@ -354,9 +357,11 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
       <Group title="Parça / İşlem Kalemleri">
         {f.items.length === 0 && <div className="px-4 py-3 text-[13px] text-slate-400">Kalem yok</div>}
         {f.items.map((it, i) => (
-          <div key={i} className="border-b border-slate-100 px-3 py-2 last:border-0">
+          <div key={i} className={`border-b border-slate-100 py-2 pr-3 last:border-0 ${it.sub ? "bg-slate-50 pl-7" : "pl-3"}`}>
             <div className="flex items-center gap-2">
-              <input className="min-w-0 flex-1 rounded-lg bg-slate-100 px-2 py-1.5 text-[14px] text-slate-800 placeholder:text-slate-400" value={it.name} onChange={(e) => updItem(i, "name", e.target.value)} placeholder="Ürün / işlem adı" list="mz-item-names" autoFocus={i === focusItem} />
+              {it.sub && <CornerDownRight className="h-4 w-4 shrink-0 text-slate-400" aria-label="Alt kalem" />}
+              <input className="min-w-0 flex-1 rounded-lg bg-slate-100 px-2 py-1.5 text-[14px] text-slate-800 placeholder:text-slate-400" value={it.name} onChange={(e) => updItem(i, "name", e.target.value)} placeholder={it.sub ? "Alt kalem (işçilik…)" : "Ürün / işlem adı"} list="mz-item-names" autoFocus={i === focusItem} />
+              {!it.sub && <button onClick={() => addSubItem(i)} aria-label="Alt kalem ekle" title="Alt kalem ekle" className="m-press shrink-0" style={{ color: "var(--m-ink-2)", opacity: 0.5 }}><CornerDownRight className="h-4 w-4" /></button>}
               <button onClick={() => updItem(i, "gift", !it.gift)} aria-label={it.gift ? "Hediyeyi kaldır" : "Hediye et"} className="m-press shrink-0" style={{ color: it.gift ? "#059669" : "var(--m-ink-2)", opacity: it.gift ? 1 : 0.5 }}><Gift className="h-4 w-4" /></button>
               <button onClick={() => delItem(i)} className="m-press shrink-0 text-rose-400"><Trash2 className="h-4 w-4" /></button>
             </div>

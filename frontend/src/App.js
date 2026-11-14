@@ -11,7 +11,7 @@ import { Badge } from './components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from './components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select';
-import { Trash2, Upload, RefreshCw, Plus, TrendingUp, Building2, Package, DollarSign, Edit, Save, X, FileText, Check, Archive, Download, Wrench, Eye, EyeOff, AlertTriangle, Tags, Copy, Pin, StickyNote, Users, Star, Search, Phone, Mail, MapPin, Calculator, Battery, Loader2, ScanSearch, LogOut, PlusCircle, MinusCircle, History, Settings, ChevronUp, ChevronDown, GripVertical, Cable, Folder, FolderOpen, CheckCircle2, Bell, Link2, ChevronLeft, ChevronRight, Gift } from 'lucide-react';
+import { Trash2, Upload, RefreshCw, Plus, TrendingUp, Building2, Package, DollarSign, Edit, Save, X, FileText, Check, Archive, Download, Wrench, Eye, EyeOff, AlertTriangle, Tags, Copy, Pin, StickyNote, Users, Star, Search, Phone, Mail, MapPin, Calculator, Battery, Loader2, ScanSearch, LogOut, PlusCircle, MinusCircle, History, Settings, ChevronUp, ChevronDown, GripVertical, Cable, Folder, FolderOpen, CheckCircle2, Bell, Link2, ChevronLeft, ChevronRight, Gift, CornerDownRight } from 'lucide-react';
 import KabloSemasiSection from '@/features/wiringrf/WiringRfSection';
 import { toast } from 'sonner';
 import { Toaster } from './components/ui/sonner';
@@ -28,6 +28,7 @@ import ProductPicker from './components/ProductPicker';
 import PhotoGallery from './components/PhotoGallery';
 import WorklistPicker from './components/WorklistPicker';
 import { searchProducts } from './lib/productSearch';
+import { insertSubItem, removeItemWithSubs, normalizeSubs } from './lib/serviceItems';
 import { CartProvider, useCart } from './cart/CartContext';
 import { rateOf, cartTotals } from './cart/cartLogic';
 import { cart as cartApi } from './mobile/api';
@@ -1911,7 +1912,9 @@ function AppInner() {
     }
     return { ...f, items };
   });
-  const removeServiceItem = (idx) => setServiceForm((f) => ({ ...f, items: (f.items || []).filter((_, i) => i !== idx) }));
+  const removeServiceItem = (idx) => setServiceForm((f) => ({ ...f, items: removeItemWithSubs(f.items, idx) }));
+  // Alt kalem: ana kalemin hemen altına bağlı satır (ör. akü → akü işçiliği); toplama girer
+  const addServiceSubItem = (idx) => setServiceForm((f) => ({ ...f, items: insertSubItem(f.items, idx, { name: '', qty: 1, unit_price: 0, unit_cost: '', currency: 'TRY', rate: '' }) }));
 
   // ---- Servis indirimi — iki yönlü: % girilince ₺ hesaplanır, ₺ girilince % hesaplanır ----
   const serviceFormGrossTotal = (f) => ((f.items || []).length > 0 ? serviceItemsTotal(f.items) : (parseFloat(f.cost) || 0));
@@ -2034,7 +2037,7 @@ function AppInner() {
       plate: svc.plate || '', is_trailer: !!svc.is_trailer,
       arrival_date: svc.arrival_date || '', delivery_date: svc.delivery_date || '',
       operations: svc.operations || '',
-      items: Array.isArray(svc.items) ? svc.items.map((it) => ({ name: it.name || '', qty: it.qty != null ? it.qty : 1, unit_price: it.unit_price != null ? it.unit_price : 0, unit_cost: it.unit_cost != null ? String(it.unit_cost) : '', currency: it.currency || 'TRY', rate: it.rate != null ? String(it.rate) : '' })) : [],
+      items: Array.isArray(svc.items) ? svc.items.map((it) => ({ name: it.name || '', qty: it.qty != null ? it.qty : 1, unit_price: it.unit_price != null ? it.unit_price : 0, unit_cost: it.unit_cost != null ? String(it.unit_cost) : '', currency: it.currency || 'TRY', rate: it.rate != null ? String(it.rate) : '', gift: !!it.gift, sub: !!it.sub })) : [],
       photos: Array.isArray(svc.photos) ? svc.photos : [],
       notes: svc.notes || '',
       cost: svc.cost != null ? String(svc.cost) : '',
@@ -2056,8 +2059,8 @@ function AppInner() {
       toast.error('En az müşteri, araç veya plaka bilgisi girin');
       return;
     }
-    const cleanItems = (serviceForm.items || [])
-      .filter((it) => (it.name || '').trim() || parseFloat(it.unit_price) > 0)
+    const cleanItems = normalizeSubs((serviceForm.items || [])
+      .filter((it) => (it.name || '').trim() || parseFloat(it.unit_price) > 0))
       .map((it) => {
         const cur = it.currency || 'TRY';
         let rate = cur !== 'TRY' && it.rate !== '' && it.rate != null ? parseFloat(it.rate) : null;
@@ -2066,7 +2069,7 @@ function AppInner() {
           rate = live > 0 ? parseFloat(live.toFixed(4)) : null; // kur kayıt anında sabitlenir
         }
         const unit_cost = it.unit_cost !== '' && it.unit_cost != null ? parseFloat(it.unit_cost) : null;
-        return { name: (it.name || '').trim(), qty: parseFloat(it.qty) || 0, unit_price: parseFloat(it.unit_price) || 0, unit_cost: unit_cost != null && !isNaN(unit_cost) ? unit_cost : null, currency: cur, rate, gift: !!it.gift };
+        return { name: (it.name || '').trim(), qty: parseFloat(it.qty) || 0, unit_price: parseFloat(it.unit_price) || 0, unit_cost: unit_cost != null && !isNaN(unit_cost) ? unit_cost : null, currency: cur, rate, gift: !!it.gift, sub: !!it.sub };
       });
     const itemsCost = serviceItemsTotal(cleanItems);
     const cleanCollections = (serviceForm.collections || [])
@@ -10924,7 +10927,7 @@ function AppInner() {
                       {(serviceForm.items || []).length === 0 ? (
                         <p className="text-xs text-slate-400 italic py-2">Henüz kalem yok. "Kalem Ekle" ile yapılan işlem / parça ekleyin (her satır ayrı; toplam otomatik hesaplanır).</p>
                       ) : (
-                        <div className="overflow-hidden rounded-xl border border-slate-200">
+                        <div className="overflow-x-auto rounded-xl border border-slate-200">
                           <table className="w-full text-sm">
                             <thead>
                               <tr className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
@@ -10933,14 +10936,17 @@ function AppInner() {
                                 <th className={`text-right font-bold px-2 py-2 ${(serviceForm.items || []).some((x) => x.currency && x.currency !== 'TRY') ? 'w-64' : 'w-36'}`}>Satış</th>
                                 {showServiceProfit && <th className="text-right font-bold px-2 py-2 w-24">Maliyet</th>}
                                 <th className="text-right font-bold px-3 py-2 w-28">Tutar (₺)</th>
-                                <th className="w-16"></th>
+                                <th className="w-20"></th>
                               </tr>
                             </thead>
                             <tbody>
                               {(serviceForm.items || []).map((it, idx) => (
-                                <tr key={idx} className="border-t border-slate-100">
-                                  <td className="px-2 py-1.5">
-                                    <input value={it.name} onChange={(e) => updateServiceItem(idx, 'name', e.target.value)} placeholder="Solar panel, akü, işçilik..." className="w-full h-8 px-2 border border-slate-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                                <tr key={idx} className={`border-t ${it.sub ? 'border-slate-50 bg-slate-50/60' : 'border-slate-100'}`}>
+                                  <td className={`py-1.5 ${it.sub ? 'pl-4 sm:pl-6 pr-2' : 'px-2'}`}>
+                                    <div className="flex items-center gap-1">
+                                    {it.sub && <CornerDownRight className="w-3.5 h-3.5 shrink-0 text-slate-400" aria-label="Alt kalem" />}
+                                    <input value={it.name} onChange={(e) => updateServiceItem(idx, 'name', e.target.value)} placeholder={it.sub ? 'Alt kalem (işçilik, montaj...)' : 'Solar panel, akü, işçilik...'} className="w-full min-w-[7rem] h-8 px-2 border border-slate-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                                    </div>
                                   </td>
                                   <td className="px-1 py-1.5">
                                     <input type="number" min="0" step="1" value={it.qty} onChange={(e) => updateServiceItem(idx, 'qty', e.target.value)} className="w-full h-8 px-1 border border-slate-200 rounded text-sm text-center tabular-nums focus:outline-none focus:ring-1 focus:ring-emerald-500" />
@@ -10972,8 +10978,9 @@ function AppInner() {
                                     ) : <>₺ {formatPrice(serviceItemLineTRY(it))}</>}
                                   </td>
                                   <td className="px-1 py-1.5 text-center whitespace-nowrap">
+                                    {!it.sub && <button type="button" onClick={() => addServiceSubItem(idx)} className="mr-1.5 text-slate-300 hover:text-emerald-600" title="Alt kalem ekle (ör. işçilik)" aria-label="Alt kalem ekle"><CornerDownRight className="w-4 h-4" /></button>}
                                     <button type="button" onClick={() => toggleServiceItemGift(idx)} className={`mr-1.5 ${it.gift ? 'text-emerald-600' : 'text-slate-300 hover:text-emerald-600'}`} title={it.gift ? 'Hediyeyi kaldır' : 'Hediye et (toplama girmez)'}><Gift className="w-4 h-4" /></button>
-                                    <button type="button" onClick={() => removeServiceItem(idx)} className="text-rose-400 hover:text-rose-600" title="Kalemi sil"><Trash2 className="w-4 h-4" /></button>
+                                    <button type="button" onClick={() => removeServiceItem(idx)} className="text-rose-400 hover:text-rose-600" title={it.sub ? 'Alt kalemi sil' : 'Kalemi sil (alt kalemleriyle)'}><Trash2 className="w-4 h-4" /></button>
                                   </td>
                                 </tr>
                               ))}
@@ -11320,16 +11327,17 @@ function AppInner() {
                                 <th className="px-2 py-1.5 text-right font-semibold border border-[#2E5A86] w-28">Tutar ₺</th>
                               </tr></thead>
                               <tbody>
-                                {(s.items || []).map((it, i) => {
+                                {(() => { let no = 0; return (s.items || []).map((it, i) => {
                                   const qty = parseFloat(it.qty) || 0; const up = parseFloat(it.unit_price) || 0;
+                                  if (!it.sub) no += 1; // alt kalem numara almaz, ana kalemin altında girintili
                                   return (<tr key={i} className="hover:bg-emerald-50/40">
-                                    <td className="px-2 py-1 text-slate-400 tabular-nums border border-slate-200">{i + 1}</td>
-                                    <td className="px-2 py-1 text-slate-700 border border-slate-200">{it.name}</td>
+                                    <td className="px-2 py-1 text-slate-400 tabular-nums border border-slate-200">{it.sub ? '' : no}</td>
+                                    <td className={`py-1 text-slate-700 border border-slate-200 ${it.sub ? 'pl-6 pr-2' : 'px-2'}`}>{it.sub && <CornerDownRight className="inline w-3 h-3 mr-1 -mt-0.5 text-slate-400" />}{it.name}</td>
                                     <td className="px-2 py-1 text-center text-slate-500 tabular-nums border border-slate-200">{qty || ''}</td>
                                     <td className={`px-2 py-1 text-right tabular-nums border border-slate-200 ${it.gift ? 'text-slate-400 line-through' : 'text-slate-500'}`}>₺ {formatPrice(up)}</td>
                                     <td className="px-2 py-1 text-right font-semibold text-[#1B3A5C] tabular-nums border border-slate-200">{it.gift ? <span className="font-black text-emerald-600">HEDİYE</span> : <>₺ {formatPrice(qty * up)}</>}</td>
                                   </tr>);
-                                })}
+                                }); })()}
                               </tbody>
                             </table>
                           </div>

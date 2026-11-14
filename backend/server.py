@@ -811,6 +811,7 @@ class ServiceItem(BaseModel):
     currency: Optional[str] = "TRY"                              # TRY | EUR | USD
     rate: Optional[float] = Field(None, ge=0)                    # 1 birim döviz = ? ₺ (kayıt anında sabitlenir)
     gift: Optional[bool] = False                                 # Hediye: toplama girmez, maliyeti kâr hesabında kalır
+    sub: Optional[bool] = False                                  # Alt kalem: listede kendinden önceki en yakın ana kaleme bağlı (ör. akü → akü işçiliği)
 
 class ServiceCollection(BaseModel):
     id: Optional[str] = None                                     # Satır id (frontend üretir)
@@ -13675,10 +13676,22 @@ class PDFServiceGenerator(PDFContractGenerator):
             ls = [re.sub(r"^\s*[•·\-*]\s*", "", ln).strip() for ln in str(txt or "").splitlines() if ln.strip()]
             return [ln for ln in ls if not re.fullmatch(r"\[Teklif:[^\]]*\]", ln)]  # iç bağlantı etiketi, ustaya gerekmez
         blocks = []
-        items = [it for i, it in enumerate(svc.get("items") or [])
-                 if i not in skip and (it.get("name") or "").strip() and self._wl_included(it.get("qty"))]
-        if items:
-            blocks.append(("PARÇA / İŞLEM", [(str(i + 1), it.get("name", ""), it.get("qty")) for i, it in enumerate(items)]))
+        rows, no, parent_on = [], 0, True
+        for i, it in enumerate(svc.get("items") or []):
+            on = i not in skip and bool((it.get("name") or "").strip()) and self._wl_included(it.get("qty"))
+            if it.get("sub"):
+                on = on and parent_on  # ana kalem listede yoksa alt kalemi de yok
+            else:
+                parent_on = on
+            if not on:
+                continue
+            if it.get("sub"):  # alt kalem: numarasız, girintili, ana kalemin hemen altında
+                rows.append(("", "\u00a0\u00a0\u00a0– " + it.get("name", ""), it.get("qty")))
+            else:
+                no += 1
+                rows.append((str(no), it.get("name", ""), it.get("qty")))
+        if rows:
+            blocks.append(("PARÇA / İŞLEM", rows))
         for title, field, on in (("YAPILACAK İŞLEMLER", "operations", ops), ("NOTLAR", "notes", notes)):
             ls = lines(svc.get(field)) if on else []
             if ls:
@@ -13807,10 +13820,17 @@ class PDFServiceGenerator(PDFContractGenerator):
                 ('LEFTPADDING', (0,0), (-1,-1), 6), ('RIGHTPADDING', (0,0), (-1,-1), 6),
                 ('ALIGN', (2,0), (2,-1), 'CENTER'), ('ALIGN', (3,0), (-1,-1), 'RIGHT'),
             ]
-            for i, it in enumerate(items):
+            no = 0
+            for it in items:
                 qty = float(it.get("qty") or 0)
                 unit = float(it.get("unit_price") or 0)
                 cur = (it.get("currency") or "TRY").upper()
+                # Alt kalem: numarasız, adı girintili (ana kalemin hemen altında)
+                if it.get("sub"):
+                    no_txt, name_txt = "", "\u00a0\u00a0\u00a0– " + upper_tr(it.get("name") or "")
+                else:
+                    no += 1
+                    no_txt, name_txt = str(no), upper_tr(it.get("name") or "")
                 if cur != "TRY":
                     sym = "€" if cur == "EUR" else "$"
                     rate = float(it.get("rate") or 0)
@@ -13822,16 +13842,16 @@ class PDFServiceGenerator(PDFContractGenerator):
                 if it.get("gift"):
                     gift_st = ParagraphStyle('SvcGift', parent=self.table_cell_right_bold, textColor=colors.HexColor('#059669'))
                     rows.append([
-                        Paragraph(str(i+1), self.table_cell_style),
-                        Paragraph(upper_tr(it.get('name') or ''), self.table_cell_style),
+                        Paragraph(no_txt, self.table_cell_style),
+                        Paragraph(name_txt, self.table_cell_style),
                         Paragraph(f"{qty:g}", self.table_cell_right),
                         Paragraph(f"<strike>{unit_txt}</strike>", self.table_cell_right),
                         Paragraph("HEDİYE", gift_st),
                     ])
                     continue
                 rows.append([
-                    Paragraph(str(i+1), self.table_cell_style),
-                    Paragraph(upper_tr(it.get("name") or ""), self.table_cell_style),
+                    Paragraph(no_txt, self.table_cell_style),
+                    Paragraph(name_txt, self.table_cell_style),
                     Paragraph(f"{qty:g}", self.table_cell_right),
                     Paragraph(unit_txt, self.table_cell_right),
                     Paragraph(fmt(line_try), self.table_cell_right_bold),
