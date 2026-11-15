@@ -13729,6 +13729,153 @@ class PDFServiceGenerator(PDFContractGenerator):
                                   date_str=self._wl_date(svc.get("arrival_date") or svc.get("created_at")),
                                   blocks=blocks, pairs=None, fallback_title=svc.get("order_no") or "SERVİS", cols=1)
 
+    # ---- Servis formu kalem tablosu (Ürün | İşçilik sütunlu) ----
+    SVC_NAVY = colors.HexColor('#1B3A5C')
+    SVC_INK = colors.HexColor('#2D3748')
+    SVC_MUTED = colors.HexColor('#64748B')
+    SVC_HAIR = colors.HexColor('#E2E8F0')
+    SVC_TINT = colors.HexColor('#EEF3F8')
+    SVC_PAPER = colors.HexColor('#F7F9FB')
+    SVC_GIFT = colors.HexColor('#059669')
+
+    def _svc_ps(self, name, size=8.2, bold=False, color=None, align=TA_LEFT, leading=None, indent=0):
+        return ParagraphStyle(name, parent=self.styles['Normal'], fontName=self.get_font_name(is_bold=bold),
+                              fontSize=size, leading=leading or size + 2.2, textColor=color or self.SVC_INK,
+                              alignment=align, leftIndent=indent)
+
+    @staticmethod
+    def _svc_line(it, fmt):
+        """Kalem satırı: (adet, birim metni, satır ₺, hediye mi, adet×birim notu).
+        Döviz kalem kayıtlı kurla ₺'ye çevrilir; kur yoksa ₺ toplama girmez (_service_items_total ile aynı)."""
+        qty = float(it.get("qty") or 0)
+        unit = float(it.get("unit_price") or 0)
+        cur = (it.get("currency") or "TRY").upper()
+        if cur != "TRY":
+            sym = "€" if cur == "EUR" else "$"
+            rate = float(it.get("rate") or 0)
+            unit_txt = f"{sym} {unit:,.0f}".replace(",", ".")
+            line = qty * unit * rate if rate > 0 else 0.0
+            kur = f"kur {rate:g}".replace(".", ",") if rate > 0 else "kur girilmemiş"
+            note = f"{qty:g} × {unit_txt} · {kur}"
+        else:
+            unit_txt = fmt(unit)
+            line = qty * unit
+            note = f"{qty:g} × {unit_txt}" if qty != 1 else ""
+        return qty, unit_txt, line, bool(it.get("gift")), note
+
+    def _svc_groups(self, items, fmt):
+        """Düz kalem listesini kategori gruplarına çevirir:
+        [{name, mains: [{it, ln, subs: [{it, ln}], orphan}], mat, lab, total}].
+        Başlıktan önceki (ya da hiç başlık olmayan) kalemler adsız gruba (name=None) düşer.
+        Ana kalemsiz alt kalem kendi satırını alır (orphan) ve tutarı işçilik sayılır."""
+        groups, cur = [], None
+        for it in items:
+            if it.get("header"):
+                cur = {"name": it.get("name") or "", "mains": []}
+                groups.append(cur)
+                continue
+            if cur is None:
+                cur = {"name": None, "mains": []}
+                groups.append(cur)
+            ln = self._svc_line(it, fmt)
+            if it.get("sub") and cur["mains"]:
+                cur["mains"][-1]["subs"].append({"it": it, "ln": ln})
+            else:
+                cur["mains"].append({"it": it, "ln": ln, "subs": [], "orphan": bool(it.get("sub"))})
+        for g in groups:
+            g["mat"] = sum(m["ln"][2] for m in g["mains"] if not m["ln"][3] and not m["orphan"])
+            g["lab"] = (sum(s["ln"][2] for m in g["mains"] for s in m["subs"] if not s["ln"][3])
+                        + sum(m["ln"][2] for m in g["mains"] if m["orphan"] and not m["ln"][3]))
+            g["total"] = g["mat"] + g["lab"]
+        return groups
+
+    def _svc_items_table(self, items, fmt):
+        """Kalem tablosu: alt kalemler (işçilik) ayrı satır yerine ana kalemin İŞÇİLİK
+        sütununa toplanır, adları ürün adının altında küçük satırda. Kategori başlığı
+        satırı ürün/işçilik/toplam ara toplamlarını taşır. Hiç alt kalem yoksa klasik
+        ADET/BİRİM/TUTAR düzeni basılır (boş işçilik sütunu gösterilmez)."""
+        from reportlab.platypus import Table as PDFTable
+        esc = lambda s: str(s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        groups = self._svc_groups(items, fmt)
+        has_labor = any(m["subs"] or m["orphan"] for g in groups for m in g["mains"])
+        cell = self._svc_ps('SvcC', leading=10.4)
+        note = self._svc_ps('SvcCNote', 6.8, color=self.SVC_MUTED, leading=8.6, indent=6)
+        cell_r = self._svc_ps('SvcCR', align=TA_RIGHT)
+        cell_rm = self._svc_ps('SvcCRM', align=TA_RIGHT, color=self.SVC_MUTED)
+        cell_rb = self._svc_ps('SvcCRB', 8.4, bold=True, align=TA_RIGHT, color=self.SVC_NAVY)
+        gift_r = self._svc_ps('SvcCGift', bold=True, align=TA_RIGHT, color=self.SVC_GIFT)
+        num = self._svc_ps('SvcCNum', 7.6, color=self.SVC_MUTED)
+        hd = self._svc_ps('SvcCH', 7.2, bold=True, color=colors.white)
+        hd_r = self._svc_ps('SvcCHR', 7.2, bold=True, color=colors.white, align=TA_RIGHT)
+        cat = self._svc_ps('SvcCCat', 8.4, bold=True, color=self.SVC_NAVY)
+        cat_r = self._svc_ps('SvcCCatR', bold=True, color=self.SVC_NAVY, align=TA_RIGHT)
+        dash = "–"
+        if has_labor:
+            widths = [0.8*cm, 8.3*cm, 1.2*cm, 2.5*cm, 2.4*cm, 2.8*cm]
+            heads = ["#", "PARÇA / İŞLEM", "ADET", "ÜRÜN", "İŞÇİLİK", "TOPLAM"]
+        else:
+            widths = [0.8*cm, 9.7*cm, 1.4*cm, 3.0*cm, 3.1*cm]
+            heads = ["#", "PARÇA / İŞLEM", "ADET", "BİRİM", "TUTAR"]
+        last = len(widths) - 1
+        rows = [[Paragraph(h, hd if i < 2 else hd_r) for i, h in enumerate(heads)]]
+        ts = [('BACKGROUND', (0, 0), (-1, 0), self.SVC_NAVY), ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+              ('LEFTPADDING', (0, 0), (-1, -1), 6), ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+              ('TOPPADDING', (0, 0), (-1, -1), 5), ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+              ('LINEBELOW', (0, 1), (-1, -1), 0.4, self.SVC_HAIR),
+              ('BACKGROUND', (last, 1), (last, -1), self.SVC_PAPER),
+              ('LINEBEFORE', (last, 1), (last, -1), 0.4, self.SVC_HAIR)]
+        if has_labor:
+            ts.append(('LINEBEFORE', (4, 1), (4, -1), 0.4, self.SVC_HAIR))
+        no = 0
+        for g in groups:
+            if g["name"] is not None:
+                r = len(rows)
+                sums = ([Paragraph(fmt(g["mat"]), cat_r), Paragraph(fmt(g["lab"]) if g["lab"] else dash, cat_r)]
+                        if has_labor else [""])
+                rows.append([Paragraph(upper_tr(esc(g["name"])), cat), "", ""] + sums + [Paragraph(fmt(g["total"]), cat_r)])
+                ts += [('SPAN', (0, r), (2 if has_labor else 3, r)), ('BACKGROUND', (0, r), (-1, r), self.SVC_TINT),
+                       ('LINEABOVE', (0, r), (-1, r), 0.9, self.SVC_NAVY)]
+            for m in g["mains"]:
+                no += 1
+                qty, unit_txt, line, gift, qnote = m["ln"]
+                name = [Paragraph(upper_tr(esc(m["it"].get("name"))), cell)]
+                if qnote:
+                    name.append(Paragraph(esc(qnote), note))
+                for s in m["subs"]:
+                    sname = upper_tr(esc(s["it"].get("name")))
+                    generic = sname.strip() in ("", "İŞÇİLİK")
+                    extra = [] if generic else [sname]
+                    if s["ln"][4]:
+                        extra.append(f"({esc(s['ln'][4])})")
+                    if s["ln"][3]:
+                        extra.append("· HEDİYE")
+                    if extra:  # adı yalnız "İşçilik" olan tek alt kalem not satırı açmaz
+                        name.append(Paragraph("+ " + " ".join((["İŞÇİLİK"] if generic else []) + extra), note))
+                qty_p = Paragraph(f"{qty:g}", cell_r)
+                if not has_labor:  # klasik düzen: birim + tutar
+                    rows.append([Paragraph(str(no), num), name, qty_p,
+                                 Paragraph(f"<strike>{unit_txt}</strike>" if gift else unit_txt, cell_r),
+                                 Paragraph("HEDİYE", gift_r) if gift else Paragraph(fmt(line), cell_rb)])
+                    continue
+                if m["orphan"]:  # ana kalemsiz alt kalem: tutarı işçilik
+                    mat_p = Paragraph(dash, cell_rm)
+                    labor, lab_gift = (0.0, True) if gift else (line, False)
+                else:
+                    mat_p = Paragraph("HEDİYE", gift_r) if gift else Paragraph(fmt(line), cell_r)
+                    labor = sum(s["ln"][2] for s in m["subs"] if not s["ln"][3])
+                    lab_gift = not labor and any(s["ln"][3] for s in m["subs"])
+                if labor:
+                    lab_p = Paragraph(fmt(labor), cell_r)
+                else:
+                    lab_p = Paragraph("HEDİYE", gift_r) if lab_gift else Paragraph(dash, cell_rm)
+                total = (0.0 if gift or m["orphan"] else line) + labor
+                tot_p = (Paragraph("HEDİYE", gift_r) if not total and (gift or lab_gift)
+                         else Paragraph(fmt(total), cell_rb))
+                rows.append([Paragraph(str(no), num), name, qty_p, mat_p, lab_p, tot_p])
+        t = PDFTable(rows, colWidths=widths, repeatRows=1)
+        t.setStyle(TableStyle(ts))
+        return t
+
     def create_service_pdf(self, svc: Dict) -> BytesIO:
         from reportlab.platypus import Table as PDFTable, Image as PDFImage
         buffer = BytesIO()
@@ -13830,73 +13977,10 @@ class PDFServiceGenerator(PDFContractGenerator):
         story.append(info_tbl)
         story.append(Spacer(1, 9))
 
-        # ---- Parça / İşlem kalemleri tablosu ----
+        # ---- Parça / İşlem kalemleri tablosu (ürün | işçilik sütunlu) ----
         items = svc.get("items") or []
         if items:
-            rows = [[
-                Paragraph("<b>#</b>", self.table_header_center_style),
-                Paragraph("<b>PARÇA / İŞLEM</b>", self.table_header_style),
-                Paragraph("<b>ADET</b>", self.table_header_center_style),
-                Paragraph("<b>BİRİM (₺)</b>", self.table_header_right_style),
-                Paragraph("<b>TUTAR (₺)</b>", self.table_header_right_style),
-            ]]
-            tstyles = [
-                ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1B3A5C')),
-                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-                ('LINEBELOW', (0,0), (-1,-1), 0.5, colors.HexColor('#CBD5E1')),
-                ('TOPPADDING', (0,0), (-1,-1), 5), ('BOTTOMPADDING', (0,0), (-1,-1), 5),
-                ('LEFTPADDING', (0,0), (-1,-1), 6), ('RIGHTPADDING', (0,0), (-1,-1), 6),
-                ('ALIGN', (2,0), (2,-1), 'CENTER'), ('ALIGN', (3,0), (-1,-1), 'RIGHT'),
-            ]
-            no = 0
-            head_st = ParagraphStyle('SvcCatHead', parent=self.table_cell_style, fontName=self.get_font_name(is_bold=True), textColor=colors.HexColor('#1B3A5C'))
-            head_right = ParagraphStyle('SvcCatHeadR', parent=self.table_cell_right_bold, textColor=colors.HexColor('#1B3A5C'))
-            for idx, it in enumerate(items):
-                if it.get("header"):  # kategori başlığı: kalın bölüm satırı + ara toplam (alt kalemler dahil, sonraki başlığa kadar)
-                    end = next((j for j in range(idx + 1, len(items)) if items[j].get("header")), len(items))
-                    r = len(rows)
-                    rows.append([Paragraph(f"<b>{upper_tr(it.get('name') or '')}</b>", head_st), "", "", "",
-                                 Paragraph(fmt(_service_items_total(items[idx + 1:end])), head_right)])
-                    tstyles += [('SPAN', (0, r), (3, r)), ('BACKGROUND', (0, r), (-1, r), colors.HexColor('#EEF3F8')),
-                                ('LINEABOVE', (0, r), (-1, r), 1, colors.HexColor('#1B3A5C'))]
-                    continue
-                qty = float(it.get("qty") or 0)
-                unit = float(it.get("unit_price") or 0)
-                cur = (it.get("currency") or "TRY").upper()
-                # Alt kalem: numarasız, adı girintili (ana kalemin hemen altında)
-                if it.get("sub"):
-                    no_txt, name_txt = "", "\u00a0\u00a0\u00a0– " + upper_tr(it.get("name") or "")
-                else:
-                    no += 1
-                    no_txt, name_txt = str(no), upper_tr(it.get("name") or "")
-                if cur != "TRY":
-                    sym = "€" if cur == "EUR" else "$"
-                    rate = float(it.get("rate") or 0)
-                    unit_txt = f"{sym} {unit:,.0f}".replace(",", ".")
-                    line_try = qty * unit * rate if rate > 0 else 0
-                else:
-                    unit_txt = fmt(unit)
-                    line_try = qty * unit
-                if it.get("gift"):
-                    gift_st = ParagraphStyle('SvcGift', parent=self.table_cell_right_bold, textColor=colors.HexColor('#059669'))
-                    rows.append([
-                        Paragraph(no_txt, self.table_cell_style),
-                        Paragraph(name_txt, self.table_cell_style),
-                        Paragraph(f"{qty:g}", self.table_cell_right),
-                        Paragraph(f"<strike>{unit_txt}</strike>", self.table_cell_right),
-                        Paragraph("HEDİYE", gift_st),
-                    ])
-                    continue
-                rows.append([
-                    Paragraph(no_txt, self.table_cell_style),
-                    Paragraph(name_txt, self.table_cell_style),
-                    Paragraph(f"{qty:g}", self.table_cell_right),
-                    Paragraph(unit_txt, self.table_cell_right),
-                    Paragraph(fmt(line_try), self.table_cell_right_bold),
-                ])
-            items_tbl = PDFTable(rows, colWidths=[0.9*cm, 9.6*cm, 1.8*cm, 2.85*cm, 2.85*cm])
-            items_tbl.setStyle(TableStyle(tstyles))
-            story.append(items_tbl)
+            story.append(self._svc_items_table(items, fmt))
             story.append(Spacer(1, 8))
 
         # ---- Toplam tutar paneli (avans/kalan PDF'te GÖSTERİLMEZ — sadece sistemde) ----

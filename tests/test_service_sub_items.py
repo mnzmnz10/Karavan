@@ -67,3 +67,19 @@ def test_sub_totals_with_gifts_currency_and_zero_quantity():
         {"name": "Döviz", "sub": True, "qty": 2, "unit_price": 10, "currency": "EUR", "rate": 40},
         {"name": "Sıfır", "sub": True, "qty": 0, "unit_price": 999},
     ]) == 47800
+
+
+def test_service_pdf_labor_column_orphan_gift_and_plain_layout():
+    gen = server.PDFServiceGenerator()
+    items = [
+        {"name": "Bakım", "qty": 1, "unit_price": 700, "sub": True},  # ana kalemsiz alt kalem
+        *ITEMS,
+        {"name": "Hediye kablo", "qty": 1, "unit_price": 999, "gift": True},
+    ]
+    groups = gen._svc_groups(items, lambda v: str(v))
+    assert len(groups) == 1 and groups[0]["name"] is None  # başlıksız liste: kategori satırı yok
+    assert (groups[0]["mat"], groups[0]["lab"]) == (45000, 2700)
+    text = _pdf_text(gen.create_service_pdf({"id": "x", "customer_name": "Test", "items": items}))
+    assert "İŞÇİLİK" in text and "37.000" in text and "HEDİYE" in text
+    plain = _pdf_text(gen.create_service_pdf({"id": "x", "customer_name": "Test", "items": [ITEMS[0], ITEMS[2]]}))
+    assert "İŞÇİLİK" not in plain and "BİRİM" in plain  # alt kalem yoksa klasik düzen
