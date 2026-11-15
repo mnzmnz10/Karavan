@@ -46,3 +46,50 @@ test("service KDV is off for old records and applied to the discounted net", () 
   expect(serviceKdvAmount(47000 - 2000, { kdv_enabled: true, kdv_rate: 20 })).toBe(9000);
   expect(serviceKdvAmount(333.33, { kdv_enabled: true, kdv_rate: "10" })).toBe(33.33);
 });
+
+describe("drag reorder and category headers", () => {
+  const { moveServiceItem, cleanServiceItems, categorySubtotal, newHeaderItem, normalizeSubs } = require("../../lib/serviceItems");
+  const H = (name) => newHeaderItem(name);
+  const S = (name) => ({ name, sub: true });
+  const names = (l) => l.map((x) => (x.header ? `#${x.name}` : x.sub ? `-${x.name}` : x.name));
+
+  test("a parent moves with its subs, never into another block", () => {
+    const l = [A, S("a1"), S("a2"), B, S("b1"), { name: "C" }];
+    expect(names(moveServiceItem(l, 0, 3))).toEqual(["Panel", "-b1", "Akü", "-a1", "-a2", "C"]);
+    expect(names(moveServiceItem(l, 3, 1))).toEqual(["Panel", "-b1", "Akü", "-a1", "-a2", "C"]);
+    expect(names(moveServiceItem(l, 5, 0))).toEqual(["C", "Akü", "-a1", "-a2", "Panel", "-b1"]);
+    expect(moveServiceItem(l, 0, 1)).toEqual(l); // kendi alt kalemine bırakılırsa değişmez
+  });
+
+  test("a sub reorders inside its parent, can join another parent, becomes main at top or under a header", () => {
+    const l = [A, S("a1"), S("a2"), B];
+    expect(names(moveServiceItem(l, 2, 1))).toEqual(["Akü", "-a2", "-a1", "Panel"]);
+    expect(names(moveServiceItem(l, 1, 3))).toEqual(["Akü", "-a2", "Panel", "-a1"]);
+    expect(names(moveServiceItem(l, 1, 0))).toEqual(["a1", "Akü", "-a2", "Panel"]);
+    const h = [H("Elektrik"), A, S("a1"), H("Su"), B];
+    expect(names(moveServiceItem(h, 2, 3))).toEqual(["#Elektrik", "Akü", "#Su", "a1", "Panel"]);
+  });
+
+  test("headers move alone and regroup the items below them", () => {
+    const l = [H("Elektrik"), A, S("a1"), B, H("Su")];
+    expect(names(moveServiceItem(l, 4, 2))).toEqual(["#Elektrik", "#Su", "Akü", "-a1", "Panel"]);
+    expect(names(moveServiceItem(l, 4, 3))).toEqual(["#Elektrik", "Akü", "-a1", "#Su", "Panel"]);
+    expect(names(moveServiceItem(l, 0, 1))).toEqual(["Akü", "-a1", "#Elektrik", "Panel", "#Su"]);
+    expect(normalizeSubs([H("x"), S("y")])[1].sub).toBe(false);
+  });
+
+  test("removing a header keeps its items; cleaning keeps named headers, drops empty ones", () => {
+    const l = [H("Elektrik"), A, S("a1"), H(""), S("b")];
+    expect(names(removeItemWithSubs(l, 0))).toEqual(["Akü", "-a1", "#", "-b"]);
+    const saved = cleanServiceItems(l);
+    expect(names(saved)).toEqual(["#Elektrik", "Akü", "-a1", "b"]);
+    expect(saved[0]).toMatchObject({ header: true, qty: 0, unit_price: 0, unit_cost: 0, sub: false });
+  });
+
+  test("category subtotal sums until the next header, subs included", () => {
+    const l = [H("E"), { qty: 2, unit_price: 10 }, { qty: 1, unit_price: 5, sub: true }, H("S"), { qty: 1, unit_price: 100 }];
+    const line = (it) => (Number(it.qty) || 0) * (Number(it.unit_price) || 0);
+    expect(categorySubtotal(l, 0, line)).toBe(25);
+    expect(categorySubtotal(l, 3, line)).toBe(100);
+  });
+});

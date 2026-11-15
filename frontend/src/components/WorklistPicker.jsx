@@ -28,7 +28,9 @@ export default function WorklistPicker({ service, api, onClose }) {
           <DialogDescription>Listeye girmesini istemediğin kalemlerin işaretini kaldır.</DialogDescription>
         </DialogHeader>
         <div className="max-h-[50vh] space-y-0.5 overflow-y-auto">
-          {items.map((x) => (
+          {items.map((x) => x.header ? (
+            <div key={x.idx} className="px-2 pb-0.5 pt-2 text-[11px] font-black uppercase tracking-wider text-emerald-700">{x.name}</div>
+          ) : (
             <Row key={x.idx} checked={!off.has(x.idx)} onChange={() => toggle(x.idx)}>
               {x.sub && <span className="pl-4 text-slate-400">↳ </span>}{x.name} <span className="text-slate-400">× {x.qty}</span>
             </Row>

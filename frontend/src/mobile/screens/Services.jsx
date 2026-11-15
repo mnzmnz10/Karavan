@@ -11,7 +11,7 @@ import ServiceForm, { compressImage, isLaborItem } from "./ServiceForm";
 import { VehicleIcon } from "../vehicleIcons";
 import CustomerSheet from "../CustomerSheet";
 import { worklistItems, hasText, worklistUrl } from "../../lib/worklist";
-import { serviceKdvAmount, serviceKdvRate } from "../../lib/serviceItems";
+import { serviceKdvAmount, serviceKdvRate, categorySubtotal } from "../../lib/serviceItems";
 
 const STATUS = {
   received: { label: "Geldi", color: "amber" },
@@ -63,6 +63,7 @@ const statementText = (s) => {
   const lineTL = (it) => (parseFloat(it.unit_price) || 0) * (parseFloat(it.qty) || 1) * (it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || 1) : 1);
   const L = [`Merhaba ${(s.customer_name || "").trim()},`.replace(" ,", ","), "", `*Servis hesap özeti${s.order_no ? " (" + s.order_no + ")" : ""}*`];
   (s.items || []).forEach((it) => {
+    if (it.header) { L.push(`*${(it.name || "").trim()}*`); return; }
     const q = parseFloat(it.qty) || 1;
     L.push(`• ${it.name || "Kalem"}${q > 1 ? " × " + q : ""} — ${it.gift ? "HEDİYE" : "₺" + money(lineTL(it))}`);
   });
@@ -173,7 +174,9 @@ function WorklistSheet({ open, onClose, s }) {
     <Sheet open={open} onClose={onClose} title="Fiyatsız iş listesi">
       <div className="mb-2 text-[13px]" style={{ color: "var(--m-ink-2)" }}>Listeye girmesini istemediğin kalemlerin işaretini kaldır.</div>
       <div className="space-y-2">
-        {items.map((x) => (
+        {items.map((x) => x.header ? (
+          <div key={x.idx} className="px-2 pt-2 text-[12px] font-extrabold uppercase tracking-wide" style={{ color: "var(--m-primary)" }}>{x.name}</div>
+        ) : (
           <Row key={x.idx} checked={!off.has(x.idx)} onChange={() => toggle(x.idx)}>{x.sub && "↳ "}{x.name} <span className="text-slate-400">× {x.qty}</span></Row>
         ))}
         {hasText(s.operations) && <Row checked={ops} onChange={() => setOps(!ops)}><b>Yapılacak işlemler</b> bölümü</Row>}
@@ -406,7 +409,7 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuo
   }, [s, prodCost]);
   const profit = total - costTotal;
   const margin = total > 0 ? Math.round((profit / total) * 100) : 0;
-  const hasCost = !!s && (s.items || []).some(itemHasCost);
+  const hasCost = !!s && (s.items || []).some((it) => !it.header && itemHasCost(it));
 
   const st = s ? STATUS[s.status] || STATUS.received : null;
 
@@ -463,6 +466,12 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuo
             <div className="mt-3 rounded-2xl bg-white p-2">
               <div className="px-2 pb-1 pt-1 text-[12px] font-bold uppercase tracking-wide text-slate-400">Parça / İşlem</div>
               {s.items.map((it, i) => {
+                if (it.header) return (
+                  <div key={i} className="mt-1 flex items-center justify-between gap-2 rounded-lg bg-emerald-50 px-2 py-2">
+                    <div className="truncate text-[13px] font-extrabold uppercase tracking-wide text-emerald-800">{it.name}</div>
+                    <div className="m-tnum shrink-0 text-[13px] font-bold text-emerald-800">₺{money(categorySubtotal(s.items, i, (x) => (x.gift ? 0 : lineTRY(x, "unit_price"))))}</div>
+                  </div>
+                );
                 const q = parseFloat(it.qty) || 1;
                 const up = parseFloat(it.unit_price) || 0;
                 const rate = it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || 1) : 1;

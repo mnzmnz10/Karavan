@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import UpdateOne
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal, InvalidOperation
@@ -812,6 +812,13 @@ class ServiceItem(BaseModel):
     rate: Optional[float] = Field(None, ge=0)                    # 1 birim döviz = ? ₺ (kayıt anında sabitlenir)
     gift: Optional[bool] = False                                 # Hediye: toplama girmez, maliyeti kâr hesabında kalır
     sub: Optional[bool] = False                                  # Alt kalem: listede kendinden önceki en yakın ana kaleme bağlı (ör. akü → akü işçiliği)
+    header: Optional[bool] = False                               # Kategori başlığı: yalnız ad; altındaki (sonraki başlığa kadar) kalemler o kategoride
+
+    @model_validator(mode="after")
+    def _header_has_no_amounts(self):
+        if self.header:  # başlık toplam/kâr/KDV hesabına hiçbir yoldan girmesin
+            self.qty, self.unit_price, self.unit_cost, self.gift, self.sub, self.currency, self.rate = 0, 0, 0, False, False, "TRY", None
+        return self
 
 class ServiceCollection(BaseModel):
     id: Optional[str] = None                                     # Satır id (frontend üretir)
@@ -11428,8 +11435,8 @@ def _service_items_total(items):
     """Kalem listesinden toplam tutar (₺). Döviz kalemler kayıtlı kurla çevrilir."""
     total = 0.0
     for it in (items or []):
-        if it.get("gift"):
-            continue  # hediye kalem müşteri toplamına girmez
+        if it.get("gift") or it.get("header"):
+            continue  # hediye kalem müşteri toplamına girmez; kategori başlığı tutar taşımaz
         try:
             line = float(it.get("qty") or 0) * float(it.get("unit_price") or 0)
             cur = (it.get("currency") or "TRY").upper()
@@ -13691,8 +13698,13 @@ class PDFServiceGenerator(PDFContractGenerator):
             ls = [re.sub(r"^\s*[•·\-*]\s*", "", ln).strip() for ln in str(txt or "").splitlines() if ln.strip()]
             return [ln for ln in ls if not re.fullmatch(r"\[Teklif:[^\]]*\]", ln)]  # iç bağlantı etiketi, ustaya gerekmez
         blocks = []
-        rows, no, parent_on = [], 0, True
+        rows, no, parent_on, title = [], 0, True, "PARÇA / İŞLEM"
         for i, it in enumerate(svc.get("items") or []):
+            if it.get("header"):  # kategori başlığı: yeni bölüm; altında seçili kalem yoksa bölüm basılmaz
+                if rows:
+                    blocks.append((title, rows))
+                rows, title, parent_on = [], upper_tr((it.get("name") or "").strip()) or "PARÇA / İŞLEM", False
+                continue
             on = i not in skip and bool((it.get("name") or "").strip()) and self._wl_included(it.get("qty"))
             if it.get("sub"):
                 on = on and parent_on  # ana kalem listede yoksa alt kalemi de yok
@@ -13706,7 +13718,7 @@ class PDFServiceGenerator(PDFContractGenerator):
                 no += 1
                 rows.append((str(no), it.get("name", ""), it.get("qty")))
         if rows:
-            blocks.append(("PARÇA / İŞLEM", rows))
+            blocks.append((title, rows))
         for title, field, on in (("YAPILACAK İŞLEMLER", "operations", ops), ("NOTLAR", "notes", notes)):
             ls = lines(svc.get(field)) if on else []
             if ls:
@@ -13836,7 +13848,17 @@ class PDFServiceGenerator(PDFContractGenerator):
                 ('ALIGN', (2,0), (2,-1), 'CENTER'), ('ALIGN', (3,0), (-1,-1), 'RIGHT'),
             ]
             no = 0
-            for it in items:
+            head_st = ParagraphStyle('SvcCatHead', parent=self.table_cell_style, fontName=self.get_font_name(is_bold=True), textColor=colors.HexColor('#1B3A5C'))
+            head_right = ParagraphStyle('SvcCatHeadR', parent=self.table_cell_right_bold, textColor=colors.HexColor('#1B3A5C'))
+            for idx, it in enumerate(items):
+                if it.get("header"):  # kategori başlığı: kalın bölüm satırı + ara toplam (alt kalemler dahil, sonraki başlığa kadar)
+                    end = next((j for j in range(idx + 1, len(items)) if items[j].get("header")), len(items))
+                    r = len(rows)
+                    rows.append([Paragraph(f"<b>{upper_tr(it.get('name') or '')}</b>", head_st), "", "", "",
+                                 Paragraph(fmt(_service_items_total(items[idx + 1:end])), head_right)])
+                    tstyles += [('SPAN', (0, r), (3, r)), ('BACKGROUND', (0, r), (-1, r), colors.HexColor('#EEF3F8')),
+                                ('LINEABOVE', (0, r), (-1, r), 1, colors.HexColor('#1B3A5C'))]
+                    continue
                 qty = float(it.get("qty") or 0)
                 unit = float(it.get("unit_price") or 0)
                 cur = (it.get("currency") or "TRY").upper()

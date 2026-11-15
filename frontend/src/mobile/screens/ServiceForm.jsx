@@ -1,6 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "../toast";
-import { Camera, Plus, Trash2, Loader2, X, Eye, EyeOff, Search, ChevronLeft, ChevronRight, Gift, CornerDownRight } from "lucide-react";
+import { Camera, Plus, Trash2, Loader2, X, Eye, EyeOff, Search, ChevronLeft, ChevronRight, Gift, CornerDownRight, GripVertical, Tags } from "lucide-react";
+import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { useCatalog, catRate } from "../catalog";
 import { services as servicesApi } from "../api";
 import { cache } from "../cache";
@@ -8,7 +11,7 @@ import { Sheet, money, todayISO } from "../ui";
 import { keepCaret } from "../../lib/caret";
 import BulletTextarea from "../../components/BulletTextarea";
 import ProductPickerSheet from "../ProductPickerSheet";
-import { insertSubItem, removeItemWithSubs, cleanServiceItems, serviceItemQty, serviceKdvRate, serviceKdvAmount, DEFAULT_KDV_RATE } from "../../lib/serviceItems";
+import { insertSubItem, removeItemWithSubs, cleanServiceItems, moveServiceItem, itemKey, newHeaderItem, categorySubtotal, CATEGORY_SUGGESTIONS, serviceItemQty, serviceKdvRate, serviceKdvAmount, DEFAULT_KDV_RATE } from "../../lib/serviceItems";
 
 const DRAFT_KEY = "service_draft";
 
@@ -36,6 +39,13 @@ export function compressImage(file, max = 1280, quality = 0.72) {
     img.onerror = (e) => { URL.revokeObjectURL(url); reject(e); };
     img.src = url;
   });
+}
+
+// Sürüklenebilir kalem satırı: dinleyiciler yalnız tutamağa bağlanır (iOS WKWebView'de HTML5 DnD yok → dnd-kit TouchSensor)
+function SortableItem({ id, className, children }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style = { transform: CSS.Transform.toString(transform), transition, position: "relative", zIndex: isDragging ? 30 : undefined, boxShadow: isDragging ? "0 8px 24px rgba(0,0,0,0.18)" : undefined, opacity: isDragging ? 0.85 : 1 };
+  return <div ref={setNodeRef} style={style} {...attributes} className={className}>{children(listeners)}</div>;
 }
 
 function Group({ title, children }) {
@@ -109,9 +119,10 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
   const [busy, setBusy] = useState(false);
   const [imgBusy, setImgBusy] = useState(false);
   // Düzenlemede kaydedilmemiş değişiklik varsa kapatmadan önce sor (yeni kayıtta taslak zaten saklanıyor)
-  const [initialSnap] = useState(() => JSON.stringify(f));
+  const snap = (x) => JSON.stringify(x, (k, v) => (k === "_uid" ? undefined : v)); // sürükle kimliği değişiklik sayılmaz
+  const [initialSnap] = useState(() => snap(f));
   const guardedClose = () => {
-    if (editing && !busy && JSON.stringify(f) !== initialSnap && !window.confirm("Kaydedilmemiş değişiklikler silinsin mi?")) return;
+    if (editing && !busy && snap(f) !== initialSnap && !window.confirm("Kaydedilmemiş değişiklikler silinsin mi?")) return;
     onClose();
   };
   const fileRef = useRef();
@@ -246,6 +257,20 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
   const updItem = (i, k, v) => set("items", f.items.map((it, j) => (j === i ? { ...it, [k]: v } : it)));
   const delItem = (i) => set("items", removeItemWithSubs(f.items, i)); // ana kalem alt kalemleriyle gider
   const addSubItem = (i) => set("items", insertSubItem(f.items, i, { name: "", qty: 1, unit_price: "", unit_cost: "", currency: "TRY" }));
+  const addHeader = () => set("items", [...f.items, newHeaderItem("")]);
+  // Tutamakta kısa bekleme (150ms) → sayfa kaydırması ile karışmaz
+  const dndSensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 8 } })
+  );
+  const onDragEnd = ({ active, over }) => {
+    if (!over || active.id === over.id) return;
+    setF((p) => {
+      const ids = p.items.map(itemKey);
+      return { ...p, items: moveServiceItem(p.items, ids.indexOf(active.id), ids.indexOf(over.id)) };
+    });
+  };
+  const lineGross = (it) => (it.gift ? 0 : (parseFloat(it.unit_price) || 0) * serviceItemQty(it.qty) * (it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || 1) : 1));
 
   const onFiles = async (files) => {
     if (!files?.length) return;
@@ -288,6 +313,7 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
             rate: it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || null) : null,
             gift: !!it.gift,
             sub: !!it.sub,
+            header: !!it.header,
           })),
       };
       // Fotoğraflar değişmediyse gönderme: liste kaydından (photos alanı yok) açılan düzenleme mevcut fotoğrafları silmesin
@@ -360,15 +386,30 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
       <datalist id="mz-item-names">{itemNames.map((n) => <option key={n} value={n} />)}</datalist>
       <Group title="Parça / İşlem Kalemleri">
         {f.items.length === 0 && <div className="px-4 py-3 text-[13px] text-slate-400">Kalem yok</div>}
+        <datalist id="mz-category-names">{CATEGORY_SUGGESTIONS.map((n) => <option key={n} value={n} />)}</datalist>
+        <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+        <SortableContext items={f.items.map(itemKey)} strategy={verticalListSortingStrategy}>
         {f.items.map((it, i) => (
-          <div key={i} className={`border-b border-slate-100 py-2 pr-3 last:border-0 ${it.sub ? "bg-slate-50 pl-7" : "pl-3"}`}>
+          <SortableItem key={itemKey(it)} id={itemKey(it)} className={`border-b border-slate-100 py-2 pr-3 last:border-0 ${it.header ? "bg-emerald-50 pl-1" : it.sub ? "bg-slate-50 pl-5" : "bg-white pl-1"}`}>{(dragListeners) => {
+            const grip = <button type="button" {...dragListeners} aria-label="Sürükleyip taşı" className="flex h-8 w-6 shrink-0 items-center justify-center text-slate-300" style={{ touchAction: "none" }}><GripVertical className="h-4 w-4" /></button>;
+            if (it.header) return (
+              <div className="flex items-center gap-2">
+                {grip}
+                <input className="min-w-0 flex-1 rounded-lg bg-white/80 px-2 py-1.5 text-[14px] font-extrabold uppercase tracking-wide text-emerald-800 placeholder:normal-case placeholder:font-normal placeholder:text-slate-400" value={it.name} onChange={(e) => updItem(i, "name", e.target.value)} placeholder="Kategori (Elektrik, Su…)" list="mz-category-names" autoFocus={!it.name} />
+                <span className="m-tnum shrink-0 text-[13px] font-bold text-emerald-800">₺{money(categorySubtotal(f.items, i, lineGross))}</span>
+                <button onClick={() => delItem(i)} aria-label="Başlığı sil (kalemler kalır)" className="m-press shrink-0 text-rose-400"><Trash2 className="h-4 w-4" /></button>
+              </div>
+            );
+            return (<>
             <div className="flex items-center gap-2">
+              {grip}
               {it.sub && <CornerDownRight className="h-4 w-4 shrink-0 text-slate-400" aria-label="Alt kalem" />}
               <input className="min-w-0 flex-1 rounded-lg bg-slate-100 px-2 py-1.5 text-[14px] text-slate-800 placeholder:text-slate-400" value={it.name} onChange={(e) => updItem(i, "name", e.target.value)} placeholder={it.sub ? "Alt kalem (işçilik…)" : "Ürün / işlem adı"} list="mz-item-names" autoFocus={i === focusItem} />
               {!it.sub && <button onClick={() => addSubItem(i)} aria-label="Alt kalem ekle" title="Alt kalem ekle" className="m-press shrink-0" style={{ color: "var(--m-ink-2)", opacity: 0.5 }}><CornerDownRight className="h-4 w-4" /></button>}
               <button onClick={() => updItem(i, "gift", !it.gift)} aria-label={it.gift ? "Hediyeyi kaldır" : "Hediye et"} className="m-press shrink-0" style={{ color: it.gift ? "#059669" : "var(--m-ink-2)", opacity: it.gift ? 1 : 0.5 }}><Gift className="h-4 w-4" /></button>
               <button onClick={() => delItem(i)} className="m-press shrink-0 text-rose-400"><Trash2 className="h-4 w-4" /></button>
             </div>
+            <div className="pl-8">
             <div className="mt-1 flex items-center gap-2">
               <input type="number" min="0" className="w-12 rounded-lg bg-slate-100 px-2 py-1 text-center text-[13px] m-tnum" value={it.qty} onChange={(e) => updItem(i, "qty", e.target.value)} placeholder="Adet" />
               <input type="number" min="0" className="min-w-0 flex-1 rounded-lg bg-slate-100 px-2 py-1 text-right text-[13px] m-tnum" value={it.unit_price} onChange={(e) => updItem(i, "unit_price", e.target.value)} placeholder="Satış" />
@@ -390,8 +431,12 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
                 <span className="m-tnum ml-auto text-[12px] font-semibold text-slate-500">₺{money((parseFloat(it.unit_price) || 0) * (serviceItemQty(it.qty)) * (parseFloat(it.rate) || 0))}</span>
               </div>
             )}
-          </div>
+            </div>
+            </>);
+          }}</SortableItem>
         ))}
+        </SortableContext>
+        </DndContext>
         <div className="border-t border-slate-100 px-3 pt-2.5">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -418,6 +463,9 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
           {/* İşçilik: geliş 0 → tamamı kâr (Brüt kazanç özetinde ayrı satır) */}
           <button onClick={() => set("items", [...f.items, { name: "İşçilik", qty: 1, unit_price: "", unit_cost: 0, currency: "TRY" }])} className="m-press flex flex-1 items-center justify-center gap-1.5 px-4 py-3 text-[14px] font-semibold" style={{ color: "var(--m-primary-2)" }}>
             <Plus className="h-4 w-4" /> İşçilik
+          </button>
+          <button onClick={addHeader} className="m-press flex flex-1 items-center justify-center gap-1.5 px-3 py-3 text-[14px] font-semibold" style={{ color: "var(--m-primary-2)" }}>
+            <Tags className="h-4 w-4" /> Kategori
           </button>
         </div>
         {total > 0 && (

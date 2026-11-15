@@ -28,7 +28,7 @@ import ProductPicker from './components/ProductPicker';
 import PhotoGallery from './components/PhotoGallery';
 import WorklistPicker from './components/WorklistPicker';
 import { searchProducts } from './lib/productSearch';
-import { insertSubItem, removeItemWithSubs, cleanServiceItems, serviceKdvRate, serviceKdvAmount, DEFAULT_KDV_RATE } from './lib/serviceItems';
+import { insertSubItem, removeItemWithSubs, cleanServiceItems, moveServiceItem, itemKey, newHeaderItem, categorySubtotal, CATEGORY_SUGGESTIONS, serviceKdvRate, serviceKdvAmount, DEFAULT_KDV_RATE } from './lib/serviceItems';
 import { CartProvider, useCart } from './cart/CartContext';
 import { rateOf, cartTotals } from './cart/cartLogic';
 import { cart as cartApi } from './mobile/api';
@@ -52,7 +52,7 @@ const imgOf = (x) => {
 
 // Sözleşme kalem satırı — dnd-kit ile sürükle-bırak (telefon uygulaması gibi animasyonlu yeniden sıralama).
 // children render-prop'una drag dinleyicileri verilir (sadece tutamaca bağlanır, input'lar serbest kalır).
-function SortableItemRow({ id, disabled, children }) {
+function SortableItemRow({ id, disabled, className = 'hover:bg-emerald-50/40', children }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled });
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -64,7 +64,7 @@ function SortableItemRow({ id, disabled, children }) {
     zIndex: isDragging ? 30 : undefined,
   };
   return (
-    <tr ref={setNodeRef} style={style} {...attributes} className="hover:bg-emerald-50/40">
+    <tr ref={setNodeRef} style={style} {...attributes} className={className}>
       {children(listeners)}
     </tr>
   );
@@ -1915,6 +1915,15 @@ function AppInner() {
   const removeServiceItem = (idx) => setServiceForm((f) => ({ ...f, items: removeItemWithSubs(f.items, idx) }));
   // Alt kalem: ana kalemin hemen altına bağlı satır (ör. akü → akü işçiliği); toplama girer
   const addServiceSubItem = (idx) => setServiceForm((f) => ({ ...f, items: insertSubItem(f.items, idx, { name: '', qty: 1, unit_price: 0, unit_cost: '', currency: 'TRY', rate: '' }) }));
+  // Kategori başlığı: listenin sonuna eklenir; altına eklenen/sürüklenen kalemler o kategoriye girer
+  const addServiceHeader = () => setServiceForm((f) => ({ ...f, items: [...(f.items || []), newHeaderItem('')] }));
+  const onServiceItemDragEnd = ({ active, over }) => {
+    if (!over || active.id === over.id) return;
+    setServiceForm((f) => {
+      const ids = (f.items || []).map(itemKey);
+      return { ...f, items: moveServiceItem(f.items, ids.indexOf(active.id), ids.indexOf(over.id)) };
+    });
+  };
 
   // ---- Servis indirimi — iki yönlü: % girilince ₺ hesaplanır, ₺ girilince % hesaplanır ----
   const serviceFormGrossTotal = (f) => ((f.items || []).length > 0 ? serviceItemsTotal(f.items) : (parseFloat(f.cost) || 0));
@@ -2037,7 +2046,7 @@ function AppInner() {
       plate: svc.plate || '', is_trailer: !!svc.is_trailer,
       arrival_date: svc.arrival_date || '', delivery_date: svc.delivery_date || '',
       operations: svc.operations || '',
-      items: Array.isArray(svc.items) ? svc.items.map((it) => ({ name: it.name || '', qty: it.qty != null ? it.qty : 1, unit_price: it.unit_price != null ? it.unit_price : 0, unit_cost: it.unit_cost != null ? String(it.unit_cost) : '', currency: it.currency || 'TRY', rate: it.rate != null ? String(it.rate) : '', gift: !!it.gift, sub: !!it.sub })) : [],
+      items: Array.isArray(svc.items) ? svc.items.map((it) => ({ name: it.name || '', qty: it.qty != null ? it.qty : 1, unit_price: it.unit_price != null ? it.unit_price : 0, unit_cost: it.unit_cost != null ? String(it.unit_cost) : '', currency: it.currency || 'TRY', rate: it.rate != null ? String(it.rate) : '', gift: !!it.gift, sub: !!it.sub, header: !!it.header })) : [],
       photos: Array.isArray(svc.photos) ? svc.photos : [],
       notes: svc.notes || '',
       cost: svc.cost != null ? String(svc.cost) : '',
@@ -2070,7 +2079,7 @@ function AppInner() {
           rate = live > 0 ? parseFloat(live.toFixed(4)) : null; // kur kayıt anında sabitlenir
         }
         const unit_cost = it.unit_cost !== '' && it.unit_cost != null ? parseFloat(it.unit_cost) : null;
-        return { name: (it.name || '').trim(), qty: parseFloat(it.qty) || 0, unit_price: parseFloat(it.unit_price) || 0, unit_cost: unit_cost != null && !isNaN(unit_cost) ? unit_cost : null, currency: cur, rate, gift: !!it.gift, sub: !!it.sub };
+        return { name: (it.name || '').trim(), qty: parseFloat(it.qty) || 0, unit_price: parseFloat(it.unit_price) || 0, unit_cost: unit_cost != null && !isNaN(unit_cost) ? unit_cost : null, currency: cur, rate, gift: !!it.gift, sub: !!it.sub, header: !!it.header };
       });
     const itemsCost = serviceItemsTotal(cleanItems);
     const cleanCollections = (serviceForm.collections || [])
@@ -10942,11 +10951,28 @@ function AppInner() {
                                 <th className="w-20"></th>
                               </tr>
                             </thead>
+                            <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={onServiceItemDragEnd}>
+                            <SortableContext items={(serviceForm.items || []).map(itemKey)} strategy={verticalListSortingStrategy}>
                             <tbody>
                               {(serviceForm.items || []).map((it, idx) => (
-                                <tr key={idx} className={`border-t ${it.sub ? 'border-slate-50 bg-slate-50/60' : 'border-slate-100'}`}>
+                                <SortableItemRow key={itemKey(it)} id={itemKey(it)} className={it.header ? '' : `border-t ${it.sub ? 'border-slate-50 bg-slate-50/60' : 'border-slate-100'}`}>{(dragListeners) => {
+                                  const grip = <button type="button" {...dragListeners} className="shrink-0 cursor-grab active:cursor-grabbing touch-none text-slate-300 hover:text-slate-500" title="Sürükleyip taşı" aria-label="Sürükleyip taşı"><GripVertical className="w-4 h-4" /></button>;
+                                  if (it.header) return (<>
+                                  <td colSpan={showServiceProfit ? 4 : 3} className="px-2 py-1.5 border-t-2 border-emerald-200 bg-emerald-50/70">
+                                    <div className="flex items-center gap-1">
+                                      {grip}
+                                      <input value={it.name} onChange={(e) => updateServiceItem(idx, 'name', e.target.value)} list="svc-category-names" placeholder="Kategori adı (Elektrik İşleri, Su İşleri...)" autoFocus={!it.name} className="w-full min-w-[7rem] h-8 px-2 border border-emerald-200 rounded text-sm font-black uppercase tracking-wide text-emerald-800 bg-white/70 focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-1.5 text-right font-black tabular-nums text-emerald-800 border-t-2 border-emerald-200 bg-emerald-50/70" title="Kategori ara toplamı">₺ {formatPrice(categorySubtotal(serviceForm.items, idx, (x) => (x.gift ? 0 : serviceItemLineTRY(x))))}</td>
+                                  <td className="px-1 py-1.5 text-center border-t-2 border-emerald-200 bg-emerald-50/70">
+                                    <button type="button" onClick={() => removeServiceItem(idx)} className="text-rose-400 hover:text-rose-600" title="Başlığı sil (kalemler kalır)"><Trash2 className="w-4 h-4" /></button>
+                                  </td>
+                                  </>);
+                                  return (<>
                                   <td className={`py-1.5 ${it.sub ? 'pl-4 sm:pl-6 pr-2' : 'px-2'}`}>
                                     <div className="flex items-center gap-1">
+                                    {grip}
                                     {it.sub && <CornerDownRight className="w-3.5 h-3.5 shrink-0 text-slate-400" aria-label="Alt kalem" />}
                                     <input value={it.name} onChange={(e) => updateServiceItem(idx, 'name', e.target.value)} placeholder={it.sub ? 'Alt kalem (işçilik, montaj...)' : 'Solar panel, akü, işçilik...'} className="w-full min-w-[7rem] h-8 px-2 border border-slate-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500" />
                                     </div>
@@ -10985,9 +11011,12 @@ function AppInner() {
                                     <button type="button" onClick={() => toggleServiceItemGift(idx)} className={`mr-1.5 ${it.gift ? 'text-emerald-600' : 'text-slate-300 hover:text-emerald-600'}`} title={it.gift ? 'Hediyeyi kaldır' : 'Hediye et (toplama girmez)'}><Gift className="w-4 h-4" /></button>
                                     <button type="button" onClick={() => removeServiceItem(idx)} className="text-rose-400 hover:text-rose-600" title={it.sub ? 'Alt kalemi sil' : 'Kalemi sil (alt kalemleriyle)'}><Trash2 className="w-4 h-4" /></button>
                                   </td>
-                                </tr>
+                                  </>);
+                                }}</SortableItemRow>
                               ))}
                             </tbody>
+                            </SortableContext>
+                            </DndContext>
                           </table>
                         </div>
                       )}
@@ -11038,6 +11067,10 @@ function AppInner() {
                         <Button type="button" size="sm" variant="outline" onClick={addServiceItem} className="h-9 text-xs font-bold border-emerald-200 text-emerald-700 hover:bg-emerald-50 shrink-0">
                           <Plus className="w-3.5 h-3.5 mr-1" /> Boş Kalem
                         </Button>
+                        <Button type="button" size="sm" variant="outline" onClick={addServiceHeader} className="h-9 text-xs font-bold border-emerald-200 text-emerald-700 hover:bg-emerald-50 shrink-0" title="Kategori başlığı ekle (altındaki kalemler o kategoriye girer)">
+                          <Tags className="w-3.5 h-3.5 mr-1" /> Kategori
+                        </Button>
+                        <datalist id="svc-category-names">{CATEGORY_SUGGESTIONS.map((n) => <option key={n} value={n} />)}</datalist>
                       </div>
                     </div>
 
@@ -11362,6 +11395,10 @@ function AppInner() {
                               </tr></thead>
                               <tbody>
                                 {(() => { let no = 0; return (s.items || []).map((it, i) => {
+                                  if (it.header) return (<tr key={i} className="bg-[#EEF3F8]">
+                                    <td colSpan={4} className="px-2 py-1.5 font-black uppercase tracking-wide text-[#1B3A5C] border border-slate-200">{it.name}</td>
+                                    <td className="px-2 py-1.5 text-right font-black text-[#1B3A5C] tabular-nums border border-slate-200">₺ {formatPrice(categorySubtotal(s.items, i, (x) => (x.gift ? 0 : serviceItemLineTRY(x))))}</td>
+                                  </tr>);
                                   const qty = parseFloat(it.qty) || 0; const up = parseFloat(it.unit_price) || 0;
                                   if (!it.sub) no += 1; // alt kalem numara almaz, ana kalemin altında girintili
                                   return (<tr key={i} className="hover:bg-emerald-50/40">
