@@ -101,3 +101,21 @@ export const serviceKdvAmount = (net, svc) => {
   // İkili kayan nokta hatası yarım kuruşu aşağı düşürmesin (0,29 × %50 = 0,145).
   return Math.round(cents + Number.EPSILON * Math.max(1, Math.abs(cents))) / 100;
 };
+
+// Maliyet kuru (1 birim = ? ₺). cost_currency maliyetin kendi para birimi; satış para birimi değişse de değişmez.
+// Eski kayıt (cost_currency yok): satırın satış kuru (saleRate) → eski kâr aynı kalır.
+export const serviceCostRate = (it, saleRate, liveRates) => {
+  const cur = it?.cost_currency;
+  if (!cur) return saleRate;
+  if (cur === 'TRY') return 1;
+  return parseFloat(it.cost_rate) || parseFloat(liveRates?.[cur]) || 0;
+};
+
+// Üründen kalem maliyeti: indirimli fiyat (tedarikçi grubunda en ucuz), yoksa liste; ürünün KENDİ para biriminde.
+export const productCostFields = (p, liveRates) => {
+  const list = parseFloat(p.list_price) || 0;
+  const own = p.best_discounted_price != null ? parseFloat(p.best_discounted_price) : parseFloat(p.discounted_price);
+  const cost_currency = p.currency || 'TRY';
+  const live = parseFloat(liveRates?.[cost_currency]);
+  return { unit_cost: (own > 0 ? own : list) || 0, cost_currency, cost_rate: cost_currency !== 'TRY' && live > 0 ? live.toFixed(2) : '' };
+};

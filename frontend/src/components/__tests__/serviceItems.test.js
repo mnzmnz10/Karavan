@@ -1,4 +1,4 @@
-import { insertSubItem, removeItemWithSubs, normalizeSubs } from "../../lib/serviceItems";
+import { insertSubItem, removeItemWithSubs, normalizeSubs, serviceCostRate, productCostFields } from "../../lib/serviceItems";
 
 const A = { name: "Akü" }, B = { name: "Panel" };
 
@@ -93,5 +93,29 @@ describe("drag reorder and category headers", () => {
     const line = (it) => (Number(it.qty) || 0) * (Number(it.unit_price) || 0);
     expect(categorySubtotal(l, 0, line)).toBe(25);
     expect(categorySubtotal(l, 3, line)).toBe(100);
+  });
+});
+
+describe("maliyet para birimi", () => {
+  const live = { USD: 40, EUR: 45 };
+  const profit = (it, saleRate) => it.unit_price * it.qty * saleRate - it.unit_cost * it.qty * serviceCostRate(it, saleRate, live);
+
+  test("USD maliyet + ₺ satış → maliyet USD kuruyla ₺'ye çevrilir", () => {
+    const it = { qty: 2, unit_price: 30000, currency: "TRY", unit_cost: 500, cost_currency: "USD", cost_rate: "41" };
+    expect(profit(it, 1)).toBe(60000 - 2 * 500 * 41);
+    expect(serviceCostRate({ ...it, cost_rate: "" }, 1, live)).toBe(40); // kur yoksa canlı
+    expect(serviceCostRate({ cost_currency: "TRY" }, 45, live)).toBe(1);
+  });
+
+  test("eski kayıt (cost_currency yok) satırın satış kurunu kullanır", () => {
+    const it = { qty: 1, unit_price: 1000, currency: "EUR", rate: "45", unit_cost: 600 };
+    expect(serviceCostRate(it, 45, live)).toBe(45);
+    expect(profit(it, 45)).toBe(400 * 45);
+  });
+
+  test("üründen: indirimli fiyat ürünün kendi para biriminde, kur canlı", () => {
+    expect(productCostFields({ currency: "USD", list_price: 100, discounted_price: 70 }, live)).toEqual({ unit_cost: 70, cost_currency: "USD", cost_rate: "40.00" });
+    expect(productCostFields({ currency: "EUR", list_price: 100, discounted_price: 70, best_discounted_price: 60 }, live)).toMatchObject({ unit_cost: 60, cost_currency: "EUR" });
+    expect(productCostFields({ currency: "TRY", list_price: 100 }, live)).toEqual({ unit_cost: 100, cost_currency: "TRY", cost_rate: "" });
   });
 });

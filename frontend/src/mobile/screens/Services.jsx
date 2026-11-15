@@ -11,7 +11,7 @@ import ServiceForm, { compressImage, isLaborItem } from "./ServiceForm";
 import { VehicleIcon } from "../vehicleIcons";
 import CustomerSheet from "../CustomerSheet";
 import { worklistItems, hasText, worklistUrl } from "../../lib/worklist";
-import { serviceKdvAmount, serviceKdvRate, categorySubtotal, serviceItemQty } from "../../lib/serviceItems";
+import { serviceKdvAmount, serviceKdvRate, categorySubtotal, serviceItemQty, serviceCostRate } from "../../lib/serviceItems";
 
 const STATUS = {
   received: { label: "Geldi", color: "amber" },
@@ -389,7 +389,7 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuo
   };
   const costLineTRY = (it) => {
     if (it.header) return 0;
-    if (it.unit_cost !== "" && it.unit_cost != null) return lineTRY(it, "unit_cost");
+    if (it.unit_cost !== "" && it.unit_cost != null) return (parseFloat(it.unit_cost) || 0) * serviceItemQty(it.qty) * serviceCostRate(it, it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || 1) : 1, cache.get("rates"));
     if (isLaborItem(it)) return 0;
     const pc = prodCostUnit(it.name);
     if (pc != null) return pc * serviceItemQty(it.qty);
