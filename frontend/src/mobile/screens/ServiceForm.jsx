@@ -8,7 +8,7 @@ import { Sheet, money, todayISO } from "../ui";
 import { keepCaret } from "../../lib/caret";
 import BulletTextarea from "../../components/BulletTextarea";
 import ProductPickerSheet from "../ProductPickerSheet";
-import { insertSubItem, removeItemWithSubs, cleanServiceItems, serviceItemQty } from "../../lib/serviceItems";
+import { insertSubItem, removeItemWithSubs, cleanServiceItems, serviceItemQty, serviceKdvRate, serviceKdvAmount, DEFAULT_KDV_RATE } from "../../lib/serviceItems";
 
 const DRAFT_KEY = "service_draft";
 
@@ -90,6 +90,8 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
     photos: [...(initial?.photos || [])],
     notes: initial?.notes || "",
     discount_amount: Number(initial?.discount_amount) > 0 ? String(initial.discount_amount) : "",
+    kdv_enabled: !!initial?.kdv_enabled,
+    kdv_rate: initial?.kdv_rate != null ? String(initial.kdv_rate) : String(DEFAULT_KDV_RATE),
     warranty_months: initial?.warranty_months != null ? String(initial.warranty_months) : "",
     warranty_note: initial?.warranty_note || "",
     payment_account: initial?.payment_account || "",
@@ -204,6 +206,7 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
   // İndirim ₺ (servis indirimi tutar olarak saklanır; % bilgi amaçlı türetilir)
   const discount = Math.min(total, Math.max(0, parseFloat(f.discount_amount) || 0));
   const net = total - discount;
+  const kdv = serviceKdvAmount(net, f); // KDV kâra girmez (brüt kazanç net üstünden)
   const discPct = total > 0 ? (discount / total) * 100 : 0;
   const onDiscPct = (v) => {
     const p = Math.min(100, Math.max(0, parseFloat(v) || 0));
@@ -267,6 +270,8 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
         ...rest,
         discount_amount: discount,
         discount_percent: Math.round(discPct * 100) / 100,
+        kdv_enabled: !!f.kdv_enabled,
+        kdv_rate: serviceKdvRate({ ...f, kdv_enabled: true }),
         // Masaüstü ile aynı: boş → null (backend None = dokunma)
         warranty_months: f.warranty_months !== "" && f.warranty_months != null ? Math.max(0, parseInt(f.warranty_months, 10) || 0) : null,
         warranty_note: (f.warranty_note || "").trim() || null,
@@ -441,6 +446,30 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
               </div>
               <span className="m-tnum text-[16px] font-extrabold" style={{ color: "var(--m-primary)" }}>₺{money(net)}</span>
             </div>
+            <div className="flex items-center gap-2">
+              <label className="flex flex-1 items-center gap-2 text-[13px] text-slate-500">
+                <input type="checkbox" checked={!!f.kdv_enabled} onChange={(e) => set("kdv_enabled", e.target.checked)} className="h-4 w-4" style={{ accentColor: "var(--m-primary-2)" }} />
+                KDV ekle
+              </label>
+              {f.kdv_enabled && (
+                <div className="relative w-20">
+                  <input value={f.kdv_rate} onChange={(e) => set("kdv_rate", e.target.value)} inputMode="decimal" aria-label="KDV oranı" className="w-full rounded-lg bg-slate-100 py-1 pl-2 pr-5 text-right text-[13px] m-tnum" />
+                  <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[12px] text-slate-400">%</span>
+                </div>
+              )}
+            </div>
+            {f.kdv_enabled && (
+              <>
+                <div className="flex items-center justify-between text-[13px]">
+                  <span className="text-slate-500">KDV (%{serviceKdvRate(f)})</span>
+                  <span className="m-tnum font-semibold">₺{money(kdv)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[13px] font-semibold text-slate-500">Genel toplam (KDV dahil)</span>
+                  <span className="m-tnum text-[16px] font-extrabold" style={{ color: "var(--m-primary)" }}>₺{money(net + kdv)}</span>
+                </div>
+              </>
+            )}
             {showProfit && (
               <div className="mt-1 space-y-1 rounded-xl bg-emerald-50 px-3 py-2 text-[12px]">
                 <div className="flex justify-between"><span className="text-slate-500">Geliş (maliyet) toplamı</span><span className="m-tnum">₺{money(costTotal)}</span></div>

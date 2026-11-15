@@ -4,7 +4,7 @@ import React, { useMemo } from "react";
 import { FileText, Wrench, ScrollText, Phone } from "lucide-react";
 import { Sheet, Card, Pill, money, fmtDate } from "./ui";
 import { cache, phoneForCustomer } from "./cache";
-import { serviceNet, collectedTRY } from "./screens/Services";
+import { serviceGrand, collectedTRY } from "./screens/Services";
 
 const norm = (v) => String(v || "").trim().toLocaleLowerCase("tr");
 const contractName = (c) => c?.customer_name || c?.data?.customer_name || "";
@@ -34,8 +34,8 @@ function Section({ icon: Icon, title, children, count }) {
 export default function CustomerSheet({ name, open, onClose, go }) {
   const rec = useMemo(() => (open ? customerRecords(name) : { quotes: [], services: [], contracts: [] }), [open, name]);
   const phone = useMemo(() => (open ? phoneForCustomer(name) : ""), [open, name]);
-  const svcTotal = rec.services.reduce((a, x) => a + serviceNet(x), 0);
-  const svcOpen = rec.services.reduce((a, x) => { const l = serviceNet(x) - collectedTRY(x); return a + (l > 0.5 ? l : 0); }, 0);
+  const svcTotal = rec.services.reduce((a, x) => a + serviceGrand(x), 0);
+  const svcOpen = rec.services.reduce((a, x) => { const l = serviceGrand(x) - collectedTRY(x); return a + (l > 0.5 ? l : 0); }, 0);
   const jump = (tab, key, val) => { cache.set(key, val); onClose(); go?.(tab); };
   const empty = !rec.quotes.length && !rec.services.length && !rec.contracts.length;
 
@@ -71,8 +71,8 @@ export default function CustomerSheet({ name, open, onClose, go }) {
               <div className="text-[12px] text-slate-400">{fmtDate(x.arrival_date || x.created_at)}{x.plate ? ` · ${x.plate}` : ""}</div>
             </div>
             <div className="shrink-0 text-right">
-              <div className="m-tnum text-[14px] font-bold" style={{ color: "var(--m-primary)" }}>₺{money(serviceNet(x))}</div>
-              {serviceNet(x) - collectedTRY(x) > 0.5 && <Pill color="red">Kalan ₺{money(serviceNet(x) - collectedTRY(x))}</Pill>}
+              <div className="m-tnum text-[14px] font-bold" style={{ color: "var(--m-primary)" }}>₺{money(serviceGrand(x))}</div>
+              {serviceGrand(x) - collectedTRY(x) > 0.5 && <Pill color="red">Kalan ₺{money(serviceGrand(x) - collectedTRY(x))}</Pill>}
             </div>
           </Card>
         ))}

@@ -28,7 +28,7 @@ import ProductPicker from './components/ProductPicker';
 import PhotoGallery from './components/PhotoGallery';
 import WorklistPicker from './components/WorklistPicker';
 import { searchProducts } from './lib/productSearch';
-import { insertSubItem, removeItemWithSubs, cleanServiceItems } from './lib/serviceItems';
+import { insertSubItem, removeItemWithSubs, cleanServiceItems, serviceKdvRate, serviceKdvAmount, DEFAULT_KDV_RATE } from './lib/serviceItems';
 import { CartProvider, useCart } from './cart/CartContext';
 import { rateOf, cartTotals } from './cart/cartLogic';
 import { cart as cartApi } from './mobile/api';
@@ -133,7 +133,7 @@ function AppInner() {
   const [importDefaultCategoryId, setImportDefaultCategoryId] = useState('');
   const [aiSaving, setAiSaving] = useState(false); // kaydetme sürüyor mu
   // Servis (tadilat/bakim) sekmesi
-  const emptyServiceForm = { customer_name: '', phone: '', vehicle_brand: '', vehicle_model: '', plate: '', is_trailer: false, arrival_date: '', delivery_date: '', operations: '', items: [], photos: [], notes: '', cost: '', advance_amount: '', discount_amount: '', discount_percent: '', collections: [], payment_account: '', warranty_months: '', warranty_note: '', status: 'received' };
+  const emptyServiceForm = { customer_name: '', phone: '', vehicle_brand: '', vehicle_model: '', plate: '', is_trailer: false, arrival_date: '', delivery_date: '', operations: '', items: [], photos: [], notes: '', cost: '', advance_amount: '', discount_amount: '', discount_percent: '', kdv_enabled: false, kdv_rate: String(DEFAULT_KDV_RATE), collections: [], payment_account: '', warranty_months: '', warranty_note: '', status: 'received' };
   const [services, setServices] = useState([]);
   const [serviceForm, setServiceForm] = useState(emptyServiceForm);
   const [worklistSvc, setWorklistSvc] = useState(null); // fiyatsız iş listesi: kalem seçimi açık olan servis
@@ -2044,6 +2044,8 @@ function AppInner() {
       advance_amount: advanceVal,
       discount_amount: svc.discount_amount != null && svc.discount_amount !== 0 ? String(svc.discount_amount) : '',
       discount_percent: svc.discount_percent != null && svc.discount_percent !== 0 ? String(svc.discount_percent) : '',
+      kdv_enabled: !!svc.kdv_enabled,
+      kdv_rate: svc.kdv_rate != null ? String(svc.kdv_rate) : String(DEFAULT_KDV_RATE),
       collections,
       payment_account: svc.payment_account || '',
       warranty_months: svc.warranty_months != null ? String(svc.warranty_months) : '',
@@ -2105,6 +2107,8 @@ function AppInner() {
         : (serviceForm.advance_amount !== '' && serviceForm.advance_amount != null ? parseFloat(serviceForm.advance_amount) : 0),
       discount_amount: serviceForm.discount_amount !== '' && serviceForm.discount_amount != null ? (parseFloat(serviceForm.discount_amount) || 0) : 0,
       discount_percent: serviceForm.discount_percent !== '' && serviceForm.discount_percent != null ? (parseFloat(serviceForm.discount_percent) || 0) : 0,
+      kdv_enabled: !!serviceForm.kdv_enabled,
+      kdv_rate: serviceKdvRate({ ...serviceForm, kdv_enabled: true }),
       payment_account: serviceForm.payment_account || null,
       warranty_months: serviceForm.warranty_months !== '' && serviceForm.warranty_months != null ? parseInt(serviceForm.warranty_months, 10) : null,
       warranty_note: serviceForm.warranty_note || null,
@@ -11089,6 +11093,21 @@ function AppInner() {
                             <Input type="number" min="0" step="0.01" value={serviceForm.cost} onChange={(e) => setServiceForm({ ...serviceForm, cost: e.target.value })} placeholder="0" />
                           )}
                         </div>
+                        <div>
+                          <Label>KDV</Label>
+                          <div className="h-10 flex items-center gap-3">
+                            <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 cursor-pointer select-none">
+                              <input type="checkbox" checked={!!serviceForm.kdv_enabled} onChange={(e) => setServiceForm({ ...serviceForm, kdv_enabled: e.target.checked })} className="w-4 h-4 accent-emerald-600" />
+                              KDV ekle
+                            </label>
+                            {serviceForm.kdv_enabled && (
+                              <div className="flex items-center gap-1">
+                                <span className="text-slate-500 text-sm">%</span>
+                                <Input type="number" min="0" max="100" step="1" value={serviceForm.kdv_rate} onChange={(e) => setServiceForm({ ...serviceForm, kdv_rate: e.target.value })} className="w-20 h-9" aria-label="KDV oranı" />
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       </div>
 
                       {/* Tahsilatlar listesi (çoklu para birimi) */}
@@ -11119,6 +11138,8 @@ function AppInner() {
                         const grossTotal = (serviceForm.items || []).length > 0 ? serviceItemsTotal(serviceForm.items) : (parseFloat(serviceForm.cost) || 0);
                         const discount = Math.min(parseFloat(serviceForm.discount_amount) || 0, grossTotal);
                         const total = grossTotal - discount;
+                        const kdv = serviceKdvAmount(total, serviceForm);
+                        const grand = total + kdv; // tahsilat/kalan KDV dahil; kâr KDV hariç (total)
                         const costTotal = (serviceForm.items || []).length > 0 ? serviceItemsCostTotal(serviceForm.items) : 0;
                         const svcProfit = total - costTotal;
                         const svcMargin = total > 0 ? Math.round(svcProfit / total * 100) : 0;
@@ -11130,9 +11151,9 @@ function AppInner() {
                         }, 0);
                         const adv = parseFloat(serviceForm.advance_amount) || 0;
                         const collected = adv + serviceCollectedTRY(serviceForm.collections);
-                        const remaining = total - collected;
-                        const pct = total > 0 ? Math.max(0, Math.min(100, Math.round(collected / total * 100))) : 0;
-                        const st = total <= 0 ? null : (remaining <= 0.01 ? { t: 'TAMAMLANDI', c: 'bg-emerald-500' } : (collected > 0.01 ? { t: `ÖDEME %${pct}`, c: 'bg-amber-500' } : { t: 'ÖDENMEDİ', c: 'bg-rose-500' }));
+                        const remaining = grand - collected;
+                        const pct = grand > 0 ? Math.max(0, Math.min(100, Math.round(collected / grand * 100))) : 0;
+                        const st = grand <= 0 ? null : (remaining <= 0.01 ? { t: 'TAMAMLANDI', c: 'bg-emerald-500' } : (collected > 0.01 ? { t: `ÖDEME %${pct}`, c: 'bg-amber-500' } : { t: 'ÖDENMEDİ', c: 'bg-rose-500' }));
                         const over = remaining < -0.01;
                         return (
                           <div className="mt-3 rounded-xl bg-gradient-to-r from-[#1B3A5C] to-[#15293f] text-white px-4 py-3 space-y-2">
@@ -11184,6 +11205,18 @@ function AppInner() {
                                 <span className="text-white/70">İndirimli Toplam</span>
                                 <span className="tabular-nums font-semibold">₺ {formatPrice(total)}</span>
                               </div>
+                            )}
+                            {kdv > 0 && (
+                              <>
+                                <div className="flex items-center justify-between text-sm">
+                                  <span className="text-white/70">KDV (%{serviceKdvRate(serviceForm)})</span>
+                                  <span className="tabular-nums font-semibold">+ ₺ {formatPrice(kdv)}</span>
+                                </div>
+                                <div className="flex items-center justify-between text-sm">
+                                  <span className="font-bold text-white">Genel Toplam (KDV dahil)</span>
+                                  <span className="tabular-nums font-bold">₺ {formatPrice(grand)}</span>
+                                </div>
+                              </>
                             )}
                             <div className="flex items-center justify-between text-sm">
                               <span className="text-emerald-300">Tahsil Edilen</span>
@@ -11271,10 +11304,12 @@ function AppInner() {
                 const isTrailer = s.is_trailer || !(s.plate || '').trim();
                 const vehicle = [s.vehicle_brand, s.vehicle_model].filter(Boolean).join(' ') || (isTrailer ? 'Çekme Karavan' : 'Araç belirtilmemiş');
                 const total = Math.max(((s.items || []).length > 0 ? serviceItemsTotal(s.items) : (s.cost != null ? s.cost : 0)) - serviceDiscountTRY(s), 0);
+                const kdv = serviceKdvAmount(total, s);
+                const grand = total + kdv; // tahsilat/kalan KDV dahil; kâr KDV hariç (total)
                 const collected = serviceCollectedTotalTRY(s);
-                const remaining = Math.max(total - collected, 0);
-                const pct = total > 0 ? Math.max(0, Math.min(100, Math.round(collected / total * 100))) : 0;
-                const payStatus = total <= 0 ? null : (remaining <= 0.01 ? { t: 'TAMAMLANDI', c: 'bg-emerald-500' } : (collected > 0.01 ? { t: `ÖDEME %${pct}`, c: 'bg-amber-500' } : { t: 'ÖDENMEDİ', c: 'bg-rose-500' }));
+                const remaining = Math.max(grand - collected, 0);
+                const pct = grand > 0 ? Math.max(0, Math.min(100, Math.round(collected / grand * 100))) : 0;
+                const payStatus = grand <= 0 ? null : (remaining <= 0.01 ? { t: 'TAMAMLANDI', c: 'bg-emerald-500' } : (collected > 0.01 ? { t: `ÖDEME %${pct}`, c: 'bg-amber-500' } : { t: 'ÖDENMEDİ', c: 'bg-rose-500' }));
                 return (
                   <div className="space-y-4">
                     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -11380,6 +11415,12 @@ function AppInner() {
                                 </>
                               ) : (
                                 <div className="flex justify-between text-white/65"><span>Toplam</span><span className="tabular-nums font-semibold text-white">₺ {formatPrice(total)}</span></div>
+                              )}
+                              {kdv > 0 && (
+                                <>
+                                  <div className="flex justify-between text-white/65"><span>KDV (%{serviceKdvRate(s)})</span><span className="tabular-nums font-semibold text-white">+ ₺ {formatPrice(kdv)}</span></div>
+                                  <div className="flex justify-between"><span className="font-semibold text-white">Genel Toplam (KDV dahil)</span><span className="tabular-nums font-bold text-white text-base">₺ {formatPrice(grand)}</span></div>
+                                </>
                               )}
                               <div className="flex justify-between text-white/65"><span>Tahsil Edilen</span><span className="tabular-nums font-semibold text-emerald-300">₺ {formatPrice(collected)}</span></div>
                               {showServiceProfit && (s.items || []).length > 0 && (() => {
@@ -11512,13 +11553,14 @@ function AppInner() {
                     const isTrailer = s.is_trailer || !(s.plate || '').trim();
                     const vehicle = [s.vehicle_brand, s.vehicle_model].filter(Boolean).join(' ') || (isTrailer ? 'Çekme Karavan' : 'Araç belirtilmemiş');
                     const total = Math.max(((s.items || []).length > 0 ? serviceItemsTotal(s.items) : (s.cost != null ? s.cost : 0)) - serviceDiscountTRY(s), 0);
+                    const grand = total + serviceKdvAmount(total, s); // KDV dahil; kâr total (KDV hariç) üstünden
                     const collected = serviceCollectedTotalTRY(s);
-                    const remaining = Math.max(total - collected, 0);
-                    const pct = total > 0 ? Math.max(0, Math.min(100, Math.round(collected / total * 100))) : 0;
+                    const remaining = Math.max(grand - collected, 0);
+                    const pct = grand > 0 ? Math.max(0, Math.min(100, Math.round(collected / grand * 100))) : 0;
                     const cardCost = (s.items || []).length > 0 ? serviceItemsCostTotal(s.items) : 0;
                     const cardProfit = total - cardCost;
                     const cardMargin = total > 0 ? Math.round(cardProfit / total * 100) : 0;
-                    const payStatus = total <= 0 ? null : (collected - total > 0.01 ? { t: 'FAZLA ÖDEME', c: 'bg-violet-500 text-white' } : (remaining <= 0.01 ? { t: 'TAMAMLANDI', c: 'bg-emerald-500 text-white' } : (collected > 0.01 ? { t: `ÖDEME %${pct}`, c: 'bg-amber-500 text-white' } : { t: 'ÖDENMEDİ', c: 'bg-rose-500 text-white' })));
+                    const payStatus = grand <= 0 ? null : (collected - grand > 0.01 ? { t: 'FAZLA ÖDEME', c: 'bg-violet-500 text-white' } : (remaining <= 0.01 ? { t: 'TAMAMLANDI', c: 'bg-emerald-500 text-white' } : (collected > 0.01 ? { t: `ÖDEME %${pct}`, c: 'bg-amber-500 text-white' } : { t: 'ÖDENMEDİ', c: 'bg-rose-500 text-white' })));
                     return (
                       <div key={s.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow p-5 flex flex-col gap-3">
                         <div className="flex items-start justify-between gap-3">
@@ -11575,7 +11617,7 @@ function AppInner() {
 
                         {total > 0 && (
                           <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs space-y-1">
-                            <div className="flex items-center justify-between"><span className="text-slate-500">Toplam</span><span className="font-bold text-slate-700 tabular-nums">₺ {formatPrice(total)}</span></div>
+                            <div className="flex items-center justify-between"><span className="text-slate-500">{grand > total ? 'Toplam (KDV dahil)' : 'Toplam'}</span><span className="font-bold text-slate-700 tabular-nums">₺ {formatPrice(grand)}</span></div>
                             {collected > 0 && <div className="flex items-center justify-between"><span className="text-slate-500">Tahsil Edilen</span><span className="font-semibold text-slate-600 tabular-nums">₺ {formatPrice(collected)}</span></div>}
                             <div className="flex items-center justify-between"><span className="text-slate-500">Kalan</span><span className="font-black text-emerald-700 tabular-nums">₺ {formatPrice(remaining)}</span></div>
                             {showServiceProfit && (s.items || []).length > 0 && (

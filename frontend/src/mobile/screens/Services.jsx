@@ -11,6 +11,7 @@ import ServiceForm, { compressImage, isLaborItem } from "./ServiceForm";
 import { VehicleIcon } from "../vehicleIcons";
 import CustomerSheet from "../CustomerSheet";
 import { worklistItems, hasText, worklistUrl } from "../../lib/worklist";
+import { serviceKdvAmount, serviceKdvRate } from "../../lib/serviceItems";
 
 const STATUS = {
   received: { label: "Geldi", color: "amber" },
@@ -68,9 +69,11 @@ const statementText = (s) => {
   const net = serviceNet(s);
   const gross = (s.items || []).length ? (s.items || []).reduce((a, it) => a + (it.gift ? 0 : lineTL(it)), 0) : net;
   if (gross - net > 0.5) L.push(`İskonto: −₺${money(gross - net)}`);
+  const kdv = serviceKdvAmount(net, s);
+  if (kdv > 0) L.push(`Ara toplam: ₺${money(net)}`, `KDV (%${serviceKdvRate(s)}): ₺${money(kdv)}`);
   const got = collectedTRY(s);
-  const left = net - got;
-  L.push("", `*Toplam: ₺${money(net)}*`);
+  const left = net + kdv - got;
+  L.push("", `*Toplam${kdv > 0 ? " (KDV dahil)" : ""}: ₺${money(net + kdv)}*`);
   if (got > 0) L.push(`Ödenen: ₺${money(got)}`);
   L.push(left > 0.5 ? `*Kalan: ₺${money(left)}*` : "Ödeme tamamlandı, teşekkür ederiz.");
   return L.join("\n");
@@ -84,6 +87,8 @@ export const serviceNet = (s) => {
     : items.reduce((a, it) => a + (it.gift ? 0 : (parseFloat(it.unit_price) || 0) * (parseFloat(it.qty) || 1) * (it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || 1) : 1)), 0);
   return gross - Math.min(Math.max(0, parseFloat(s.discount_amount) || 0), gross);
 };
+// Müşteriden alınacak tutar: net + KDV (kdv_enabled kayıtlarda). Ciro/kâr serviceNet (KDV hariç) üstünden kalır.
+export const serviceGrand = (s) => { const n = serviceNet(s); return n + serviceKdvAmount(n, s); };
 
 function Row({ s, onOpen, onCycle, busy }) {
   const st = STATUS[s.status] || STATUS.received;
@@ -117,8 +122,8 @@ function Row({ s, onOpen, onCycle, busy }) {
             <span>{fmtDate(s.arrival_date || s.created_at)}</span>
             {(() => { const b = dueBadge(s); return b ? <Pill color={b.color}>{b.label}</Pill> : null; })()}
             {!dueBadge(s) && daysIn(s) >= 3 && <Pill color="slate">{daysIn(s)} gün</Pill>}
-            {(() => { const left = serviceNet(s) - collectedTRY(s); return left > 0.5 && serviceNet(s) > 0 ? <Pill color="red">Kalan ₺{money(left)}</Pill> : null; })()}
-            {serviceNet(s) > 0 && <span className="m-tnum ml-auto shrink-0 text-[13px] font-extrabold" style={{ color: "var(--m-primary)" }}>₺{money(serviceNet(s))}</span>}
+            {(() => { const left = serviceGrand(s) - collectedTRY(s); return left > 0.5 && serviceNet(s) > 0 ? <Pill color="red">Kalan ₺{money(left)}</Pill> : null; })()}
+            {serviceNet(s) > 0 && <span className="m-tnum ml-auto shrink-0 text-[13px] font-extrabold" style={{ color: "var(--m-primary)" }}>₺{money(serviceGrand(s))}</span>}
           </div>
         </div>
       </div>
@@ -392,7 +397,9 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuo
     return (s.items || []).reduce((a, it) => a + (it.gift ? 0 : lineTRY(it, "unit_price")), 0);
   }, [s]);
   const discount = Math.min(Math.max(0, parseFloat(s?.discount_amount) || 0), gross); // servis iskontosu (teklif net'i buraya yansır)
-  const total = gross - discount; // net (indirimli)
+  const total = gross - discount; // net (indirimli, KDV hariç; kâr bunun üstünden)
+  const kdv = serviceKdvAmount(total, s);
+  const grand = total + kdv; // müşteriden alınacak (KDV dahil)
   const costTotal = useMemo(() => {
     if (!s) return 0;
     return (s.items || []).reduce((a, it) => a + costLineTRY(it), 0);
@@ -480,15 +487,16 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuo
           )}
 
           <div className="mt-3 rounded-2xl bg-white px-4 py-3.5">
-            {discount > 0 && (
+            {(discount > 0 || kdv > 0) && (
               <div className="mb-2 space-y-1 border-b border-slate-100 pb-2 text-[12px]">
                 <div className="flex items-center justify-between"><span style={{ color: "var(--m-ink-2)" }}>Ara toplam</span><span className="m-tnum">₺{money(gross)}</span></div>
-                <div className="flex items-center justify-between"><span style={{ color: "#e11d48" }}>İskonto</span><span className="m-tnum" style={{ color: "#e11d48" }}>−₺{money(discount)}</span></div>
+                {discount > 0 && <div className="flex items-center justify-between"><span style={{ color: "#e11d48" }}>İskonto</span><span className="m-tnum" style={{ color: "#e11d48" }}>−₺{money(discount)}</span></div>}
+                {kdv > 0 && <div className="flex items-center justify-between"><span style={{ color: "var(--m-ink-2)" }}>KDV (%{serviceKdvRate(s)})</span><span className="m-tnum">+₺{money(kdv)}</span></div>}
               </div>
             )}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <span className="text-[14px] font-semibold" style={{ color: "var(--m-ink-2)" }}>Toplam</span>
+                <span className="text-[14px] font-semibold" style={{ color: "var(--m-ink-2)" }}>{kdv > 0 ? "Genel toplam (KDV dahil)" : "Toplam"}</span>
                 <button
                   onClick={() => setShowProfit((v) => !v)}
                   aria-label="Göster/Gizle"
@@ -498,7 +506,7 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuo
                   {showProfit ? <EyeOff className="h-3.5 w-3.5" style={{ color: "var(--m-primary-2)" }} /> : <Eye className="h-3.5 w-3.5" style={{ color: "var(--m-ink-2)" }} />}
                 </button>
               </div>
-              <span className="m-tnum text-[20px] font-extrabold" style={{ color: "var(--m-primary)" }}>₺{money(total)}</span>
+              <span className="m-tnum text-[20px] font-extrabold" style={{ color: "var(--m-primary)" }}>₺{money(grand)}</span>
             </div>
             {showProfit && (
               <div className="mt-3 space-y-1.5 border-t border-slate-100 pt-3">
@@ -522,7 +530,7 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuo
           {(() => {
             const colls = baseCollections(s);
             const got = collectedTRY(s);
-            const left = total - got;
+            const left = grand - got;
             return (
               <div className="mt-3 rounded-2xl bg-white p-4">
                 <div className="mb-2 flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-wide text-slate-400">
@@ -731,7 +739,7 @@ export default function Services({ go }) {
         if (statusF === "warranty") { if (!warrantyEnd(x)?.active) return false; }
         else if (statusF === "today") { if (dueBadge(x)?.label !== "Bugün teslim") return false; }
         else if (statusF === "overdue") { if (dueBadge(x)?.label !== "Gecikmiş") return false; }
-        else if (statusF === "unpaid") { if (!(serviceNet(x) > 0 && serviceNet(x) - collectedTRY(x) > 0.5)) return false; }
+        else if (statusF === "unpaid") { if (!(serviceNet(x) > 0 && serviceGrand(x) - collectedTRY(x) > 0.5)) return false; }
         else if (statusF && (x.status || "received") !== statusF) return false;
         if (!s) return true;
         // Telefon/plaka: boşluksuz rakam-harf karşılaştırması da (0555 111 22 33 ↔ 5551112233, 59 ABC 123 ↔ 59abc123)
@@ -763,7 +771,7 @@ export default function Services({ go }) {
   const warrantyCnt = useMemo(() => items.filter((x) => warrantyEnd(x)?.active).length, [items]);
   const todayCnt = useMemo(() => items.filter((x) => dueBadge(x)?.label === "Bugün teslim").length, [items]);
   const overdueCnt = useMemo(() => items.filter((x) => dueBadge(x)?.label === "Gecikmiş").length, [items]);
-  const unpaidCnt = useMemo(() => items.filter((x) => serviceNet(x) > 0 && serviceNet(x) - collectedTRY(x) > 0.5).length, [items]);
+  const unpaidCnt = useMemo(() => items.filter((x) => serviceNet(x) > 0 && serviceGrand(x) - collectedTRY(x) > 0.5).length, [items]);
   const openNew = () => { setFormInitial(null); setFormOpen(true); };
   const openEdit = (rec) => { setSelId(null); setFormInitial(rec); setFormOpen(true); };
   // Tekrar gelen müşteri: müşteri + araç dolu yeni kayıt (taslak kullanılmaz — fromQuote ile aynı davranış)

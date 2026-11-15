@@ -6,7 +6,7 @@ import http, { services as servicesApi, quotes as quotesApi, rates as ratesApi }
 import { SearchBar, Card, SkeletonList, RefreshScroll, OfflineBar, money, ago, todayISO, fmtDate, IconBadge, useCountUp } from "../ui";
 import { useSession } from "../session";
 import { cache } from "../cache";
-import { serviceNet, collectedTRY, isLaborItem } from "./Services";
+import { serviceNet, serviceGrand, collectedTRY, isLaborItem } from "./Services";
 import { useCatalog } from "../catalog";
 import CollectionsReport, { collectionEntries, monthKey } from "../CollectionsReport";
 
@@ -140,7 +140,7 @@ export default function Dashboard({ go }) {
     });
     // Açık bakiye: net − tahsilat > 0 olan servisler (Services.jsx ile aynı kural)
     let openBal = 0, openCnt = 0;
-    services.forEach((x) => { const left = serviceNet(x) - collectedTRY(x); if (serviceNet(x) > 0 && left > 0.5) { openBal += left; openCnt++; } });
+    services.forEach((x) => { const left = serviceGrand(x) - collectedTRY(x); if (serviceNet(x) > 0 && left > 0.5) { openBal += left; openCnt++; } });
     const agreed = contracts.filter((c) => c.stage === "agreed").length;
     // Son 6 ay teslim cirosu (servis net) — mini çubuk grafik
     const now = new Date();

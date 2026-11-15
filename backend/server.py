@@ -840,6 +840,8 @@ class ServiceRecord(BaseModel):
     advance_amount: Optional[float] = Field(0, ge=0)            # Alınan avans (₺) — eski kayıtlar (geriye uyum)
     discount_amount: Optional[float] = Field(0, ge=0)           # İndirim tutarı (₺)
     discount_percent: Optional[float] = Field(0, ge=0, le=100)  # İndirim yüzdesi (bilgi amaçlı; tutardan türetilir)
+    kdv_enabled: Optional[bool] = False                         # Toplama KDV eklensin mi (eski kayıtlar: yok = KDV'siz)
+    kdv_rate: Optional[float] = Field(20, ge=0, le=100)         # KDV oranı (%); cost KDV hariç kalır, KDV türetilir
     collections: Optional[List[ServiceCollection]] = []         # Tahsilatlar (çoklu, kalandan düşülür) — sadece sistemde
     payment_account: Optional[str] = Field(None, max_length=500) # Ödeme hesabı/notu (sadece sistemde, PDF'te yok)
     warranty_months: Optional[int] = Field(None, ge=0)         # Garanti süresi (ay)
@@ -864,6 +866,8 @@ class ServiceCreate(BaseModel):
     advance_amount: Optional[float] = Field(0, ge=0)
     discount_amount: Optional[float] = Field(0, ge=0)
     discount_percent: Optional[float] = Field(0, ge=0, le=100)
+    kdv_enabled: Optional[bool] = False
+    kdv_rate: Optional[float] = Field(20, ge=0, le=100)
     collections: Optional[List[ServiceCollection]] = []
     payment_account: Optional[str] = Field(None, max_length=500)
     warranty_months: Optional[int] = Field(None, ge=0)
@@ -887,6 +891,8 @@ class ServiceUpdate(BaseModel):
     advance_amount: Optional[float] = Field(None, ge=0)
     discount_amount: Optional[float] = Field(None, ge=0)
     discount_percent: Optional[float] = Field(None, ge=0, le=100)
+    kdv_enabled: Optional[bool] = None
+    kdv_rate: Optional[float] = Field(None, ge=0, le=100)
     collections: Optional[List[ServiceCollection]] = None
     payment_account: Optional[str] = Field(None, max_length=500)
     warranty_months: Optional[int] = Field(None, ge=0)
@@ -11436,6 +11442,15 @@ def _service_items_total(items):
     return round(total, 2)
 
 
+def _service_kdv(svc, net):
+    """(oran, KDV tutarı) — net: indirim düşülmüş KDV hariç toplam. KDV kapalıysa (0, 0)."""
+    if not svc.get("kdv_enabled"):
+        return 0.0, 0.0
+    rate = svc.get("kdv_rate")
+    rate = 20.0 if rate is None else max(0.0, min(float(rate), 100.0))
+    return rate, round(float(net or 0) * rate / 100, 2)
+
+
 async def _next_service_order_no():
     """Rastgele iş emri numarası (İŞ-XXXXXX), çakışmayana kadar dener."""
     import random
@@ -13867,9 +13882,9 @@ class PDFServiceGenerator(PDFContractGenerator):
             total = _service_items_total(items)
         total = float(total or 0)
         # İndirim varsa PDF'te brüt - indirim = net göster
-        discount = float(svc.get("discount_amount") or 0)
-        if discount > 0:
-            discount = min(discount, total)
+        discount = min(float(svc.get("discount_amount") or 0), total)
+        kdv_rate, kdv = _service_kdv(svc, total - discount)
+        if discount > 0 or kdv > 0:
             pct = svc.get("discount_percent")
             pct_txt = f" (%{pct:g})" if pct else ""
             # Beyaz zeminde okunur, BELİRGİN stiller (gt_sub_style lacivert panel
@@ -13882,23 +13897,28 @@ class PDFServiceGenerator(PDFContractGenerator):
                 'SvcDiscValue', parent=self.styles['Normal'],
                 fontName=self.get_font_name(is_bold=True), fontSize=11,
                 textColor=colors.HexColor('#DC2626'), alignment=TA_RIGHT)
-            disc_row = PDFTable([
-                [Paragraph("Ara Toplam", disc_label_style),
-                 Paragraph(fmt(total), ParagraphStyle('SvcDiscV2', parent=disc_value_style, textColor=colors.HexColor('#1B3A5C')))],
-                [Paragraph(f"İndirim{pct_txt}", disc_value_style),
-                 Paragraph(f"-{fmt(discount)}", disc_value_style)],
-            ], colWidths=[12.0*cm, 6.0*cm])
+            navy_value_style = ParagraphStyle('SvcDiscV2', parent=disc_value_style, textColor=colors.HexColor('#1B3A5C'))
+            sum_rows = [[Paragraph("Ara Toplam", disc_label_style), Paragraph(fmt(total), navy_value_style)]]
+            if discount > 0:
+                sum_rows.append([Paragraph(f"İndirim{pct_txt}", disc_value_style), Paragraph(f"-{fmt(discount)}", disc_value_style)])
+                if kdv > 0:
+                    sum_rows.append([Paragraph("İndirimli Toplam", disc_label_style), Paragraph(fmt(total - discount), navy_value_style)])
+            if kdv > 0:
+                sum_rows.append([Paragraph(f"KDV (%{kdv_rate:g})", disc_label_style), Paragraph(f"+{fmt(kdv)}", navy_value_style)])
+            disc_row = PDFTable(sum_rows, colWidths=[12.0*cm, 6.0*cm])
+            bg, line = ('#FEF2F2', '#FECACA') if discount > 0 else ('#F1F5F9', '#CBD5E1')  # yalnız KDV → nötr zemin
             disc_row.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#FEF2F2')),
-                ('BOX', (0, 0), (-1, -1), 0.8, colors.HexColor('#FECACA')),
-                ('LINEBELOW', (0, 0), (-1, 0), 0.5, colors.HexColor('#FECACA')),
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor(bg)),
+                ('BOX', (0, 0), (-1, -1), 0.8, colors.HexColor(line)),
+                ('LINEBELOW', (0, 0), (-1, -2), 0.5, colors.HexColor(line)),
                 ('LEFTPADDING', (0, 0), (-1, -1), 18), ('RIGHTPADDING', (0, 0), (-1, -1), 18),
                 ('TOPPADDING', (0, 0), (-1, -1), 7), ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
             ]))
             story.append(disc_row)
             story.append(Spacer(1, 6))
-            total = total - discount
-        total_left = [Paragraph("TOPLAM TUTAR", self.gt_label_style), Paragraph("KDV Hariç", self.gt_sub_style)]
+            total = total - discount + kdv
+        total_left = ([Paragraph("GENEL TOPLAM", self.gt_label_style), Paragraph("KDV Dahil", self.gt_sub_style)] if kdv > 0
+                      else [Paragraph("TOPLAM TUTAR", self.gt_label_style), Paragraph("KDV Hariç", self.gt_sub_style)])
         total_right = [Paragraph(f"<b>{fmt(total)}</b>", self.gt_amount_style)]
         total_tbl = PDFTable([[total_left, total_right]], colWidths=[8.3*cm, 9.7*cm])
         total_tbl.setStyle(TableStyle([

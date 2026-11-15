@@ -44,3 +44,13 @@ export const serviceItemQty = (qty) => {
   const value = parseFloat(qty);
   return Number.isNaN(value) ? 1 : value;
 };
+
+// KDV: kayıtta kdv_enabled + kdv_rate (%). Eski kayıtlarda alan yok → KDV'siz.
+// net = indirim düşülmüş KDV hariç toplam (₺); KDV kuruşa yuvarlanır, kâra girmez.
+export const DEFAULT_KDV_RATE = 20;
+export const serviceKdvRate = (svc) => {
+  if (!svc?.kdv_enabled) return 0;
+  const r = parseFloat(String(svc.kdv_rate ?? '').replace(',', '.'));
+  return Number.isFinite(r) && r >= 0 ? Math.min(r, 100) : DEFAULT_KDV_RATE;
+};
+export const serviceKdvAmount = (net, svc) => Math.round((Number(net) || 0) * serviceKdvRate(svc)) / 100;
