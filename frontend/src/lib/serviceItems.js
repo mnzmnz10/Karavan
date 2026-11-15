@@ -96,4 +96,8 @@ export const serviceKdvRate = (svc) => {
   const r = parseFloat(String(svc.kdv_rate ?? '').replace(',', '.'));
   return Number.isFinite(r) && r >= 0 ? Math.min(r, 100) : DEFAULT_KDV_RATE;
 };
-export const serviceKdvAmount = (net, svc) => Math.round((Number(net) || 0) * serviceKdvRate(svc)) / 100;
+export const serviceKdvAmount = (net, svc) => {
+  const cents = (Number(net) || 0) * serviceKdvRate(svc);
+  // İkili kayan nokta hatası yarım kuruşu aşağı düşürmesin (0,29 × %50 = 0,145).
+  return Math.round(cents + Number.EPSILON * Math.max(1, Math.abs(cents))) / 100;
+};

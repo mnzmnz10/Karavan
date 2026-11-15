@@ -1847,6 +1847,7 @@ function AppInner() {
 
   // ---- Servis kalem (parça/işlem) yardımcıları — ₺/€/$ destekli, toplam ₺ ----
   const serviceItemLineTRY = (it) => {
+    if (it.header) return 0;
     const line = (parseFloat(it.qty) || 0) * (parseFloat(it.unit_price) || 0);
     const cur = it.currency || 'TRY';
     if (cur === 'TRY') return line;
@@ -1868,6 +1869,7 @@ function AppInner() {
   const isLaborServiceItem = (it) => /işçilik|iscilik|işcilik/.test(String(it?.name || '').toLocaleLowerCase('tr'));
   // Kâr analizi: kalem maliyeti (geliş). Öncelik: elle girilen unit_cost → işçilik (0) → ürün eşleşmesi (indirimli fiyat) → yoksa satışa eşit (kâr 0).
   const serviceItemCostLineTRY = (it) => {
+    if (it.header) return 0;
     const q = parseFloat(it.qty) || 0;
     const hasCost = it.unit_cost !== '' && it.unit_cost != null && !isNaN(parseFloat(it.unit_cost));
     if (hasCost) {

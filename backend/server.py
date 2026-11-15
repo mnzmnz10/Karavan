@@ -8,7 +8,7 @@ from pymongo import UpdateOne
 from pydantic import BaseModel, Field, model_validator
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from bson import ObjectId
 import os
 import uuid
@@ -11455,7 +11455,8 @@ def _service_kdv(svc, net):
         return 0.0, 0.0
     rate = svc.get("kdv_rate")
     rate = 20.0 if rate is None else max(0.0, min(float(rate), 100.0))
-    return rate, round(float(net or 0) * rate / 100, 2)
+    amount = (Decimal(str(net or 0)) * Decimal(str(rate)) / 100).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return rate, float(amount)
 
 
 async def _next_service_order_no():

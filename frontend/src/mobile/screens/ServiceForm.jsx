@@ -140,7 +140,7 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
 
   const total = useMemo(
     () => f.items.reduce((a, it) => {
-      if (it.gift) return a; // hediye toplama girmez
+      if (it.header || it.gift) return a; // hediye toplama girmez
       const q = serviceItemQty(it.qty);
       const up = parseFloat(it.unit_price) || 0;
       const rate = it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || 1) : 1;
@@ -204,6 +204,7 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
     return c != null ? c : null;
   };
   const costLineTRY = (it) => {
+    if (it.header) return 0;
     if (it.unit_cost !== "" && it.unit_cost != null) return lineTRY(it, "unit_cost");
     if (isLaborItem(it)) return 0;
     const pc = prodCostUnit(it.name);

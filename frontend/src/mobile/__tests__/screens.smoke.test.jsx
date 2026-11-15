@@ -869,3 +869,46 @@ test("ürünler: aynı ürün 2 firmada → alış en ucuz tedarikçiden, göz a
   expect(text()).toContain(money(11448));
   expect(text()).toContain("€205,2");
 });
+
+test("servis: sıfır adet net/KDV/kalan/kâr hesabına girmez", async () => {
+  const { serviceNet, serviceGrand } = require("../screens/Services");
+  global.__SERVICE = {
+    ...SERVICE, discount_amount: 100, kdv_enabled: true, kdv_rate: 20,
+    collections: [{ amount: 500, currency: "TRY" }],
+    items: [
+      { name: "Elektrik", header: true, qty: 0, unit_price: 0, unit_cost: 0 },
+      { name: "Akü", qty: 1, unit_price: 1000, unit_cost: 600 },
+      { name: "Kullanılmayan", qty: 0, unit_price: 9000, unit_cost: 8000, sub: true },
+    ],
+  };
+  expect(serviceNet(global.__SERVICE)).toBe(900);
+  expect(serviceGrand(global.__SERVICE)).toBe(1080);
+  await render(<Services />);
+  expect(text()).toContain(`₺${money(1080)}`);
+  const row = Array.from(document.body.querySelectorAll("div")).find((d) => d.textContent.trim() === "Test Müşteri");
+  await click(row);
+  expect(text()).toContain(`Kalan₺${money(580)}`);
+  const eyes = document.body.querySelectorAll('button[aria-label="Göster/Gizle"]');
+  await click(eyes[eyes.length - 1]);
+  expect(text()).toContain(money(300));
+});
+
+test("servis formu: KDV değişikliği uyarılır, başlık/alt kalem korunur, _uid gönderilmez", async () => {
+  let asked = 0;
+  global.confirm = () => { asked++; return false; };
+  global.__SERVICE.items.unshift({ name: "Elektrik", header: true, qty: 0, unit_price: 0, unit_cost: 0 });
+  global.__SERVICE.items[2].sub = true;
+  await render(<ServiceForm open initial={global.__SERVICE} onClose={() => {}} onSaved={() => {}} prodCost={{}} />);
+  const label = Array.from(document.body.querySelectorAll("label")).find((l) => l.textContent.includes("KDV ekle"));
+  await click(label.querySelector("input"));
+  const close = Array.from(document.body.querySelectorAll("button")).find((b) => b.className.includes("ml-auto flex h-8 w-8"));
+  await click(close);
+  expect(asked).toBe(1);
+  await click(btnWith("Kaydet"));
+  const p = require("../api").__calls.svcUpdate.at(-1);
+  expect(p.kdv_enabled).toBe(true);
+  expect(p.kdv_rate).toBe(20);
+  expect(p.items[0]).toMatchObject({ header: true, sub: false, qty: 0, unit_price: 0 });
+  expect(p.items[2].sub).toBe(true);
+  expect(p.items.every((it) => it._uid === undefined)).toBe(true);
+});

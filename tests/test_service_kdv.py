@@ -47,3 +47,8 @@ def test_pdf_shows_subtotal_kdv_and_grand_total():
     plain = _pdf_text(gen.create_service_worklist_pdf({**base, "kdv_enabled": True}))
     for s in ("KDV", "15.600", "2.600", "₺"):
         assert s not in plain
+
+
+def test_kdv_half_cent_rounds_up_like_frontend():
+    assert server._service_kdv({"kdv_enabled": True, "kdv_rate": 50}, 0.29) == (50.0, 0.15)
+    assert server._service_kdv({"kdv_enabled": True, "kdv_rate": 10}, 1.25) == (10.0, 0.13)

@@ -44,6 +44,8 @@ test("service KDV is off for old records and applied to the discounted net", () 
   expect(serviceKdvAmount(1000, { kdv_rate: 20 })).toBe(0);
   expect(serviceKdvRate({ kdv_enabled: true })).toBe(20);
   expect(serviceKdvAmount(47000 - 2000, { kdv_enabled: true, kdv_rate: 20 })).toBe(9000);
+  expect(serviceKdvAmount(0.29, { kdv_enabled: true, kdv_rate: 50 })).toBe(0.15);
+  expect(serviceKdvAmount(1.25, { kdv_enabled: true, kdv_rate: 10 })).toBe(0.13);
   expect(serviceKdvAmount(333.33, { kdv_enabled: true, kdv_rate: "10" })).toBe(33.33);
 });
 

@@ -11,7 +11,7 @@ import ServiceForm, { compressImage, isLaborItem } from "./ServiceForm";
 import { VehicleIcon } from "../vehicleIcons";
 import CustomerSheet from "../CustomerSheet";
 import { worklistItems, hasText, worklistUrl } from "../../lib/worklist";
-import { serviceKdvAmount, serviceKdvRate, categorySubtotal } from "../../lib/serviceItems";
+import { serviceKdvAmount, serviceKdvRate, categorySubtotal, serviceItemQty } from "../../lib/serviceItems";
 
 const STATUS = {
   received: { label: "Geldi", color: "amber" },
@@ -60,15 +60,15 @@ const waText = (s) => {
 };
 // Müşteriye hesap özeti (kalemler, iskonto, toplam, ödenen, kalan) — maliyet YOK
 const statementText = (s) => {
-  const lineTL = (it) => (parseFloat(it.unit_price) || 0) * (parseFloat(it.qty) || 1) * (it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || 1) : 1);
+  const lineTL = (it) => (parseFloat(it.unit_price) || 0) * serviceItemQty(it.qty) * (it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || 1) : 1);
   const L = [`Merhaba ${(s.customer_name || "").trim()},`.replace(" ,", ","), "", `*Servis hesap özeti${s.order_no ? " (" + s.order_no + ")" : ""}*`];
   (s.items || []).forEach((it) => {
     if (it.header) { L.push(`*${(it.name || "").trim()}*`); return; }
-    const q = parseFloat(it.qty) || 1;
+    const q = serviceItemQty(it.qty);
     L.push(`• ${it.name || "Kalem"}${q > 1 ? " × " + q : ""} — ${it.gift ? "HEDİYE" : "₺" + money(lineTL(it))}`);
   });
   const net = serviceNet(s);
-  const gross = (s.items || []).length ? (s.items || []).reduce((a, it) => a + (it.gift ? 0 : lineTL(it)), 0) : net;
+  const gross = (s.items || []).length ? (s.items || []).reduce((a, it) => a + (it.header || it.gift ? 0 : lineTL(it)), 0) : net;
   if (gross - net > 0.5) L.push(`İskonto: −₺${money(gross - net)}`);
   const kdv = serviceKdvAmount(net, s);
   if (kdv > 0) L.push(`Ara toplam: ₺${money(net)}`, `KDV (%${serviceKdvRate(s)}): ₺${money(kdv)}`);
@@ -85,7 +85,7 @@ export const serviceNet = (s) => {
   const items = s.items || [];
   const gross = items.length === 0 && s.cost != null
     ? Number(s.cost) || 0
-    : items.reduce((a, it) => a + (it.gift ? 0 : (parseFloat(it.unit_price) || 0) * (parseFloat(it.qty) || 1) * (it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || 1) : 1)), 0);
+    : items.reduce((a, it) => a + (it.header || it.gift ? 0 : (parseFloat(it.unit_price) || 0) * serviceItemQty(it.qty) * (it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || 1) : 1)), 0);
   return gross - Math.min(Math.max(0, parseFloat(s.discount_amount) || 0), gross);
 };
 // Müşteriden alınacak tutar: net + KDV (kdv_enabled kayıtlarda). Ciro/kâr serviceNet (KDV hariç) üstünden kalır.
@@ -376,7 +376,8 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuo
   }, [id]);
 
   const lineTRY = (it, field) => {
-    const q = parseFloat(it.qty) || 1;
+    if (it.header) return 0;
+    const q = serviceItemQty(it.qty);
     const v = parseFloat(it[field]) || 0;
     const rate = it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || 1) : 1;
     return v * q * rate;
@@ -387,17 +388,18 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuo
     return c != null ? c : null;
   };
   const costLineTRY = (it) => {
+    if (it.header) return 0;
     if (it.unit_cost !== "" && it.unit_cost != null) return lineTRY(it, "unit_cost");
     if (isLaborItem(it)) return 0;
     const pc = prodCostUnit(it.name);
-    if (pc != null) return pc * (parseFloat(it.qty) || 1);
+    if (pc != null) return pc * serviceItemQty(it.qty);
     return lineTRY(it, "unit_price"); // bilinmiyor → kâr 0
   };
   const itemHasCost = (it) => (it.unit_cost !== "" && it.unit_cost != null) || isLaborItem(it) || prodCostUnit(it.name) != null;
   const gross = useMemo(() => {
     if (!s) return 0;
     if ((s.items || []).length === 0 && s.cost != null) return Number(s.cost) || 0;
-    return (s.items || []).reduce((a, it) => a + (it.gift ? 0 : lineTRY(it, "unit_price")), 0);
+    return (s.items || []).reduce((a, it) => a + (it.header || it.gift ? 0 : lineTRY(it, "unit_price")), 0);
   }, [s]);
   const discount = Math.min(Math.max(0, parseFloat(s?.discount_amount) || 0), gross); // servis iskontosu (teklif net'i buraya yansır)
   const total = gross - discount; // net (indirimli, KDV hariç; kâr bunun üstünden)
@@ -472,7 +474,7 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuo
                     <div className="m-tnum shrink-0 text-[13px] font-bold text-emerald-800">₺{money(categorySubtotal(s.items, i, (x) => (x.gift ? 0 : lineTRY(x, "unit_price"))))}</div>
                   </div>
                 );
-                const q = parseFloat(it.qty) || 1;
+                const q = serviceItemQty(it.qty);
                 const up = parseFloat(it.unit_price) || 0;
                 const rate = it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || 1) : 1;
                 return (
