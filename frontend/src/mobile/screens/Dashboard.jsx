@@ -6,7 +6,7 @@ import http, { services as servicesApi, quotes as quotesApi, rates as ratesApi }
 import { SearchBar, Card, SkeletonList, RefreshScroll, OfflineBar, money, ago, todayISO, fmtDate, IconBadge, useCountUp } from "../ui";
 import { useSession } from "../session";
 import { cache } from "../cache";
-import { serviceItemQty } from "../../lib/serviceItems";
+import { serviceItemQty, serviceCostRate } from "../../lib/serviceItems";
 import { serviceNet, serviceGrand, collectedTRY, isLaborItem } from "./Services";
 import { useCatalog } from "../catalog";
 import CollectionsReport, { collectionEntries, monthKey } from "../CollectionsReport";
@@ -127,7 +127,7 @@ export default function Dashboard({ go }) {
     const lineTRY = (it, field) => it.header ? 0 : (parseFloat(it[field]) || 0) * serviceItemQty(it.qty) * (it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || 1) : 1);
     const costLine = (it) => {
       if (it.header) return 0;
-      if (it.unit_cost !== "" && it.unit_cost != null) return lineTRY(it, "unit_cost");
+      if (it.unit_cost !== "" && it.unit_cost != null) return (parseFloat(it.unit_cost) || 0) * serviceItemQty(it.qty) * serviceCostRate(it, it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || 1) : 1, cache.get("rates"));
       if (isLaborItem(it)) return 0;
       const pc = prodCost[String(it.name || "").trim().toLocaleLowerCase("tr")];
       return pc != null ? pc * serviceItemQty(it.qty) : lineTRY(it, "unit_price");

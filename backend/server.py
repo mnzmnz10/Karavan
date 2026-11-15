@@ -810,6 +810,8 @@ class ServiceItem(BaseModel):
     unit_cost: Optional[float] = Field(None, ge=0)              # Birim MALİYET/geliş (kâr analizi; sadece sistemde, PDF'te yok)
     currency: Optional[str] = "TRY"                              # TRY | EUR | USD
     rate: Optional[float] = Field(None, ge=0)                    # 1 birim döviz = ? ₺ (kayıt anında sabitlenir)
+    cost_currency: Optional[str] = None                          # Maliyetin kendi para birimi (TRY|EUR|USD); yoksa (eski kayıt) satış para birimi
+    cost_rate: Optional[float] = Field(None, ge=0)               # Maliyet kuru: 1 birim = ? ₺ (kayıt anında sabitlenir)
     gift: Optional[bool] = False                                 # Hediye: toplama girmez, maliyeti kâr hesabında kalır
     sub: Optional[bool] = False                                  # Alt kalem: listede kendinden önceki en yakın ana kaleme bağlı (ör. akü → akü işçiliği)
     header: Optional[bool] = False                               # Kategori başlığı: yalnız ad; altındaki (sonraki başlığa kadar) kalemler o kategoride
@@ -818,6 +820,7 @@ class ServiceItem(BaseModel):
     def _header_has_no_amounts(self):
         if self.header:  # başlık toplam/kâr/KDV hesabına hiçbir yoldan girmesin
             self.qty, self.unit_price, self.unit_cost, self.gift, self.sub, self.currency, self.rate = 0, 0, 0, False, False, "TRY", None
+            self.cost_currency, self.cost_rate = "TRY", None
         return self
 
 class ServiceCollection(BaseModel):

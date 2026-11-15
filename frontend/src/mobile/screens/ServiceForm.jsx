@@ -11,7 +11,7 @@ import { Sheet, money, todayISO } from "../ui";
 import { keepCaret } from "../../lib/caret";
 import BulletTextarea from "../../components/BulletTextarea";
 import ProductPickerSheet from "../ProductPickerSheet";
-import { insertSubItem, removeItemWithSubs, cleanServiceItems, moveServiceItem, itemKey, newHeaderItem, categorySubtotal, CATEGORY_SUGGESTIONS, serviceItemQty, serviceKdvRate, serviceKdvAmount, DEFAULT_KDV_RATE } from "../../lib/serviceItems";
+import { insertSubItem, removeItemWithSubs, cleanServiceItems, moveServiceItem, itemKey, newHeaderItem, categorySubtotal, CATEGORY_SUGGESTIONS, serviceItemQty, serviceKdvRate, serviceKdvAmount, DEFAULT_KDV_RATE, serviceCostRate, productCostFields } from "../../lib/serviceItems";
 
 const DRAFT_KEY = "service_draft";
 
@@ -158,19 +158,15 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
     return catalog.filter((p) => (p.name || "").toLocaleLowerCase("tr").includes(s)).slice(0, 12);
   }, [catQ, catalog]);
   const [pickOpen, setPickOpen] = useState(false);
+  // Maliyet ürünün kendi para biriminde (indirimli fiyat), kuru ürünün TL karşılığından
+  const catItem = (p, qty) => ({ name: p.name, qty, unit_price: Math.round(p.list_price_try), ...productCostFields(p, { [p.currency]: catRate(p) }), currency: "TRY" });
   const addPicked = (picked) => {
-    const add = picked.map(({ product: p, qty }) => {
-      const rate = catRate(p);
-      const base = p.discounted_price > 0 ? p.discounted_price : p.list_price;
-      return { name: p.name, qty, unit_price: Math.round(p.list_price_try), unit_cost: Math.round(base * rate), currency: "TRY" };
-    });
+    const add = picked.map(({ product: p, qty }) => catItem(p, qty));
     set("items", [...f.items, ...add]);
     toast.success(`${add.length} kalem eklendi`);
   };
   const addFromCatalog = (p) => {
-    const rate = catRate(p);
-    const base = p.discounted_price > 0 ? p.discounted_price : p.list_price;
-    set("items", [...f.items, { name: p.name, qty: 1, unit_price: Math.round(p.list_price_try), unit_cost: Math.round(base * rate), currency: "TRY" }]);
+    set("items", [...f.items, catItem(p, 1)]);
     setCatQ("");
     toast.success(`${p.name} eklendi`);
   };
@@ -203,9 +199,11 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
     const c = prodCost && prodCost[String(name || "").trim().toLocaleLowerCase("tr")];
     return c != null ? c : null;
   };
+  const liveRates = cache.get("rates") || {};
+  const unitCostTRY = (it) => (parseFloat(it.unit_cost) || 0) * serviceCostRate(it, it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || 1) : 1, liveRates);
   const costLineTRY = (it) => {
     if (it.header) return 0;
-    if (it.unit_cost !== "" && it.unit_cost != null) return lineTRY(it, "unit_cost");
+    if (it.unit_cost !== "" && it.unit_cost != null) return unitCostTRY(it) * serviceItemQty(it.qty);
     if (isLaborItem(it)) return 0;
     const pc = prodCostUnit(it.name);
     if (pc != null) return pc * (serviceItemQty(it.qty));
@@ -255,7 +253,14 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
     }));
     setPicked(true);
   };
-  const updItem = (i, k, v) => set("items", f.items.map((it, j) => (j === i ? { ...it, [k]: v } : it)));
+  const updItem = (i, k, v) => set("items", f.items.map((it, j) => {
+    if (j !== i) return it;
+    const n = { ...it, [k]: v };
+    // Girilmiş maliyet, satış para birimi değişince eski birimde kalır
+    if (k === "currency" && !it.cost_currency && it.unit_cost !== "" && it.unit_cost != null) { n.cost_currency = it.currency || "TRY"; n.cost_rate = it.rate ?? ""; }
+    if (k === "cost_currency") n.cost_rate = v !== "TRY" && liveRates[v] > 0 ? Number(liveRates[v]).toFixed(2) : "";
+    return n;
+  }));
   const delItem = (i) => set("items", removeItemWithSubs(f.items, i)); // ana kalem alt kalemleriyle gider
   const addSubItem = (i) => set("items", insertSubItem(f.items, i, { name: "", qty: 1, unit_price: "", unit_cost: "", currency: "TRY" }));
   const addHeader = () => set("items", [...f.items, newHeaderItem("")]);
@@ -312,6 +317,9 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
             unit_cost: it.unit_cost === "" || it.unit_cost == null ? null : (parseFloat(it.unit_cost) || 0),
             currency: it.currency || "TRY",
             rate: it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || null) : null,
+            // Maliyet para birimi yoksa (eski kalem) satışınkine sabitlenir
+            cost_currency: it.cost_currency || it.currency || "TRY",
+            cost_rate: (it.cost_currency || it.currency || "TRY") === "TRY" ? null : (parseFloat(it.cost_currency ? it.cost_rate : it.rate) || parseFloat(liveRates[it.cost_currency || it.currency]) || null),
             gift: !!it.gift,
             sub: !!it.sub,
             header: !!it.header,
@@ -423,6 +431,10 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
               <div className="mt-1 flex items-center gap-2">
                 <span className="text-[12px] text-slate-400">Geliş</span>
                 <input type="number" min="0" inputMode="decimal" className="w-24 rounded-lg bg-slate-100 px-2 py-1 text-right text-[13px] m-tnum" value={it.unit_cost ?? ""} onChange={(e) => updItem(i, "unit_cost", e.target.value)} placeholder="birim" />
+                <select aria-label="Maliyet para birimi" className="rounded-lg bg-slate-100 px-1.5 py-1 text-[13px]" value={it.cost_currency || it.currency || "TRY"} onChange={(e) => updItem(i, "cost_currency", e.target.value)}>
+                  <option value="TRY">₺</option><option value="EUR">€</option><option value="USD">$</option>
+                </select>
+                {(it.cost_currency || it.currency || "TRY") !== "TRY" && it.unit_cost !== "" && it.unit_cost != null && <span className="m-tnum text-[12px] text-slate-400">≈ ₺{money(unitCostTRY(it))}</span>}
               </div>
             )}
             {it.currency && it.currency !== "TRY" && (

@@ -28,7 +28,7 @@ import ProductPicker from './components/ProductPicker';
 import PhotoGallery from './components/PhotoGallery';
 import WorklistPicker from './components/WorklistPicker';
 import { searchProducts } from './lib/productSearch';
-import { insertSubItem, removeItemWithSubs, cleanServiceItems, moveServiceItem, itemKey, newHeaderItem, categorySubtotal, CATEGORY_SUGGESTIONS, serviceKdvRate, serviceKdvAmount, DEFAULT_KDV_RATE } from './lib/serviceItems';
+import { insertSubItem, removeItemWithSubs, cleanServiceItems, moveServiceItem, itemKey, newHeaderItem, categorySubtotal, CATEGORY_SUGGESTIONS, serviceKdvRate, serviceKdvAmount, DEFAULT_KDV_RATE, serviceCostRate, productCostFields } from './lib/serviceItems';
 import { CartProvider, useCart } from './cart/CartContext';
 import { rateOf, cartTotals } from './cart/cartLogic';
 import { cart as cartApi } from './mobile/api';
@@ -1874,8 +1874,8 @@ function AppInner() {
     const hasCost = it.unit_cost !== '' && it.unit_cost != null && !isNaN(parseFloat(it.unit_cost));
     if (hasCost) {
       const cur = it.currency || 'TRY';
-      const r = cur === 'TRY' ? 1 : (parseFloat(it.rate) || parseFloat(exchangeRates?.[cur]) || 0);
-      return (parseFloat(it.unit_cost) || 0) * q * r;
+      const saleR = cur === 'TRY' ? 1 : (parseFloat(it.rate) || parseFloat(exchangeRates?.[cur]) || 0);
+      return (parseFloat(it.unit_cost) || 0) * q * serviceCostRate(it, saleR, exchangeRates);
     }
     if (isLaborServiceItem(it)) return 0; // işçilik, geliş girilmemişse tamamı kâr (eski tekliften aktarımlar unit_cost'suz)
     const pc = productCostPerUnitTRY(it.name); // maliyet boşsa ürünün indirimli fiyatından türet
@@ -1887,11 +1887,9 @@ function AppInner() {
   // Üründen servis kalemi ekle: SATIŞ = liste fiyatı, MALİYET = geliş (indirimli, yoksa liste). Kâr = satış − maliyet.
   const addServiceItemFromProduct = (p) => {
     const list = parseFloat(p.list_price) || 0;
-    // Tedarikçi grubunda maliyet en ucuz firmadan (best_discounted_price bu ürünün para biriminde)
-    const own = p.best_discounted_price != null ? parseFloat(p.best_discounted_price) : parseFloat(p.discounted_price);
-    const gelis = (own > 0 ? own : list) || 0;
     const currency = p.currency || 'TRY';
-    const item = { name: p.name, qty: 1, unit_price: list, unit_cost: gelis, currency, rate: '' };
+    // Maliyet ürünün kendi para biriminde sabit (best_discounted_price: tedarikçi grubunda en ucuz)
+    const item = { name: p.name, qty: 1, unit_price: list, ...productCostFields(p, exchangeRates), currency, rate: '' };
     if (currency !== 'TRY') {
       const live = parseFloat(exchangeRates?.[currency]);
       if (live > 0) item.rate = live.toFixed(2);
@@ -1904,6 +1902,15 @@ function AppInner() {
     items[idx] = { ...items[idx], [field]: value };
     // Döviz DEĞİŞİNCE kuru DAİMA seçilen para biriminin güncel kuruna yenile
     // (eski: sadece rate boşken set ediyordu → EUR'dan USD'ye geçince EUR kuru kalıyordu).
+    // Maliyet kendi para birimini taşır: girilmiş maliyet, satış para birimi değişince eski birimde kalır
+    if (field === 'currency' && !items[idx].cost_currency && items[idx].unit_cost !== '' && items[idx].unit_cost != null) {
+      items[idx].cost_currency = f.items[idx].currency || 'TRY';
+      items[idx].cost_rate = f.items[idx].rate ?? '';
+    }
+    if (field === 'cost_currency') {
+      const live = parseFloat(exchangeRates?.[value]);
+      items[idx].cost_rate = value !== 'TRY' && live > 0 ? live.toFixed(2) : '';
+    }
     if (field === 'currency') {
       if (value === 'TRY') {
         items[idx].rate = '';
@@ -2048,7 +2055,7 @@ function AppInner() {
       plate: svc.plate || '', is_trailer: !!svc.is_trailer,
       arrival_date: svc.arrival_date || '', delivery_date: svc.delivery_date || '',
       operations: svc.operations || '',
-      items: Array.isArray(svc.items) ? svc.items.map((it) => ({ name: it.name || '', qty: it.qty != null ? it.qty : 1, unit_price: it.unit_price != null ? it.unit_price : 0, unit_cost: it.unit_cost != null ? String(it.unit_cost) : '', currency: it.currency || 'TRY', rate: it.rate != null ? String(it.rate) : '', gift: !!it.gift, sub: !!it.sub, header: !!it.header })) : [],
+      items: Array.isArray(svc.items) ? svc.items.map((it) => ({ name: it.name || '', qty: it.qty != null ? it.qty : 1, unit_price: it.unit_price != null ? it.unit_price : 0, unit_cost: it.unit_cost != null ? String(it.unit_cost) : '', currency: it.currency || 'TRY', rate: it.rate != null ? String(it.rate) : '', ...(it.cost_currency ? { cost_currency: it.cost_currency, cost_rate: it.cost_rate != null ? String(it.cost_rate) : '' } : {}), gift: !!it.gift, sub: !!it.sub, header: !!it.header })) : [],
       photos: Array.isArray(svc.photos) ? svc.photos : [],
       notes: svc.notes || '',
       cost: svc.cost != null ? String(svc.cost) : '',
@@ -2081,7 +2088,14 @@ function AppInner() {
           rate = live > 0 ? parseFloat(live.toFixed(4)) : null; // kur kayıt anında sabitlenir
         }
         const unit_cost = it.unit_cost !== '' && it.unit_cost != null ? parseFloat(it.unit_cost) : null;
-        return { name: (it.name || '').trim(), qty: parseFloat(it.qty) || 0, unit_price: parseFloat(it.unit_price) || 0, unit_cost: unit_cost != null && !isNaN(unit_cost) ? unit_cost : null, currency: cur, rate, gift: !!it.gift, sub: !!it.sub, header: !!it.header };
+        // Maliyet para birimi yoksa (eski kalem) satışınkine sabitlenir; döviz maliyet kuru da kayıt anında sabitlenir
+        const costCur = it.cost_currency || cur;
+        let cost_rate = costCur === 'TRY' ? null : (it.cost_currency ? parseFloat(it.cost_rate) : rate);
+        if (costCur !== 'TRY' && !(cost_rate > 0)) {
+          const live = parseFloat(exchangeRates?.[costCur]);
+          cost_rate = live > 0 ? parseFloat(live.toFixed(4)) : null;
+        }
+        return { name: (it.name || '').trim(), qty: parseFloat(it.qty) || 0, unit_price: parseFloat(it.unit_price) || 0, unit_cost: unit_cost != null && !isNaN(unit_cost) ? unit_cost : null, currency: cur, rate, cost_currency: costCur, cost_rate, gift: !!it.gift, sub: !!it.sub, header: !!it.header };
       });
     const itemsCost = serviceItemsTotal(cleanItems);
     const cleanCollections = (serviceForm.collections || [])
@@ -3697,9 +3711,8 @@ function AppInner() {
   const addPickedToService = (items) => {
     const newItems = items.map(({ product: p, qty }) => {
       const list = parseFloat(p.list_price) || 0;
-      const own = p.best_discounted_price != null ? parseFloat(p.best_discounted_price) : parseFloat(p.discounted_price);
       const currency = p.currency || 'TRY';
-      const item = { name: p.name, qty, unit_price: list, unit_cost: (own > 0 ? own : list) || 0, currency, rate: '' };
+      const item = { name: p.name, qty, unit_price: list, ...productCostFields(p, exchangeRates), currency, rate: '' };
       if (currency !== 'TRY') {
         const live = parseFloat(exchangeRates?.[currency]);
         if (live > 0) item.rate = live.toFixed(2);
@@ -10997,7 +11010,14 @@ function AppInner() {
                                   </td>
                                   {showServiceProfit && (
                                     <td className="px-1 py-1.5">
-                                      <input type="number" min="0" step="0.01" value={it.unit_cost ?? ''} onChange={(e) => updateServiceItem(idx, 'unit_cost', e.target.value)} placeholder="geliş" title="Birim maliyet (geliş)" className="w-full h-8 px-1 border border-slate-200 rounded text-sm text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                                      <div className="flex items-center gap-1">
+                                        <input type="number" min="0" step="0.01" value={it.unit_cost ?? ''} onChange={(e) => updateServiceItem(idx, 'unit_cost', e.target.value)} placeholder="geliş" title={(it.cost_currency || it.currency || 'TRY') !== 'TRY' && it.unit_cost !== '' && it.unit_cost != null ? `Birim maliyet ≈ ₺ ${formatPrice((parseFloat(it.unit_cost) || 0) * serviceCostRate(it, parseFloat(it.rate) || parseFloat(exchangeRates?.[it.currency]) || 0, exchangeRates))}` : 'Birim maliyet (geliş)'} className="w-full min-w-[4.5rem] h-8 px-1 border border-slate-200 rounded text-sm text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                                        <select value={it.cost_currency || it.currency || 'TRY'} onChange={(e) => updateServiceItem(idx, 'cost_currency', e.target.value)} className="shrink-0 h-8 px-0.5 border border-slate-200 rounded text-xs bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-emerald-500" title="Maliyet para birimi" aria-label="Maliyet para birimi">
+                                          <option value="TRY">₺</option>
+                                          <option value="EUR">€</option>
+                                          <option value="USD">$</option>
+                                        </select>
+                                      </div>
                                     </td>
                                   )}
                                   <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-slate-700">

@@ -236,7 +236,7 @@ test("servis formu: katalogdan ekle → satış liste, geliş indirimli", async 
   const api = require("../api");
   await click(btnWith("Kaydet"));
   const it = api.__calls.svcUpdate.at(-1).items[0];
-  expect(it).toMatchObject({ unit_price: 10000, unit_cost: 7000, qty: 1 });
+  expect(it).toMatchObject({ unit_price: 10000, unit_cost: 7000, cost_currency: "TRY", qty: 1 });
 });
 
 test("servis tahsilat: kalan hesap, USD tahsilat ekle (kur), sil", async () => {
