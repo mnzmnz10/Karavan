@@ -83,3 +83,29 @@ def test_service_pdf_labor_column_orphan_gift_and_plain_layout():
     assert "İŞÇİLİK" in text and "37.000" in text and "HEDİYE" in text
     plain = _pdf_text(gen.create_service_pdf({"id": "x", "customer_name": "Test", "items": [ITEMS[0], ITEMS[2]]}))
     assert "İŞÇİLİK" not in plain and "BİRİM" in plain  # alt kalem yoksa klasik düzen
+
+
+def test_pdf_consecutive_orphans_and_multiple_subs_match_backend():
+    gen = server.PDFServiceGenerator()
+    items = [
+        {"name": "Kategori", "header": True},
+        {"name": "Yetim 1", "sub": True, "qty": 1, "unit_price": 100},
+        {"name": "Yetim 2", "sub": True, "qty": 2, "unit_price": 75},
+        {"name": "Hediye ana", "gift": True, "qty": 1, "unit_price": 999},
+        {"name": "Montaj", "sub": True, "qty": 2, "unit_price": 10, "currency": "USD", "rate": 40},
+        {"name": "Ek montaj", "sub": True, "qty": 1, "unit_price": 50},
+        {"name": "Hediye alt", "sub": True, "gift": True, "qty": 1, "unit_price": 99},
+    ]
+    groups = gen._svc_groups(items, str)
+    assert sum(g["total"] for g in groups) == server._service_items_total(items) == 1100
+    table = gen._svc_items_table(items, str)
+    totals = [row[-1].getPlainText() for row in table._cellvalues[2:]]
+    assert list(map(float, totals)) == [100, 150, 850]
+    text = _pdf_text(gen.create_service_pdf({"items": items, "discount_amount": 100, "kdv_enabled": True, "kdv_rate": 20}))
+    assert "1.200" in text
+
+
+def test_pdf_keeps_cents_in_rows_subtotals_and_grand_total():
+    items = [{"name": "Kategori", "header": True}, {"name": "Parça", "qty": 1, "unit_price": 12.34}]
+    text = _pdf_text(server.PDFServiceGenerator().create_service_pdf({"items": items}))
+    assert text.count("12,34") >= 3

@@ -13781,7 +13781,7 @@ class PDFServiceGenerator(PDFContractGenerator):
                 cur = {"name": None, "mains": []}
                 groups.append(cur)
             ln = self._svc_line(it, fmt)
-            if it.get("sub") and cur["mains"]:
+            if it.get("sub") and cur["mains"] and not cur["mains"][-1]["orphan"]:
                 cur["mains"][-1]["subs"].append({"it": it, "ln": ln})
             else:
                 cur["mains"].append({"it": it, "ln": ln, "subs": [], "orphan": bool(it.get("sub"))})
@@ -13891,7 +13891,9 @@ class PDFServiceGenerator(PDFContractGenerator):
 
         def fmt(val):
             try:
-                return f"₺ {round(float(val)):,.0f}".replace(",", ".")
+                amount = round(float(val), 2)
+                digits = 0 if amount.is_integer() else 2
+                return "₺ " + f"{amount:,.{digits}f}".translate(str.maketrans({",": ".", ".": ","}))
             except (TypeError, ValueError):
                 return "₺ 0"
 

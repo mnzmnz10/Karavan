@@ -1,8 +1,9 @@
+import { useRates } from "../useRates";
 import React, { useEffect, useMemo, useState } from "react";
 import { AccountButton } from "../Account";
 import { Wrench, FileText, ScrollText, Clock, CheckCircle2, TrendingUp, Eye, EyeOff, AlertCircle, Truck, BatteryCharging, Sun } from "lucide-react";
 import { BatterySheet, MpptSheet } from "./Tools";
-import http, { services as servicesApi, quotes as quotesApi, rates as ratesApi } from "../api";
+import http, { services as servicesApi, quotes as quotesApi } from "../api";
 import { SearchBar, Card, SkeletonList, RefreshScroll, OfflineBar, money, ago, todayISO, fmtDate, IconBadge, useCountUp } from "../ui";
 import { useSession } from "../session";
 import { cache } from "../cache";
@@ -35,15 +36,6 @@ function HeroAmount({ value }) {
 
 const ASSET_V = 1; // logo değişince artır (Cloudflare önbelleği)
 const fxFmt = (n) => (Number(n) || 0).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-// Güncel kur: önbellekten anında, arka planda tazelenir
-function useRates() {
-  const [r, setR] = useState(() => cache.get("rates") || null);
-  useEffect(() => {
-    ratesApi.get().then((x) => { if (x && x.EUR) { setR(x); cache.set("rates", x); } }).catch(() => {});
-  }, []);
-  return r;
-}
 
 // Özet başlığı: MSZ logosu + güncellenme etiketi + hesap; altında selam, tarih ve € / $ kuru
 function BrandHeader({ greet, at, offline, onRefresh }) {
@@ -85,6 +77,7 @@ function BrandHeader({ greet, at, offline, onRefresh }) {
 }
 
 export default function Dashboard({ go }) {
+  const liveRates = useRates();
   const s = useSession();
   const [data, setData] = useState(() => cache.get("dashboard") || null);
   const [loading, setLoading] = useState(() => !cache.get("dashboard"));
@@ -127,7 +120,7 @@ export default function Dashboard({ go }) {
     const lineTRY = (it, field) => it.header ? 0 : (parseFloat(it[field]) || 0) * serviceItemQty(it.qty) * (it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || 1) : 1);
     const costLine = (it) => {
       if (it.header) return 0;
-      if (it.unit_cost !== "" && it.unit_cost != null) return (parseFloat(it.unit_cost) || 0) * serviceItemQty(it.qty) * serviceCostRate(it, it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || 1) : 1, cache.get("rates"));
+      if (it.unit_cost !== "" && it.unit_cost != null) return (parseFloat(it.unit_cost) || 0) * serviceItemQty(it.qty) * serviceCostRate(it, it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || 1) : 1, liveRates);
       if (isLaborItem(it)) return 0;
       const pc = prodCost[String(it.name || "").trim().toLocaleLowerCase("tr")];
       return pc != null ? pc * serviceItemQty(it.qty) : lineTRY(it, "unit_price");
@@ -171,7 +164,7 @@ export default function Dashboard({ go }) {
     const recentQ = [...quotes].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || ""))).slice(0, 3);
     const recent = [...services].sort((a, b) => String(b.arrival_date || b.created_at || "").localeCompare(String(a.arrival_date || a.created_at || ""))).slice(0, 4);
     return { active, delivered, overdue, dueToday, sTotal: services.length, qTotal: quotes.length, quotesMonth, quotesMonthSum, cTotal: contracts.length, agreed, recent, recentQ, upcoming, collMonth, months, svcDone: doneMonth.length, svcNet, svcProfit: svcNet - svcCost, openBal, openCnt };
-  }, [data]);
+  }, [data, liveRates]);
 
   // Genel arama: teklif / servis / sözleşme (müşteri, başlık, plaka, telefon rakamı) — en fazla 5'er sonuç
   const results = useMemo(() => {

@@ -1,3 +1,4 @@
+import { useRates } from "../useRates";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "../toast";
 import { Camera, Plus, Trash2, Loader2, X, Eye, EyeOff, Search, ChevronLeft, ChevronRight, Gift, CornerDownRight, GripVertical, Tags } from "lucide-react";
@@ -199,7 +200,7 @@ export default function ServiceForm({ open, initial, onClose, onSaved, prodCost 
     const c = prodCost && prodCost[String(name || "").trim().toLocaleLowerCase("tr")];
     return c != null ? c : null;
   };
-  const liveRates = cache.get("rates") || {};
+  const liveRates = useRates(open);
   const unitCostTRY = (it) => (parseFloat(it.unit_cost) || 0) * serviceCostRate(it, it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || 1) : 1, liveRates);
   const costLineTRY = (it) => {
     if (it.header) return 0;

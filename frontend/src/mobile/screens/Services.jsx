@@ -1,3 +1,4 @@
+import { useRates } from "../useRates";
 import React, { useEffect, useMemo, useState } from "react";
 import { AccountButton } from "../Account";
 import { Wrench, Car, Phone, MessageCircle, Image as ImageIcon, Loader2, Plus, Pencil, Share2, Trash2, Eye, EyeOff, Wallet, X, FileText, Camera, Receipt, ClipboardList } from "lucide-react";
@@ -256,6 +257,7 @@ function CollectionSheet({ open, onClose, onAdd, remaining = 0 }) {
 }
 
 function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuote, prodCost, go }) {
+  const liveRates = useRates(!!id);
   const [custOpen, setCustOpen] = useState(false);
   const [wlOpen, setWlOpen] = useState(false);
   const [s, setS] = useState(null);
@@ -389,7 +391,7 @@ function Detail({ id, onClose, onEdit, onDeleted, onChanged, onRepeat, onOpenQuo
   };
   const costLineTRY = (it) => {
     if (it.header) return 0;
-    if (it.unit_cost !== "" && it.unit_cost != null) return (parseFloat(it.unit_cost) || 0) * serviceItemQty(it.qty) * serviceCostRate(it, it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || 1) : 1, cache.get("rates"));
+    if (it.unit_cost !== "" && it.unit_cost != null) return (parseFloat(it.unit_cost) || 0) * serviceItemQty(it.qty) * serviceCostRate(it, it.currency && it.currency !== "TRY" ? (parseFloat(it.rate) || 1) : 1, liveRates);
     if (isLaborItem(it)) return 0;
     const pc = prodCostUnit(it.name);
     if (pc != null) return pc * serviceItemQty(it.qty);
